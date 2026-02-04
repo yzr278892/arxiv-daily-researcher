@@ -1,0 +1,164 @@
+{
+  "version": "1.0",
+  // 深度分析报告模板配置 - 对及格论文进行深度分析时使用
+
+  "global": {
+    // Admonition语法风格：mkdocs使用 !!! note 语法，github使用 > [!NOTE] 语法
+    "admonition_style": "mkdocs",  // 可选值: "mkdocs" | "github"
+  },
+
+  // 深度分析模块配置 - 按order字段排序显示
+  "modules": [
+    {
+      "id": "chinese_title",
+      "name": "中文标题",
+      "enabled": true,
+      "order": 1,
+      "format": "heading",  // 可选: "heading" | "bold" | "plain"
+      "format_options": ["heading", "bold", "plain"],
+      "heading_level": 4,
+      "collapsible": false,
+      "prompt": "请将论文标题翻译为中文，保持学术性和准确性。",
+    },
+    {
+      "id": "summary",
+      "name": "内容摘要",
+      "enabled": true,
+      "order": 2,
+      "format": "quote",  // 可选: "quote" | "admonition" | "plain"
+      "format_options": ["quote", "admonition", "plain"],
+      "admonition_type": "abstract",
+      "collapsible": false,
+      "label": "摘要",
+      "prompt": "请用200-300字概括论文的主要内容，包括研究背景、方法和结论。",
+    },
+    {
+      "id": "innovations",
+      "name": "创新点",
+      "enabled": true,
+      "order": 3,
+      "format": "list",  // 可选: "list" | "admonition" | "quote"
+      "format_options": ["list", "admonition", "quote"],
+      "list_style": "bullet",
+      "admonition_type": "tip",
+      "collapsible": false,
+      "label": "创新点",
+      "prompt": "请列出论文的主要创新点（3-5点），每点简明扼要。",
+    },
+    {
+      "id": "methodology",
+      "name": "研究方法",
+      "enabled": true,
+      "order": 4,
+      "format": "admonition",  // 可选: "admonition" | "quote" | "plain"
+      "format_options": ["admonition", "quote", "plain"],
+      "admonition_type": "info",
+      "collapsible": true,
+      "collapsible_default_open": false,
+      "label": "方法",
+      "prompt": "请描述论文使用的主要研究方法和技术路线。",
+    },
+    {
+      "id": "key_results",
+      "name": "关键结果",
+      "enabled": true,
+      "order": 5,
+      "format": "list",  // 可选: "list" | "quote" | "plain"
+      "format_options": ["list", "quote", "plain"],
+      "list_style": "bullet",
+      "collapsible": false,
+      "label": "关键结果",
+      "prompt": "请列出论文的主要研究结果和发现。",
+    },
+    {
+      "id": "tech_stack",
+      "name": "技术栈",
+      "enabled": true,
+      "order": 6,
+      "format": "inline",  // 可选: "inline" | "list" | "table"
+      "format_options": ["inline", "list", "table"],
+      "collapsible": false,
+      "label": "技术栈",
+      "prompt": "请列出论文中使用的具体算法、工具、数学方法等。",
+    },
+    {
+      "id": "strengths",
+      "name": "优点",
+      "enabled": true,
+      "order": 7,
+      "format": "list",  // 可选: "list" | "admonition"
+      "format_options": ["list", "admonition"],
+      "list_style": "bullet",
+      "admonition_type": "success",
+      "collapsible": true,
+      "collapsible_default_open": false,
+      "label": "优点",
+      "prompt": "请分析论文的主要优点和亮点。",
+    },
+    {
+      "id": "limitations",
+      "name": "局限性",
+      "enabled": true,
+      "order": 8,
+      "format": "list",  // 可选: "list" | "admonition"
+      "format_options": ["list", "admonition"],
+      "list_style": "bullet",
+      "admonition_type": "warning",
+      "collapsible": true,
+      "collapsible_default_open": false,
+      "label": "局限",
+      "prompt": "请分析论文的局限性和不足之处。",
+    },
+    {
+      "id": "relevance_to_keywords",
+      "name": "关键词相关性",
+      "enabled": true,
+      "order": 9,
+      "format": "quote",  // 可选: "quote" | "plain"
+      "format_options": ["quote", "plain"],
+      "collapsible": false,
+      "label": "与研究方向的相关性",
+      "prompt": "请分析论文与研究关键词的相关性。",
+    },
+    {
+      "id": "future_work",
+      "name": "未来工作",
+      "enabled": false,  // 默认禁用
+      "order": 10,
+      "format": "list",  // 可选: "list" | "quote"
+      "format_options": ["list", "quote"],
+      "list_style": "bullet",
+      "collapsible": true,
+      "collapsible_default_open": false,
+      "label": "未来工作",
+      "prompt": "请总结论文提出的未来研究方向。",
+    },
+    {
+      "id": "custom_questions",
+      "name": "自定义问题",
+      "enabled": false,  // 默认禁用
+      "order": 11,
+      "format": "qa",  // 可选: "qa" | "list"
+      "format_options": ["qa", "list"],
+      "collapsible": true,
+      "collapsible_default_open": false,
+      "label": "自定义问题",
+      "questions": [],
+      // 自定义问题示例（供参考）:
+      // ["这篇论文是否提出了新的算法？", "是否包含实验验证？", "是否有开源代码？"]
+    }
+  ],
+
+  // AI提示词配置
+  "prompts": {
+    "analysis_system": "你是一名学术论文分析专家，请基于论文全文进行深度分析。分析应当专业、客观、准确。",
+    "analysis_template": "论文标题: {title}\n\n论文内容:\n{content}\n\n研究背景:\n{research_context}\n\n请按以下字段进行分析，输出JSON格式：\n{field_prompts}",
+    "field_output_format": "使用JSON格式输出，数组字段使用方括号[]，中文字段使用中文输出。",
+  },
+
+  // 布局配置
+  "layout": {
+    "section_title": "深度分析",
+    "show_as_collapsible": false,
+  }
+}

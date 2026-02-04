@@ -1,0 +1,124 @@
+{
+  // ============================================================
+  // 搜索配置文件 - 支持多数据源：ArXiv + 学术期刊
+  // ============================================================
+  // 搜索参数 - 控制搜索范围
+  "search_settings": {
+    "search_days": 7, // 搜索最近N天的论文。推荐：1(每日) | 7(每周) | 30(每月)
+    "max_results": 200, // 每个数据源最多抓取论文数。推荐：50-200
+  },
+  // 数据源配置 - 控制从哪些来源获取论文
+  "data_sources": {
+    // 启用的数据源列表
+    // 可选: arxiv, prl, pra, prb, prc, prd, pre, prx, prxq, rmp,
+    //      nature, nature_physics, nature_communications, science,
+    //      science_advances, npj_quantum_information, quantum, new_journal_of_physics
+    "enabled": [
+      "arxiv",
+      "prl"
+    ],
+    "journals": [], // 额外的期刊列表（除了 enabled 中指定的）
+    // 是否按数据源分目录存放报告
+    // true: data/reports/arxiv/, data/reports/prl/ 等
+    "reports_by_source": true,
+  },
+  // ArXiv目标领域配置 - 仅当启用arxiv时生效
+  "target_domains": {
+    // Arxiv分类代码列表。完整列表：https://arxiv.org/category_taxonomy
+    "domains": [
+      "quant-ph"
+    ]
+  },
+  // 关键词配置 - 主要和次要关键词及其权重
+  "keywords": {
+    // 主要关键词 - 手动指定，相同的高权重
+    "primary_keywords": {
+      "weight": 1.0, // 所有主要关键词使用相同权重
+      "keywords": [],
+    },
+    // 是否从 reference_pdfs 目录提取次要关键词
+    "enable_reference_extraction": true,
+    // Reference PDF 提取的关键词配置
+    "reference_keywords_config": {
+      "max_keywords": 10, // 从参考文献中最多提取多少个关键词
+      "similarity_threshold": 0.75, // 相似度阈值（0-1），超过此值视为相近关键词并去重
+      // 提取关键词的权重分配策略
+      "weight_distribution": {
+        "high_importance": {
+          "weight": 1.0,
+          "count": 3, // 最重要的3个关键词权重1.0
+        },
+        "medium_importance": {
+          "weight": 0.2,
+          "count": 5, // 次重要的5个关键词权重0.2
+        },
+        "low_importance": {
+          "weight": 0.1,
+          "count": 2, // 较次要的2个关键词权重0.1
+        }
+      }
+    },
+    "research_context": ""
+  },
+  // 评分设置 - 控制论文评分逻辑
+  "scoring_settings": {
+    // 关键词相关度评分设置
+    "keyword_relevance_score": {
+      "max_score_per_keyword": 10, // 每个关键词的最大相关度评分（0-10）
+    },
+    // 作者附加分配置
+    "author_bonus": {
+      "enabled": false,
+      "expert_authors": [], // 领域专家列表，论文包含这些作者会获得额外加分
+      "bonus_points": 5.0, // 每个专家作者的加分
+    },
+    // 动态及格分计算公式
+    // 公式：及格分 = base_score + weight_coefficient × Σ(关键词权重)
+    // 例如：5个主要关键词(权重1.0) → 及格分 = 5.0 + 3.0×5 = 20.0
+    "passing_score_formula": {
+      "base_score": 5.0, // 基础及格分
+      "weight_coefficient": 3.0, // 权重系数 α
+    },
+    "include_all_in_report": true, // 是否在报告中包含所有论文的评分结果
+  },
+  // 路径配置 - 自定义数据存储位置
+  "paths": {
+    "data_dir": "data",
+    "reference_pdfs": "data/reference_pdfs",
+    "reports": "data/reports",
+    "downloaded_pdfs": "data/downloaded_pdfs",
+    "history_dir": "data/history",
+  },
+  // 关键词趋势追踪配置
+  "keyword_tracker": {
+    "enabled": true, // 是否启用关键词趋势追踪（记录到数据库）
+    "database": {
+      "path": "data/keywords.db" // SQLite 数据库路径
+    },
+    "normalization": {
+      "enabled": true, // 是否启用 AI 关键词标准化
+      "batch_size": 50 // 每批处理的关键词数量
+    },
+    "trend_view": {
+      "default_days": 30 // 默认趋势展示天数
+    },
+    "charts": {
+      "bar_chart": {
+        "top_n": 15 // 柱状图显示的关键词数量
+      },
+      "trend_chart": {
+        "top_n": 5 // 趋势线图显示的关键词数量
+      }
+    },
+    // 趋势分析报告配置
+    "report": {
+      "enabled": true, // 是否生成趋势分析报告
+      // 报告生成频率: "daily" | "weekly" | "monthly" | "always"
+      // daily: 每天生成
+      // weekly: 每周一生成
+      // monthly: 每月1号生成
+      // always: 每次运行都生成
+      "frequency": "weekly"
+    }
+  }
+}
