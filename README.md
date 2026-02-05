@@ -151,11 +151,28 @@ SMART_LLM__MODEL_NAME=qwen2.5:14b
 
 ### 5. 运行
 
+**方式一：使用运行脚本（推荐）**
+
+脚本会自动检查并创建虚拟环境、安装依赖：
+
+```bash
+# Linux
+./run_daily.sh
+
+# macOS
+./run_daily_mac.sh
+
+# Windows PowerShell
+powershell -ExecutionPolicy Bypass -File run_daily.ps1
+```
+
+**方式二：手动运行**
+
 ```bash
 python main.py
 ```
 
-报告将生成在 `data/reports/` 目录。
+报告将生成在 `data/reports/` 目录，日志保存在 `logs/` 目录。
 
 ---
 

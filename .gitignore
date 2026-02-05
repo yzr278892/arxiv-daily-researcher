@@ -63,6 +63,7 @@ ipython_config.py
 .env.local
 .env.*.local
 !.env.example
+.env-copy
 
 # Logs
 logs/

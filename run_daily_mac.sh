@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ========================================
-# ArXiv 每日研究系统 - 定时运行脚本 (Linux)
+# ArXiv 每日研究系统 - 定时运行脚本 (macOS)
 # ========================================
 
 # 获取脚本所在目录的绝对路径
@@ -35,14 +35,20 @@ setup_venv() {
         echo "虚拟环境不存在，正在创建..." >> "$LOG_FILE"
         venv_dir="$SCRIPT_DIR/venv"
 
-        # 检查 python3 是否可用
-        if ! command -v python3 &> /dev/null; then
-            echo "ERROR: python3 未找到，请先安装 Python 3" >> "$LOG_FILE"
+        # 检查 python3 是否可用（macOS 优先检查 brew 安装的 python）
+        if command -v python3 &> /dev/null; then
+            PYTHON_CMD="python3"
+        elif command -v /usr/local/bin/python3 &> /dev/null; then
+            PYTHON_CMD="/usr/local/bin/python3"
+        elif command -v /opt/homebrew/bin/python3 &> /dev/null; then
+            PYTHON_CMD="/opt/homebrew/bin/python3"
+        else
+            echo "ERROR: python3 未找到，请先安装 Python 3 (推荐使用 brew install python3)" >> "$LOG_FILE"
             exit 1
         fi
 
         # 创建虚拟环境
-        python3 -m venv "$venv_dir" >> "$LOG_FILE" 2>&1
+        $PYTHON_CMD -m venv "$venv_dir" >> "$LOG_FILE" 2>&1
         if [ $? -ne 0 ]; then
             echo "ERROR: 创建虚拟环境失败" >> "$LOG_FILE"
             exit 1
