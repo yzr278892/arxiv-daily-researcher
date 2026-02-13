@@ -7,7 +7,6 @@ Semantic Scholar 数据增强器
 import logging
 import requests
 from typing import Optional, Dict
-from urllib.parse import quote
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +40,20 @@ class SemanticScholarEnricher:
                 "x-api-key": api_key
             })
 
+    def __enter__(self):
+        """支持上下文管理器"""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """退出时关闭Session"""
+        self.close()
+
+    def close(self):
+        """关闭网络连接"""
+        if self.session:
+            self.session.close()
+            logger.debug("SemanticScholar Session已关闭")
+
     def get_tldr(self, doi: str) -> Optional[str]:
         """
         获取论文的 AI 生成 TLDR。
@@ -65,7 +78,11 @@ class SemanticScholarEnricher:
 
             # 如果找不到论文，静默返回 None
             if response.status_code == 404:
-                logger.debug(f"Semantic Scholar 未找到论文: {clean_doi}")
+                logger.warning(f"⚠️  Semantic Scholar 未收录论文: DOI {clean_doi[:30]}... (可能因论文太新或未被索引)")
+                return None
+
+            if response.status_code == 429:
+                logger.warning(f"⚠️  Semantic Scholar API 限速 (429)，建议申请免费 API Key")
                 return None
 
             response.raise_for_status()
@@ -76,16 +93,23 @@ class SemanticScholarEnricher:
             if tldr_obj and isinstance(tldr_obj, dict):
                 tldr_text = tldr_obj.get("text", "")
                 if tldr_text:
-                    logger.debug(f"成功获取 TLDR: {clean_doi[:30]}...")
+                    logger.debug(f"✅ 成功获取 TLDR: {clean_doi[:30]}...")
                     return tldr_text
+                else:
+                    logger.debug(f"ℹ️  论文无 AI TLDR: {clean_doi[:30]}...")
+            else:
+                logger.debug(f"ℹ️  论文无 AI TLDR: {clean_doi[:30]}...")
 
             return None
 
+        except requests.exceptions.Timeout:
+            logger.warning(f"⚠️  Semantic Scholar API 超时: {clean_doi[:30]}...")
+            return None
         except requests.exceptions.RequestException as e:
-            logger.debug(f"Semantic Scholar API 请求失败: {e}")
+            logger.warning(f"⚠️  Semantic Scholar API 请求失败: {e}")
             return None
         except Exception as e:
-            logger.debug(f"获取 TLDR 失败: {e}")
+            logger.warning(f"⚠️  获取 TLDR 异常: {e}")
             return None
 
     def get_paper_info(self, doi: str) -> Optional[Dict]:
@@ -142,7 +166,7 @@ class SemanticScholarEnricher:
             return result if result else None
 
         except Exception as e:
-            logger.debug(f"获取 Semantic Scholar 信息失败: {e}")
+            logger.warning(f"获取 Semantic Scholar 信息失败: {e}")
             return None
 
     def get_arxiv_id(self, doi: str) -> Optional[str]:

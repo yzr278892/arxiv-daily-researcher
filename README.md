@@ -364,6 +364,55 @@ CHEAP_LLM__MODEL_NAME=glm-4-flash
 
 ---
 
+## 📝 更新日志
+
+### v1.2 (最新) - 2026-02-08
+
+**重要修复：**
+
+1. **修复OpenAlex源缩进错误** - 修复了[openalex_source.py:356-377](agents/sources/openalex_source.py#L356-L377)的缩进问题，该错误导致标题、作者、摘要提取代码无法执行
+
+**性能优化：**
+
+2. **翻译缓存机制** - 新增MD5哈希缓存，避免同一论文（arXiv+期刊重复）重复翻译摘要，可节省大量API调用
+   - 位置：[main.py:129-209](main.py#L129-L209)
+   - 效果：当论文同时出现在arXiv和期刊时，只翻译一次
+
+3. **KeywordTracker实例优化** - 将KeywordTracker移到循环外初始化，减少数据库连接开销
+   - 位置：[main.py:118-127](main.py#L118-L127)
+
+**功能增强：**
+
+4. **ArXiv优先策略** - 当期刊论文有arXiv版本时，优先使用ArXiv API获取完整元数据
+   - 位置：[openalex_source.py:435-447](agents/sources/openalex_source.py#L435-L447)
+   - 优势：规避期刊版权限制，获取完整摘要和可下载PDF
+   - 日志标识：`🔄 检测到 arXiv 版本` / `✅ 使用 arXiv 源获取完整元数据`
+
+5. **增强的Semantic Scholar集成** - 改进arXiv版本检测逻辑，同时获取TLDR和arXiv信息
+
+### v1.1 - 2026-02-05
+
+**运行脚本更新：**
+
+- 添加虚拟环境自动检查和安装功能
+- 新增 macOS 运行脚本 (run_daily_mac.sh)
+- 新增 Windows PowerShell 运行脚本 (run_daily.ps1)
+- 增强 Linux 运行脚本 (run_daily.sh)
+- 更新 .gitignore 和配置文件
+
+### v1.0 - 2026-02-06
+
+**首次正式发布：**
+
+- 多数据源支持（ArXiv + 学术期刊）
+- 智能评分系统（关键词加权）
+- 深度 PDF 分析（LLM 驱动）
+- 关键词趋势追踪系统
+- AI 关键词标准化
+- Markdown 报告生成
+
+---
+
 ## 🤝 API 使用说明
 
 本项目遵循各 API 提供者的使用规范：

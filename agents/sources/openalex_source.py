@@ -7,11 +7,12 @@ OpenAlex 期刊数据源
 
 import json
 import logging
+import re
+import traceback
 import requests
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Dict, Optional
-from urllib.parse import quote
 
 from .base_source import BasePaperSource, PaperMetadata
 
@@ -153,6 +154,20 @@ class OpenAlexSource(BasePaperSource):
             "User-Agent": "ArxivDailyResearcher/2.0 (https://github.com/yzr278892/arxiv-daily-researcher; yzr278892@gmail.com)"
         })
 
+    def __enter__(self):
+        """支持上下文管理器"""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """退出时关闭Session"""
+        self.close()
+
+    def close(self):
+        """关闭网络连接"""
+        if self.session:
+            self.session.close()
+            logger.debug("OpenAlex Session已关闭")
+
     @property
     def display_name(self) -> str:
         return "OpenAlex"
@@ -224,6 +239,61 @@ class OpenAlexSource(BasePaperSource):
         logger.info(f"[OpenAlex] 总计发现 {len(all_papers)} 篇新论文")
         return all_papers
 
+    def _fetch_from_arxiv(self, arxiv_id: str, journal_code: str, journal_name: str, doi: str) -> Optional[PaperMetadata]:
+        """
+        通过 arXiv ID 从 ArXiv 获取论文元数据。
+
+        参数:
+            arxiv_id: arXiv ID
+            journal_code: 期刊代码
+            journal_name: 期刊全名
+            doi: DOI
+
+        返回:
+            Optional[PaperMetadata]: 论文元数据，失败时返回 None
+        """
+        try:
+            import arxiv
+
+            # 使用 arXiv API 获取论文
+            search = arxiv.Search(id_list=[arxiv_id])
+            client = arxiv.Client(
+                page_size=1,
+                delay_seconds=3.0,
+                num_retries=2
+            )
+
+            results = list(client.results(search))
+            if not results:
+                logger.warning(f"    ⚠️  arXiv API 未找到论文: {arxiv_id}")
+                return None
+
+            result = results[0]
+
+            # 转换为统一格式，保留期刊信息
+            metadata = PaperMetadata(
+                paper_id=result.get_short_id(),
+                title=result.title,
+                authors=[author.name for author in result.authors],
+                abstract=result.summary,  # arXiv 提供完整摘要
+                published_date=result.published,
+                url=result.entry_id,
+                source=journal_code,  # 保留期刊代码
+                pdf_url=result.pdf_url,
+                doi=doi,  # 使用期刊的 DOI
+                journal=journal_name,  # 标注期刊名称
+                arxiv_id=arxiv_id,
+                arxiv_url=result.entry_id,
+                categories=list(result.categories) if result.categories else []
+            )
+
+            logger.info(f"    ✅ [{result.title[:30]}...] 使用 arXiv 源获取完整元数据 (arXiv:{arxiv_id})")
+            return metadata
+
+        except Exception as e:
+            logger.warning(f"    ⚠️  从 arXiv 获取论文失败 ({arxiv_id}): {e}")
+            return None
+
     def _fetch_journal_papers(
         self,
         issn_list: List[str],
@@ -249,28 +319,42 @@ class OpenAlexSource(BasePaperSource):
         issn_filter = "|".join(issn_list)
 
         url = f"{self.API_BASE_URL}/works"
-        params = {
-            "filter": f"primary_location.source.issn:{issn_filter},from_publication_date:{from_date}",
-            "per_page": min(self.max_results, 200),
-            "sort": "publication_date:desc",
-            "select": "id,doi,title,authorships,abstract_inverted_index,publication_date,primary_location,open_access,locations"
-        }
 
-        # 添加邮箱或API Key
+        # 添加邮箱或API Key到基础参数
+        base_params = {}
         if self.api_key:
-            params["api_key"] = self.api_key
+            base_params["api_key"] = self.api_key
         elif self.email:
-            params["mailto"] = self.email
+            base_params["mailto"] = self.email
+
+        # 实现分页逻辑，支持获取超过200条的结果
+        page = 1
+        per_page = min(200, self.max_results)  # OpenAlex单页最大200
+        total_fetched = 0
 
         try:
-            response = self.session.get(url, params=params, timeout=30)
-            response.raise_for_status()
-            data = response.json()
+            while total_fetched < self.max_results:
+                params = {
+                    "filter": f"primary_location.source.issn:{issn_filter},from_publication_date:{from_date}",
+                    "per_page": per_page,
+                    "page": page,
+                    "sort": "publication_date:desc",
+                    "select": "id,doi,title,authorships,abstract_inverted_index,publication_date,primary_location,open_access,locations,best_oa_location,ids"
+                }
+                params.update(base_params)
 
-            results = data.get("results", [])
+                logger.debug(f"  正在获取第 {page} 页...")
+                response = self.session.get(url, params=params, timeout=30)
+                response.raise_for_status()
+                data = response.json()
 
-            for item in results:
-                doi = item.get("doi")
+                results = data.get("results", [])
+                if not results:
+                    logger.debug(f"  第 {page} 页无更多结果，停止分页")
+                    break
+
+                for item in results:
+                    doi = item.get("doi")
                 if not doi:
                     # 使用 OpenAlex ID 作为后备
                     openalex_id = item.get("id", "").replace("https://openalex.org/", "")
@@ -287,81 +371,109 @@ class OpenAlexSource(BasePaperSource):
                 if not title or title == "Untitled":
                     continue
 
-                # 清理标题（移除可能的HTML标签）
-                import re
-                title = re.sub(r'<[^>]+>', '', title)
-                title = re.sub(r'\s+', ' ', title).strip()
+                    # 清理标题（移除可能的HTML标签）
+                    title = re.sub(r'<[^>]+>', '', title)
+                    title = re.sub(r'\s+', ' ', title).strip()
 
-                # 提取作者
-                authors = []
-                authorships = item.get("authorships", [])
-                for authorship in authorships[:20]:  # 最多20个作者
-                    author = authorship.get("author", {})
-                    display_name = author.get("display_name")
-                    if display_name:
-                        authors.append(display_name)
+                    # 提取作者
+                    authors = []
+                    authorships = item.get("authorships", [])
+                    for authorship in authorships[:20]:  # 最多20个作者
+                        author = authorship.get("author", {})
+                        display_name = author.get("display_name")
+                        if display_name:
+                            authors.append(display_name)
 
-                # 提取并重建摘要
-                abstract = ""
-                inverted_index = item.get("abstract_inverted_index")
-                if inverted_index:
-                    abstract = self._rebuild_abstract(inverted_index)
+                    # 提取并重建摘要
+                    abstract = ""
+                    inverted_index = item.get("abstract_inverted_index")
+                    if inverted_index:
+                        abstract = self._rebuild_abstract(inverted_index)
+                        logger.debug(f"    ✅ [{title[:30]}...] 成功获取摘要")
+                    else:
+                        logger.warning(f"    ⚠️  [{title[:30]}...] OpenAlex 未提供摘要数据 (可能因期刊版权限制)")
 
-                # 提取发布日期
-                pub_date_str = item.get("publication_date")
-                published_date = self._parse_date(pub_date_str)
+                    # 提取发布日期
+                    pub_date_str = item.get("publication_date")
+                    published_date = self._parse_date(pub_date_str)
 
-                # 提取 URL
-                landing_page_url = doi if doi.startswith("http") else f"https://doi.org/{doi.replace('openalex:', '')}"
-                primary_location = item.get("primary_location", {})
-                if primary_location and primary_location.get("landing_page_url"):
-                    landing_page_url = primary_location["landing_page_url"]
+                    # 提取 URL
+                    landing_page_url = doi if doi.startswith("http") else f"https://doi.org/{doi.replace('openalex:', '')}"
+                    primary_location = item.get("primary_location", {})
+                    if primary_location and primary_location.get("landing_page_url"):
+                        landing_page_url = primary_location["landing_page_url"]
 
-                # 提取 PDF URL（如果开放获取）
-                pdf_url = None
-                open_access = item.get("open_access", {})
-                if open_access.get("is_oa") and open_access.get("oa_url"):
-                    pdf_url = open_access["oa_url"]
+                    # 提取 PDF URL（如果开放获取）
+                    pdf_url = None
+                    open_access = item.get("open_access", {})
+                    if open_access.get("is_oa") and open_access.get("oa_url"):
+                        pdf_url = open_access["oa_url"]
+                        logger.debug(f"    ✅ [{title[:30]}...] 找到开放获取 PDF")
 
-                # 从 locations 提取 arXiv 信息
-                arxiv_id = None
-                arxiv_url = None
-                locations = item.get("locations", [])
-                for loc in locations:
-                    source_info = loc.get("source", {})
-                    if source_info:
-                        source_name = source_info.get("display_name", "")
-                        # 检查是否是 arXiv 来源
-                        if "arxiv" in source_name.lower():
-                            loc_url = loc.get("landing_page_url", "")
-                            if loc_url and "arxiv.org" in loc_url:
-                                arxiv_url = loc_url
-                                # 从 URL 提取 arXiv ID (如 https://arxiv.org/abs/2401.12345)
-                                if "/abs/" in loc_url:
-                                    arxiv_id = loc_url.split("/abs/")[-1].split("v")[0]  # 移除版本号
-                                elif "/pdf/" in loc_url:
-                                    arxiv_id = loc_url.split("/pdf/")[-1].replace(".pdf", "").split("v")[0]
-                                # 设置 PDF URL 为 arXiv PDF
-                                if arxiv_id and not pdf_url:
-                                    pdf_url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"
+                    # 从 locations 提取 arXiv 信息（使用正则表达式提高健壮性）
+                    arxiv_id = None
+                    arxiv_url = None
+                    locations = item.get("locations", [])
+                    for loc in locations:
+                        source_info = loc.get("source", {})
+                        if source_info:
+                            source_name = source_info.get("display_name", "")
+                            # 检查是否是 arXiv 来源
+                            if "arxiv" in source_name.lower():
+                                loc_url = loc.get("landing_page_url", "")
+                                if loc_url and "arxiv.org" in loc_url:
+                                    arxiv_url = loc_url
+                                    # 使用正则表达式提取 arXiv ID，更健壮
+                                    try:
+                                        match = re.search(r'arxiv\.org/(?:abs|pdf)/(\d{4}\.\d{4,5})', loc_url)
+                                        if match:
+                                            arxiv_id = match.group(1)
+                                    except Exception as e:
+                                        logger.debug(f"arXiv ID提取失败: {e}")
+                                    break
+
+                    # 🎯 优先策略：如果找到 arXiv 版本，使用 ArXiv 源获取完整元数据
+                    if arxiv_id:
+                        logger.info(f"    🔄 [{title[:30]}...] 检测到 arXiv 版本: {arxiv_id}，转而使用 ArXiv 源获取完整元数据")
+                        arxiv_metadata = self._fetch_from_arxiv(arxiv_id, journal_code, journal_name, doi)
+                        if arxiv_metadata:
+                            papers.append(arxiv_metadata)
+                            total_fetched += 1
+                            if total_fetched >= self.max_results:
                                 break
+                            continue  # 跳过 OpenAlex 的元数据提取，直接处理下一篇论文
+                        else:
+                            logger.warning(f"    ⚠️  从 ArXiv 获取失败，回退到 OpenAlex 元数据")
+                            # 继续使用 OpenAlex 数据
+                    else:
+                        logger.debug(f"    ℹ️  [{title[:30]}...] 未找到 arXiv 版本，使用 OpenAlex 元数据")
 
-                # 构建论文元数据
-                metadata = PaperMetadata(
-                    paper_id=doi,
-                    title=title,
-                    authors=authors,
-                    abstract=abstract,
-                    published_date=published_date,
-                    url=landing_page_url,
-                    source=journal_code,  # 使用期刊代码作为 source
-                    pdf_url=pdf_url,
-                    doi=doi if not doi.startswith("openalex:") else None,
-                    journal=journal_name,
-                    arxiv_id=arxiv_id,
-                    arxiv_url=arxiv_url
-                )
-                papers.append(metadata)
+                    # 构建论文元数据
+                    metadata = PaperMetadata(
+                        paper_id=doi,
+                        title=title,
+                        authors=authors,
+                        abstract=abstract,
+                        published_date=published_date,
+                        url=landing_page_url,
+                        source=journal_code,  # 使用期刊代码作为 source
+                        pdf_url=pdf_url,
+                        doi=doi if not doi.startswith("openalex:") else None,
+                        journal=journal_name,
+                        arxiv_id=arxiv_id,
+                        arxiv_url=arxiv_url
+                    )
+                    papers.append(metadata)
+                    total_fetched += 1
+
+                    if total_fetched >= self.max_results:
+                        break
+
+                # 检查是否还有更多页
+                page += 1
+                if total_fetched >= self.max_results:
+                    logger.debug(f"  已达到最大结果数 {self.max_results}，停止分页")
+                    break
 
         except requests.exceptions.RequestException as e:
             logger.error(f"OpenAlex API 请求失败: {e}")
@@ -369,9 +481,9 @@ class OpenAlexSource(BasePaperSource):
             logger.error(f"OpenAlex API 响应解析失败: {e}")
         except Exception as e:
             logger.error(f"OpenAlex 数据处理失败: {e}")
-            import traceback
             traceback.print_exc()
 
+        logger.info(f"  共获取 {len(papers)} 篇论文（分 {page} 页）")
         return papers
 
     def _rebuild_abstract(self, inverted_index: Dict[str, List[int]]) -> str:
@@ -396,6 +508,12 @@ class OpenAlexSource(BasePaperSource):
             for positions in inverted_index.values():
                 if positions:
                     max_position = max(max_position, max(positions))
+
+            # 防止内存溢出：限制最大position值
+            MAX_ALLOWED_POSITION = 50000  # 约50KB的文本
+            if max_position > MAX_ALLOWED_POSITION:
+                logger.warning(f"摘要position过大 ({max_position})，可能数据损坏，截断到 {MAX_ALLOWED_POSITION}")
+                max_position = MAX_ALLOWED_POSITION
 
             # 创建位置数组
             words_array = [""] * (max_position + 1)

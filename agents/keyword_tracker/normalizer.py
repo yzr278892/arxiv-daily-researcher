@@ -100,10 +100,31 @@ class KeywordNormalizer:
             )
 
             content = response.choices[0].message.content
-            data = json.loads(content)
+
+            # 🆕 优化：检查content是否为空
+            if not content or not content.strip():
+                logger.warning(f"LLM返回空内容，关键词: {keywords[:3]}...")
+                raise ValueError("LLM返回空内容")
+
+            # 🆕 优化：添加详细日志用于调试
+            logger.debug(f"LLM返回内容前100字符: {content[:100]}")
+
+            try:
+                data = json.loads(content)
+            except json.JSONDecodeError as e:
+                # 🆕 优化：记录导致错误的原始内容
+                logger.error(f"JSON 解析失败: {e}")
+                logger.error(f"原始内容: {content[:500]}")
+                raise
 
             results = []
             normalizations = data.get("normalizations", [])
+
+            # 🆕 优化：检查返回数据格式
+            if not normalizations:
+                logger.warning(f"LLM返回空的normalizations列表")
+                # 返回空结果，让上层处理
+                raise ValueError("返回的normalizations为空")
 
             for norm in normalizations:
                 results.append(NormalizationResult(
