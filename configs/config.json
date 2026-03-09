@@ -20,7 +20,7 @@
     ],
     "journals": [], // 额外的期刊列表（除了 enabled 中指定的）
     // 是否按数据源分目录存放报告
-    // true: data/reports/arxiv/, data/reports/prl/ 等
+    // true: data/daily_reports/arxiv/, data/daily_reports/prl/ 等
     "reports_by_source": true,
   },
   // ArXiv目标领域配置 - 仅当启用arxiv时生效
@@ -185,5 +185,32 @@
   // 自动更新配置 - 每次运行前检查 GitHub 仓库是否有新版本
   "auto_update": {
     "enabled": true // 是否启用自动更新检查（默认开启）
+  },
+  // token 消耗统计配置 - 统计本次运行所有 LLM 调用的 token 消耗
+  "token_tracking": {
+    "enabled": true // 是否在报告和通知中显示 token 消耗统计（默认开启）
+  },
+  // ============================================================
+  // 研究趋势分析模式配置 (--mode research_trend)
+  // ============================================================
+  "trend_research": {
+    "default_date_range_days": 365, // 默认搜索时间范围（天），CLI 未指定 --date-from 时使用
+    "max_results": 500, // 最大论文数（安全上限，0 = 不限制）
+    "sort_order": "ascending", // 时间排序："ascending"(旧→新) 或 "descending"(新→旧)
+    "report_position": "end", // 趋势分析报告位置："beginning"(报告开头) 或 "end"(报告末尾)
+    "generate_tldr": true, // 是否为每篇论文生成 LLM TLDR
+    "tldr_batch_size": 10, // TLDR 批量并发数
+    "output_formats": [
+      "markdown",
+      "html"
+    ], // 输出格式
+    // 启用的趋势分析技能（对应 trend_skills.json 中的技能 ID）
+    "enabled_skills": [
+      "temporal_evolution", // 技术发展时间线
+      "hot_topics", // 热点话题聚类
+      "key_authors", // 核心研究者分析
+      "research_gaps", // 研究空白识别
+      "methodology_trends" // 方法论趋势
+    ]
   }
 }

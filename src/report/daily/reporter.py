@@ -58,7 +58,7 @@ class Reporter:
     """
 
     def __init__(self):
-        self.report_base_dir = settings.REPORTS_DIR
+        self.report_base_dir = settings.REPORTS_DIR / "daily_research"
 
         # 加载模板
         self.basic_template = settings.load_report_template("basic_report_template.json")
@@ -78,6 +78,7 @@ class Reporter:
         scored_papers_by_source: Dict[str, List[Dict[str, Any]]],
         keywords_dict: Dict[str, float],
         analyses_by_source: Dict[str, List[Dict[str, Any]]] = None,
+        token_usage: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Path]:
         """
         按数据源生成分开的报告。
@@ -126,6 +127,7 @@ class Reporter:
                 keywords_dict=keywords_dict,
                 analyses=analyses,
                 has_deep_analysis=has_deep_analysis,
+                token_usage=token_usage,
             )
 
             report_paths[source] = filepath
@@ -149,6 +151,7 @@ class Reporter:
                     keywords_dict=keywords_dict,
                     analyses=analyses,
                     has_deep_analysis=has_deep_analysis,
+                    token_usage=token_usage,
                 )
                 if html_path:
                     report_paths[f"{source}_html"] = html_path
@@ -164,6 +167,7 @@ class Reporter:
         keywords_dict: Dict[str, float],
         analyses: List[Dict[str, Any]],
         has_deep_analysis: bool,
+        token_usage: Optional[Dict[str, Any]] = None,
     ):
         """生成单个数据源的报告"""
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -246,6 +250,25 @@ class Reporter:
                     unqualified_icon=unqualified_icon,
                 )
                 lines.extend(paper_lines)
+
+        # ========== Token 消耗统计 ==========
+        if settings.TOKEN_TRACKING_ENABLED and token_usage and token_usage.get("has_data"):
+            total = token_usage.get("total", 0)
+            tp = token_usage.get("total_prompt", 0)
+            tc = token_usage.get("total_completion", 0)
+            by_model = token_usage.get("by_model", {})
+            lines.append("## Token 消耗统计")
+            lines.append("")
+            lines.append(f"- **总计**: {total:,} tokens（输入 {tp:,} / 输出 {tc:,}）")
+            if len(by_model) > 1:
+                lines.append("")
+                lines.append("| 模型 | 输入 | 输出 | 合计 |")
+                lines.append("|------|------|------|------|")
+                for model, usage in by_model.items():
+                    lines.append(
+                        f"| {model} | {usage['prompt']:,} | {usage['completion']:,} | {usage['total']:,} |"
+                    )
+            lines.append("")
 
         # 写入文件
         try:
@@ -406,6 +429,7 @@ class Reporter:
         keywords_dict: Dict[str, float],
         analyses: List[Dict[str, Any]],
         has_deep_analysis: bool,
+        token_usage: Optional[Dict[str, Any]] = None,
     ) -> Optional[Path]:
         """生成 HTML 格式报告"""
         html_path = filepath
@@ -595,6 +619,17 @@ class Reporter:
                 parts.append("</div></details>")
 
             parts.append("</div>")  # card
+
+        # Token 消耗统计
+        if settings.TOKEN_TRACKING_ENABLED and token_usage and token_usage.get("has_data"):
+            total = token_usage.get("total", 0)
+            tp = token_usage.get("total_prompt", 0)
+            tc = token_usage.get("total_completion", 0)
+            parts.append(
+                f'<p class="meta" style="margin-top:24px;border-top:1px solid #e5e7eb;padding-top:12px;">'
+                f"Token 消耗: <strong>{total:,}</strong> tokens"
+                f"（输入 {tp:,} / 输出 {tc:,}）</p>"
+            )
 
         parts.append("</body></html>")
 

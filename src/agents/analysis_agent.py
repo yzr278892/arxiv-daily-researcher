@@ -114,6 +114,14 @@ class AnalysisAgent:
                 temperature=settings.CHEAP_LLM.temperature,
                 response_format={"type": "json_object"},
             )
+            if settings.TOKEN_TRACKING_ENABLED and resp.usage:
+                from utils.token_counter import token_counter
+
+                token_counter.add(
+                    settings.CHEAP_LLM.model_name,
+                    resp.usage.prompt_tokens,
+                    resp.usage.completion_tokens,
+                )
             return resp.choices[0].message.content
 
         return _do_call()
@@ -133,6 +141,14 @@ class AnalysisAgent:
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.3,
             )
+            if settings.TOKEN_TRACKING_ENABLED and resp.usage:
+                from utils.token_counter import token_counter
+
+                token_counter.add(
+                    settings.CHEAP_LLM.model_name,
+                    resp.usage.prompt_tokens,
+                    resp.usage.completion_tokens,
+                )
             return resp.choices[0].message.content.strip()
 
         return _do_call()
@@ -153,6 +169,14 @@ class AnalysisAgent:
                 temperature=settings.SMART_LLM.temperature,
                 response_format={"type": "json_object"},
             )
+            if settings.TOKEN_TRACKING_ENABLED and resp.usage:
+                from utils.token_counter import token_counter
+
+                token_counter.add(
+                    settings.SMART_LLM.model_name,
+                    resp.usage.prompt_tokens,
+                    resp.usage.completion_tokens,
+                )
             return resp.choices[0].message.content
 
         return _do_call()

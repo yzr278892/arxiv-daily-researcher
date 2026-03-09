@@ -52,3 +52,51 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+  # ==================== Config Panel (Web UI) ====================
+  # 启动方式: docker compose --profile webui up -d config-panel
+  config-panel:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.webui
+    container_name: arxiv-config-panel
+    restart: unless-stopped
+    profiles:
+      - webui
+
+    ports:
+      - "8501:8501"
+
+    env_file:
+      - ../.env
+
+    environment:
+      - TZ=Asia/Shanghai
+
+    volumes:
+      # 配置文件 (读写挂载，面板需要写入)
+      - ../configs:/app/configs
+      # .env 文件 (读写挂载)
+      - ../.env:/app/.env
+      # .env.example 模板 (只读)
+      - ../.env.example:/app/.env.example:ro
+
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8501/_stcore/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"

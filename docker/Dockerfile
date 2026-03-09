@@ -11,9 +11,9 @@ ENV TZ=Asia/Shanghai \
 # Install system dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        cron \
-        tzdata \
-        curl \
+    cron \
+    tzdata \
+    curl \
     && rm -rf /var/lib/apt/lists/* \
     && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime \
     && echo $TZ > /etc/timezone
@@ -37,9 +37,14 @@ COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 # Create data directories with proper permissions
-RUN mkdir -p /app/data/reports /app/data/history \
-             /app/data/reference_pdfs /app/data/downloaded_pdfs \
-             /app/logs \
+RUN mkdir -p /app/data/reports/daily_research/markdown \
+             /app/data/reports/daily_research/html \
+             /app/data/reports/trend_research/markdown \
+             /app/data/reports/trend_research/html \
+             /app/data/reports/keyword_trend/markdown \
+             /app/data/reports/keyword_trend/html \
+             /app/data/history /app/data/reference_pdfs \
+             /app/data/downloaded_pdfs /app/logs \
     && chmod -R 777 /app/data /app/logs
 
 # Health check

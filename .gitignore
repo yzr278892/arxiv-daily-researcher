@@ -39,3 +39,6 @@ Thumbs.db
 *.tmp
 *.swp
 *~
+
+# test
+test/

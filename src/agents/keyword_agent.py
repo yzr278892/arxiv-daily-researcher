@@ -323,6 +323,14 @@ class KeywordAgent:
                     temperature=0.3,
                     response_format={"type": "json_object"},
                 )
+                if settings.TOKEN_TRACKING_ENABLED and response.usage:
+                    from utils.token_counter import token_counter
+
+                    token_counter.add(
+                        settings.CHEAP_LLM.model_name,
+                        response.usage.prompt_tokens,
+                        response.usage.completion_tokens,
+                    )
                 content = response.choices[0].message.content
 
                 # 处理可能的非标准JSON输出包装（去除 markdown 代码块）

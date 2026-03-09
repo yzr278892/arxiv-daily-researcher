@@ -17,7 +17,13 @@ echo "Cron Schedule: $CRON_SCHEDULE"
 echo "Run on Startup: $RUN_ON_STARTUP"
 
 # Ensure data directories exist
-mkdir -p /app/data/reports /app/data/history \
+mkdir -p /app/data/reports/daily_research/markdown \
+         /app/data/reports/daily_research/html \
+         /app/data/reports/trend_research/markdown \
+         /app/data/reports/trend_research/html \
+         /app/data/reports/keyword_trend/markdown \
+         /app/data/reports/keyword_trend/html \
+         /app/data/history \
          /app/data/reference_pdfs /app/data/downloaded_pdfs \
          /app/logs
 

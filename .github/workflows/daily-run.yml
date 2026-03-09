@@ -73,7 +73,14 @@ jobs:
             research-data-
 
       - name: Create data directories
-        run: mkdir -p data/reports data/history data/reference_pdfs data/downloaded_pdfs logs
+        run: |
+          mkdir -p data/reports/daily_research/markdown \
+                   data/reports/daily_research/html \
+                   data/reports/trend_research/markdown \
+                   data/reports/trend_research/html \
+                   data/reports/keyword_trend/markdown \
+                   data/reports/keyword_trend/html \
+                   data/history data/reference_pdfs data/downloaded_pdfs logs
 
       - name: Run research pipeline
         run: python main.py

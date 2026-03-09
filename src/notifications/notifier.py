@@ -37,8 +37,12 @@ import requests
 logger = logging.getLogger(__name__)
 
 # 模板目录
-TEMPLATE_DIR = Path(__file__).resolve().parent.parent.parent / "configs" / "templates" / "notifications"
-EMAIL_TEMPLATE_DIR = Path(__file__).resolve().parent.parent.parent / "configs" / "templates" / "email"
+TEMPLATE_DIR = (
+    Path(__file__).resolve().parent.parent.parent / "configs" / "templates" / "notifications"
+)
+EMAIL_TEMPLATE_DIR = (
+    Path(__file__).resolve().parent.parent.parent / "configs" / "templates" / "email"
+)
 
 
 def _load_template(name: str) -> Optional[str]:
@@ -123,6 +127,24 @@ class RunResult:
     success: bool = True
     error_message: Optional[str] = None
     top_papers: List[Dict[str, Any]] = field(default_factory=list)
+    token_usage: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class TrendRunResult:
+    """研究趋势分析运行结果摘要"""
+
+    run_timestamp: str = ""
+    keywords: List[str] = field(default_factory=list)
+    date_from: str = ""
+    date_to: str = ""
+    total_papers: int = 0
+    tldr_count: int = 0
+    trend_skills_count: int = 0
+    report_paths: Dict[str, str] = field(default_factory=dict)
+    success: bool = True
+    error_message: Optional[str] = None
+    token_usage: Dict[str, Any] = field(default_factory=dict)
 
 
 class BaseNotifier(ABC):
@@ -378,6 +400,37 @@ class NotifierAgent:
                 logger.warning(f"通知发送失败 ({type(notifier).__name__}): {e}")
 
     # ------------------------------------------------------------------
+    # 研究趋势分析结果通知
+    # ------------------------------------------------------------------
+
+    def notify_trend(self, result: TrendRunResult) -> None:
+        """格式化并发送研究趋势分析结果通知到所有已配置的渠道"""
+        if not self.notifiers:
+            logger.debug("未配置任何通知渠道，跳过")
+            return
+
+        if result.success and not self.settings.NOTIFY_ON_SUCCESS:
+            return
+        if not result.success and not self.settings.NOTIFY_ON_FAILURE:
+            return
+
+        subject = self._format_trend_subject(result)
+        body = self._format_trend_body(result)
+        html_body = self._format_trend_html_body(result)
+        attachments = (
+            self._collect_trend_attachments(result) if self.settings.NOTIFY_ATTACH_REPORTS else []
+        )
+
+        for notifier in self.notifiers:
+            try:
+                if isinstance(notifier, EmailNotifier) and html_body:
+                    notifier.send(subject, body, attachments, html_body=html_body)
+                else:
+                    notifier.send(subject, body, attachments)
+            except Exception as e:
+                logger.warning(f"趋势通知发送失败 ({type(notifier).__name__}): {e}")
+
+    # ------------------------------------------------------------------
     # 错误告警通知
     # ------------------------------------------------------------------
 
@@ -427,6 +480,33 @@ class NotifierAgent:
     # ------------------------------------------------------------------
     # 格式化辅助方法
     # ------------------------------------------------------------------
+
+    def _format_token_section_md(self, token_usage: Dict[str, Any]) -> str:
+        """格式化 token 消耗为 Markdown 片段（tracking 未开启或无数据返回空字符串）"""
+        if not self.settings.TOKEN_TRACKING_ENABLED:
+            return ""
+        if not token_usage or not token_usage.get("has_data"):
+            return ""
+        total = token_usage.get("total", 0)
+        tp = token_usage.get("total_prompt", 0)
+        tc = token_usage.get("total_completion", 0)
+        return f"> Token 消耗: **{total:,}** tokens（输入 {tp:,} / 输出 {tc:,}）"
+
+    def _format_token_section_html(self, token_usage: Dict[str, Any]) -> str:
+        """格式化 token 消耗为 HTML 行片段（tracking 未开启或无数据返回空字符串）"""
+        if not self.settings.TOKEN_TRACKING_ENABLED:
+            return ""
+        if not token_usage or not token_usage.get("has_data"):
+            return ""
+        total = token_usage.get("total", 0)
+        tp = token_usage.get("total_prompt", 0)
+        tc = token_usage.get("total_completion", 0)
+        return (
+            f'<tr><td style="padding:4px 32px 16px;">'
+            f'<p style="margin:0;font-size:12px;color:#9ca3af;">'
+            f'Token 消耗: <strong style="color:#6b7280;">{total:,}</strong> tokens'
+            f'（输入 {tp:,} / 输出 {tc:,}）</p></td></tr>'
+        )
 
     def _format_subject(self, result: RunResult) -> str:
         status = "SUCCESS" if result.success else "FAILED"
@@ -484,6 +564,7 @@ class NotifierAgent:
                 report_list=report_list,
                 top_papers=top_papers,
                 error_message=result.error_message or "无",
+                token_usage_section=self._format_token_section_md(result.token_usage),
             )
 
         # 模板不存在时降级为纯文本
@@ -565,6 +646,7 @@ class NotifierAgent:
             top_papers_html=top_papers_html,
             report_list_html=report_list_html,
             error_message=self._html_escape(result.error_message or "无"),
+            token_usage_html=self._format_token_section_html(result.token_usage),
         )
 
     def _format_html_error_body(self, template_name: str, **kwargs) -> Optional[str]:
@@ -703,6 +785,132 @@ class NotifierAgent:
         """收集报告文件作为邮件附件"""
         attachments = []
         for source, path_str in result.report_paths.items():
+            path = Path(path_str)
+            if path.exists() and path.is_file():
+                attachments.append(path)
+        return attachments
+
+    # ------------------------------------------------------------------
+    # 研究趋势通知格式化
+    # ------------------------------------------------------------------
+
+    def _format_trend_subject(self, result: TrendRunResult) -> str:
+        status = "SUCCESS" if result.success else "FAILED"
+        keywords_str = ", ".join(result.keywords)
+        return f"ArXiv Trend Research - {status} ({keywords_str}) ({result.run_timestamp})"
+
+    def _format_trend_body(self, result: TrendRunResult) -> str:
+        """使用模板格式化趋势分析通知正文"""
+        template_name = "research_success" if result.success else "research_failure"
+        template = _load_template(template_name)
+
+        keywords_str = ", ".join(result.keywords)
+        date_range = f"{result.date_from} ~ {result.date_to}"
+
+        # 报告路径
+        report_lines = []
+        if result.report_paths:
+            report_lines.append("**报告路径**")
+            for fmt, path in result.report_paths.items():
+                report_lines.append(f"> `{fmt}` {path}")
+        report_list = "\n".join(report_lines)
+
+        if template:
+            return _render_template(
+                template,
+                status="SUCCESS" if result.success else "FAILED",
+                timestamp=result.run_timestamp,
+                keywords=keywords_str,
+                date_range=date_range,
+                total_papers=result.total_papers,
+                tldr_count=result.tldr_count,
+                trend_skills_count=result.trend_skills_count,
+                report_list=report_list,
+                error_message=result.error_message or "无",
+                token_usage_section=self._format_token_section_md(result.token_usage),
+            )
+
+        # 降级为纯文本
+        return self._format_trend_body_fallback(result)
+
+    def _format_trend_body_fallback(self, result: TrendRunResult) -> str:
+        """趋势通知模板不存在时的兜底纯文本"""
+        status_icon = "OK" if result.success else "ERROR"
+        lines = [
+            f"Status: {status_icon}",
+            f"Time: {result.run_timestamp}",
+            f"Keywords: {', '.join(result.keywords)}",
+            f"Date Range: {result.date_from} ~ {result.date_to}",
+            "",
+            f"Papers Found: {result.total_papers}",
+            f"TLDRs Generated: {result.tldr_count}",
+            f"Trend Skills: {result.trend_skills_count}",
+        ]
+
+        if result.error_message:
+            lines.append("")
+            lines.append(f"Error: {result.error_message}")
+
+        if result.report_paths:
+            lines.append("")
+            lines.append("Reports:")
+            for fmt, path in result.report_paths.items():
+                lines.append(f"  [{fmt}] {path}")
+
+        return "\n".join(lines)
+
+    def _format_trend_html_body(self, result: TrendRunResult) -> Optional[str]:
+        """使用 HTML 模板生成趋势分析邮件正文"""
+        template_name = "research_success" if result.success else "research_failure"
+        template = _load_email_template(template_name)
+        if not template:
+            return None
+
+        keywords_str = self._html_escape(", ".join(result.keywords))
+        date_range = self._html_escape(f"{result.date_from} ~ {result.date_to}")
+
+        # 报告路径 HTML
+        report_rows = []
+        row_colors = ["#ffffff", "#f9fafb"]
+        for i, (fmt, path_str) in enumerate(sorted(result.report_paths.items())):
+            bg = row_colors[i % 2]
+            report_rows.append(
+                f'<tr style="background-color:{bg};">'
+                f'<td style="padding:10px 14px;font-size:12px;border-bottom:1px solid #f0f0f0;">'
+                f'<span style="background-color:#e0e7ff;color:#3730a3;font-size:11px;'
+                f'font-weight:600;padding:2px 7px;border-radius:4px;">'
+                f"{self._html_escape(fmt.upper())}</span></td>"
+                f'<td style="padding:10px 14px;font-size:12px;color:#6b7280;'
+                f'font-family:monospace;word-break:break-all;border-bottom:1px solid #f0f0f0;">'
+                f"{self._html_escape(path_str)}</td>"
+                f"</tr>"
+            )
+        report_rows_html = (
+            "\n".join(report_rows)
+            if report_rows
+            else (
+                '<tr><td colspan="2" style="padding:14px;text-align:center;'
+                'font-size:13px;color:#9ca3af;">暂无报告</td></tr>'
+            )
+        )
+
+        return _render_template(
+            template,
+            timestamp=self._html_escape(result.run_timestamp),
+            keywords=keywords_str,
+            date_range=date_range,
+            total_papers=result.total_papers,
+            tldr_count=result.tldr_count,
+            trend_skills_count=result.trend_skills_count,
+            report_rows_html=report_rows_html,
+            error_message=self._html_escape(result.error_message or "无"),
+            token_usage_html=self._format_token_section_html(result.token_usage),
+        )
+
+    def _collect_trend_attachments(self, result: TrendRunResult) -> List[Path]:
+        """收集趋势报告文件作为邮件附件"""
+        attachments = []
+        for fmt, path_str in result.report_paths.items():
             path = Path(path_str)
             if path.exists() and path.is_file():
                 attachments.append(path)

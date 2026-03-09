@@ -12,6 +12,7 @@ from dataclasses import dataclass
 @dataclass
 class KeywordTrendData:
     """关键词趋势数据"""
+
     keyword: str
     daily_counts: Dict[date, int]
 
@@ -26,10 +27,7 @@ class MermaidGenerator:
     """
 
     def generate_bar_chart(
-        self,
-        data: List[Tuple[str, int]],
-        title: str = "Top Keywords",
-        y_label: str = "Paper Count"
+        self, data: List[Tuple[str, int]], title: str = "Top Keywords", y_label: str = "Paper Count"
     ) -> str:
         """
         生成柱状图
@@ -45,16 +43,14 @@ class MermaidGenerator:
         if not data:
             return ""
 
-        # 限制关键词长度，避免图表过宽
-        keywords = [self._truncate_keyword(kw, 20) for kw, _ in data]
         counts = [count for _, count in data]
 
         # 计算Y轴范围
         max_count = max(counts) if counts else 10
         y_max = self._round_up(max_count)
 
-        # 构建 Mermaid 代码
-        x_axis = ", ".join(f'"{kw}"' for kw in keywords)
+        # 构建 Mermaid 代码：使用序号作为X轴标签，避免关键词名称过长导致图表拥挤
+        x_axis = ", ".join(f'"{i+1}"' for i in range(len(data)))
         bar_data = ", ".join(str(c) for c in counts)
 
         chart = f"""```mermaid
@@ -71,7 +67,7 @@ xychart-beta
         trends: List[KeywordTrendData],
         title: str = "Keyword Trends",
         days: int = 30,
-        aggregate_days: int = 7
+        aggregate_days: int = 7,
     ) -> str:
         """
         生成趋势线图
@@ -108,8 +104,7 @@ xychart-beta
             values = []
             for range_start, range_end in date_ranges:
                 count = sum(
-                    trend.daily_counts.get(d, 0)
-                    for d in self._date_range(range_start, range_end)
+                    trend.daily_counts.get(d, 0) for d in self._date_range(range_start, range_end)
                 )
                 values.append(count)
                 all_values.append(count)
@@ -136,7 +131,7 @@ xychart-beta
         """截断关键词"""
         if len(keyword) <= max_len:
             return keyword
-        return keyword[:max_len - 2] + ".."
+        return keyword[: max_len - 2] + ".."
 
     def _round_up(self, value: int) -> int:
         """向上取整到合适的刻度"""
@@ -153,10 +148,7 @@ xychart-beta
             return ((value // 50) + 1) * 50
 
     def _generate_date_ranges(
-        self,
-        start_date: date,
-        end_date: date,
-        aggregate_days: int
+        self, start_date: date, end_date: date, aggregate_days: int
     ) -> List[Tuple[date, date]]:
         """生成日期范围列表"""
         ranges = []

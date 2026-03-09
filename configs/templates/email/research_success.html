@@ -1,23 +1,23 @@
 <!DOCTYPE html>
 <!--
-  HTML 邮件通知模板 — 运行成功
+  HTML 邮件通知模板 — 研究趋势分析成功
   可用变量（使用 {变量名} 引用）：
-    {timestamp}        — 运行时间戳
-    {total_fetched}    — 抓取论文总数
-    {total_qualified}  — 及格论文总数
-    {total_analyzed}   — 深度分析论文总数
-    {source_rows}      — 各数据源统计行（HTML <tr> 片段）
-    {top_papers_html}  — Top-N 论文卡片（HTML 片段）
-    {report_list_html} — 报告路径列表（HTML 片段）
+    {timestamp}           — 运行时间戳
+    {keywords}            — 搜索关键词
+    {date_range}          — 时间范围
+    {total_papers}        — 搜索到的论文总数
+    {tldr_count}          — TLDR 生成成功数
+    {trend_skills_count}  — 趋势分析维度数
+    {report_rows_html}    — 报告路径表格行（HTML <tr> 片段）
 
-  修改此文件即可自定义成功邮件通知的样式和内容。
+  修改此文件即可自定义研究趋势分析成功邮件通知的样式和内容。
 -->
 <html lang="zh-CN">
 
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ArXiv Daily Researcher — 运行成功</title>
+  <title>ArXiv Trend Research — 分析完成</title>
 </head>
 
 <body
@@ -30,26 +30,49 @@
 
           <!-- Header -->
           <tr>
-            <td style="background:linear-gradient(135deg,#1a1f36 0%,#2d3561 100%);padding:32px 32px 28px;">
+            <td style="background:linear-gradient(135deg,#1a2744 0%,#2a4073 100%);padding:32px 32px 28px;">
               <table width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
                   <td>
                     <p
                       style="margin:0 0 6px;font-size:12px;color:#8892b0;letter-spacing:1.5px;text-transform:uppercase;">
-                      ArXiv Daily Researcher</p>
-                    <h1 style="margin:0;font-size:26px;font-weight:700;color:#ffffff;letter-spacing:-0.3px;">每日论文报告</h1>
+                      ArXiv Trend Research</p>
+                    <h1 style="margin:0;font-size:24px;font-weight:700;color:#ffffff;letter-spacing:-0.3px;">研究趋势分析报告
+                    </h1>
                   </td>
                   <td align="right" valign="top">
                     <span
-                      style="display:inline-block;background-color:#27ae60;color:#ffffff;font-size:13px;font-weight:700;padding:6px 14px;border-radius:20px;letter-spacing:0.5px;">✓
-                      运行成功</span>
+                      style="display:inline-block;background-color:#27ae60;color:#ffffff;font-size:13px;font-weight:700;padding:6px 14px;border-radius:20px;letter-spacing:0.5px;">&#10003;
+                      分析完成</span>
                   </td>
                 </tr>
                 <tr>
                   <td colspan="2" style="padding-top:16px;">
                     <p style="margin:0;font-size:13px;color:#8892b0;">
-                      <span style="color:#a8b2d8;">⏱</span>&nbsp;{timestamp}
+                      <span style="color:#a8b2d8;">&#9201;</span>&nbsp;{timestamp}
                     </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Keywords & Date Range -->
+          <tr>
+            <td style="background-color:#f7f8fc;padding:18px 32px;border-bottom:1px solid #e8ebf0;">
+              <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td width="50%">
+                    <p
+                      style="margin:0 0 4px;font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:0.8px;">
+                      搜索关键词</p>
+                    <p style="margin:0;font-size:14px;font-weight:600;color:#1a1f36;">{keywords}</p>
+                  </td>
+                  <td width="50%">
+                    <p
+                      style="margin:0 0 4px;font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:0.8px;">
+                      时间范围</p>
+                    <p style="margin:0;font-size:14px;font-weight:600;color:#1a1f36;">{date_range}</p>
                   </td>
                 </tr>
               </table>
@@ -62,57 +85,45 @@
               <table width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
                   <td width="33.3%" align="center" style="padding:20px 8px;border-right:1px solid #d4eedd;">
-                    <p style="margin:0 0 4px;font-size:28px;font-weight:700;color:#1a7a4a;">{total_fetched}</p>
-                    <p style="margin:0;font-size:11px;color:#5a8a72;text-transform:uppercase;letter-spacing:0.8px;">已抓取
+                    <p style="margin:0 0 4px;font-size:28px;font-weight:700;color:#1a7a4a;">{total_papers}</p>
+                    <p style="margin:0;font-size:11px;color:#5a8a72;text-transform:uppercase;letter-spacing:0.8px;">搜索论文
                     </p>
                   </td>
                   <td width="33.3%" align="center" style="padding:20px 8px;border-right:1px solid #d4eedd;">
-                    <p style="margin:0 0 4px;font-size:28px;font-weight:700;color:#1a7a4a;">{total_qualified}</p>
-                    <p style="margin:0;font-size:11px;color:#5a8a72;text-transform:uppercase;letter-spacing:0.8px;">已及格
-                    </p>
+                    <p style="margin:0 0 4px;font-size:28px;font-weight:700;color:#1a7a4a;">{tldr_count}</p>
+                    <p style="margin:0;font-size:11px;color:#5a8a72;text-transform:uppercase;letter-spacing:0.8px;">TLDR
+                      生成</p>
                   </td>
                   <td width="33.3%" align="center" style="padding:20px 8px;">
-                    <p style="margin:0 0 4px;font-size:28px;font-weight:700;color:#1a7a4a;">{total_analyzed}</p>
-                    <p style="margin:0;font-size:11px;color:#5a8a72;text-transform:uppercase;letter-spacing:0.8px;">
-                      已深度分析</p>
+                    <p style="margin:0 0 4px;font-size:28px;font-weight:700;color:#1a7a4a;">{trend_skills_count}</p>
+                    <p style="margin:0;font-size:11px;color:#5a8a72;text-transform:uppercase;letter-spacing:0.8px;">分析维度
+                    </p>
                   </td>
                 </tr>
               </table>
             </td>
           </tr>
 
-          <!-- Section: Source Breakdown -->
+          <!-- Section: Report Paths -->
           <tr>
             <td style="padding:28px 32px 0;">
               <h2
                 style="margin:0 0 14px;font-size:14px;font-weight:700;color:#1a1f36;text-transform:uppercase;letter-spacing:1px;border-left:3px solid #5b6af0;padding-left:10px;">
-                数据来源统计</h2>
+                报告路径</h2>
               <table width="100%" cellpadding="0" cellspacing="0" border="0"
                 style="border-collapse:collapse;border:1px solid #e8ebf0;border-radius:8px;overflow:hidden;">
                 <tr style="background-color:#f7f8fc;">
                   <th
                     style="padding:10px 14px;text-align:left;font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.6px;border-bottom:1px solid #e8ebf0;">
-                    来源</th>
+                    格式</th>
                   <th
-                    style="padding:10px 14px;text-align:center;font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.6px;border-bottom:1px solid #e8ebf0;">
-                    抓取</th>
-                  <th
-                    style="padding:10px 14px;text-align:center;font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.6px;border-bottom:1px solid #e8ebf0;">
-                    及格</th>
-                  <th
-                    style="padding:10px 14px;text-align:center;font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.6px;border-bottom:1px solid #e8ebf0;">
-                    深度分析</th>
+                    style="padding:10px 14px;text-align:left;font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.6px;border-bottom:1px solid #e8ebf0;">
+                    路径</th>
                 </tr>
-                {source_rows}
+                {report_rows_html}
               </table>
             </td>
           </tr>
-
-          <!-- Section: Top Papers -->
-          {top_papers_html}
-
-          <!-- Section: Report Paths -->
-          {report_list_html}
 
           <!-- Section: Token Usage -->
           {token_usage_html}
@@ -124,7 +135,8 @@
                 <tr>
                   <td style="border-top:1px solid #e8ebf0;padding-top:20px;">
                     <p style="margin:0;font-size:12px;color:#9ca3af;text-align:center;">
-                      此邮件由 <strong style="color:#5b6af0;">ArXiv Daily Researcher</strong> 自动发送 &nbsp;·&nbsp; 请勿直接回复
+                      此邮件由 <strong style="color:#5b6af0;">ArXiv Daily Researcher</strong> 研究趋势模式自动发送
+                      &nbsp;&middot;&nbsp; 请勿直接回复
                     </p>
                   </td>
                 </tr>

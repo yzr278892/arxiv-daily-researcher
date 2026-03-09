@@ -1,0 +1,72 @@
+{
+  "version": "1.0",
+  "description": "研究趋势模式报告模板 — 无评分，按时间排序，含趋势分析",
+  "global": {
+    "admonition_style": "mkdocs"
+  },
+  "modules": [
+    {
+      "id": "metadata",
+      "name": "论文元数据",
+      "enabled": true,
+      "order": 1,
+      "format": "list",
+      "fields": {
+        "title": {
+          "enabled": false,
+          "label": "标题"
+        },
+        "authors": {
+          "enabled": true,
+          "label": "作者"
+        },
+        "published_date": {
+          "enabled": true,
+          "label": "发布日期"
+        },
+        "url": {
+          "enabled": true,
+          "label": "链接"
+        },
+        "journal": {
+          "enabled": false
+        }
+      }
+    },
+    {
+      "id": "categories_inline",
+      "name": "分类标签",
+      "enabled": true,
+      "order": 2,
+      "format": "inline",
+      "label": "分类"
+    },
+    {
+      "id": "tldr_research",
+      "name": "AI 摘要",
+      "enabled": true,
+      "order": 3,
+      "format": "admonition",
+      "admonition_type": "tip",
+      "collapsible": false,
+      "label": "AI 摘要"
+    },
+    {
+      "id": "abstract_original",
+      "name": "原文摘要",
+      "enabled": true,
+      "order": 4,
+      "format": "quote",
+      "collapsible": true,
+      "collapsible_default_open": false,
+      "label": "Abstract"
+    }
+  ],
+  "layout": {
+    "report_title_template": "研究趋势报告 — {keywords} ({date_range})",
+    "show_search_params": true,
+    "show_stats_section": true,
+    "show_all_papers_section": true,
+    "all_papers_section_title": "论文列表"
+  }
+}

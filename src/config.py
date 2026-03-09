@@ -40,7 +40,7 @@ class Settings(BaseSettings):
 
     # 核心数据存储目录
     REF_PDF_DIR: Path = DATA_DIR / "reference_pdfs"  # 参考论文PDF存储路径
-    REPORTS_DIR: Path = DATA_DIR / "reports"  # 生成的研究报告存储路径
+    REPORTS_DIR: Path = DATA_DIR / "reports"  # 报告根目录（含各类型子目录）
 
     # 配置目录
     CONFIGS_DIR: Path = PROJECT_ROOT / "configs"
@@ -153,6 +153,7 @@ class Settings(BaseSettings):
 
     # ==================== 报告配置 ====================
     ENABLE_HTML_REPORT: bool = True  # 是否同时生成HTML格式报告
+    TOKEN_TRACKING_ENABLED: bool = True  # 是否在报告和通知中显示 token 消耗统计
 
     # ==================== PDF 解析配置 ====================
     PDF_PARSER_MODE: str = "mineru"  # PDF 解析模式: "mineru" (云端API) 或 "pymupdf" (本地解析)
@@ -191,6 +192,23 @@ class Settings(BaseSettings):
     CHEAP_LLM: LLMConfig = Field(default_factory=lambda: LLMConfig(api_key="sk-dummy"))
     # 高性能LLM：用于深层论文分析和内容理解
     SMART_LLM: LLMConfig = Field(default_factory=lambda: LLMConfig(api_key="sk-dummy"))
+
+    # ==================== 研究趋势模式配置 ====================
+    RESEARCH_REPORTS_DIR: Path = DATA_DIR / "reports" / "trend_research"  # 研究趋势报告存储路径
+    RESEARCH_DEFAULT_DATE_RANGE_DAYS: int = 365  # 默认搜索时间范围（天）
+    RESEARCH_MAX_RESULTS: int = 500  # 最大论文数（安全上限）
+    RESEARCH_SORT_ORDER: str = "ascending"  # 时间排序："ascending"(旧→新) 或 "descending"(新→旧)
+    RESEARCH_REPORT_POSITION: str = "end"  # 趋势分析在报告中的位置："beginning" 或 "end"
+    RESEARCH_GENERATE_TLDR: bool = True  # 是否为每篇论文生成 LLM TLDR
+    RESEARCH_TLDR_BATCH_SIZE: int = 10  # TLDR 批量并发大小
+    RESEARCH_OUTPUT_FORMATS: List[str] = ["markdown", "html"]  # 输出格式
+    RESEARCH_ENABLED_SKILLS: List[str] = [  # 启用的趋势分析技能
+        "temporal_evolution",
+        "hot_topics",
+        "key_authors",
+        "research_gaps",
+        "methodology_trends",
+    ]
 
     # ==================== Pydantic Settings配置 ====================
     # 指定从.env文件加载配置，支持嵌套参数用双下划线分隔
@@ -319,6 +337,7 @@ class Settings(BaseSettings):
                     self.REF_PDF_DIR = self.PROJECT_ROOT / paths["reference_pdfs"]
                 if "reports" in paths:
                     self.REPORTS_DIR = self.PROJECT_ROOT / paths["reports"]
+                    self.RESEARCH_REPORTS_DIR = self.REPORTS_DIR / "trend_research"
                 if "downloaded_pdfs" in paths:
                     self.DOWNLOAD_DIR = self.PROJECT_ROOT / paths["downloaded_pdfs"]
                 if "history_file" in paths:
@@ -410,6 +429,32 @@ class Settings(BaseSettings):
                 au_cfg = config["auto_update"]
                 self.AUTO_UPDATE_ENABLED = au_cfg.get("enabled", True)
 
+            # 加载 token 追踪配置
+            if "token_tracking" in config:
+                tt_cfg = config["token_tracking"]
+                self.TOKEN_TRACKING_ENABLED = tt_cfg.get("enabled", True)
+
+            # 加载研究趋势模式配置
+            if "trend_research" in config:
+                tr = config["trend_research"]
+                self.RESEARCH_DEFAULT_DATE_RANGE_DAYS = tr.get("default_date_range_days", 365)
+                self.RESEARCH_MAX_RESULTS = tr.get("max_results", 500)
+                self.RESEARCH_SORT_ORDER = tr.get("sort_order", "ascending")
+                self.RESEARCH_REPORT_POSITION = tr.get("report_position", "end")
+                self.RESEARCH_GENERATE_TLDR = tr.get("generate_tldr", True)
+                self.RESEARCH_TLDR_BATCH_SIZE = tr.get("tldr_batch_size", 10)
+                self.RESEARCH_OUTPUT_FORMATS = tr.get("output_formats", ["markdown", "html"])
+                self.RESEARCH_ENABLED_SKILLS = tr.get(
+                    "enabled_skills",
+                    [
+                        "temporal_evolution",
+                        "hot_topics",
+                        "key_authors",
+                        "research_gaps",
+                        "methodology_trends",
+                    ],
+                )
+
             return config
 
         except Exception as e:
@@ -457,6 +502,8 @@ class Settings(BaseSettings):
         """
         self.REF_PDF_DIR.mkdir(parents=True, exist_ok=True)
         self.REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+        self.RESEARCH_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+        (self.REPORTS_DIR / "keyword_trend").mkdir(parents=True, exist_ok=True)
         self.DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
         self.HISTORY_DIR.mkdir(parents=True, exist_ok=True)
         self.REPORT_TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)

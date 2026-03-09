@@ -11,6 +11,8 @@ from typing import List, Dict, Optional
 from pydantic import BaseModel
 from openai import OpenAI
 
+from config import settings
+
 logger = logging.getLogger(__name__)
 
 
@@ -112,6 +114,12 @@ class KeywordNormalizer:
                 response_format={"type": "json_object"},
             )
 
+            if settings.TOKEN_TRACKING_ENABLED and response.usage:
+                from utils.token_counter import token_counter
+
+                token_counter.add(
+                    self.model, response.usage.prompt_tokens, response.usage.completion_tokens
+                )
             content = response.choices[0].message.content
 
             # 🆕 优化：检查content是否为空
