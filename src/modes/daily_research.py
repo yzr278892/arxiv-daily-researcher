@@ -349,107 +349,112 @@ class DailyResearchPipeline:
             # ==================== 阶段5: 深度分析及格论文 ====================
             analyses_by_source: Dict[str, List[Dict[str, Any]]] = {}
 
-            for source, scored_papers in scored_papers_by_source.items():
-                qualified_papers = [p for p in scored_papers if p["score_response"].is_qualified]
+            if not settings.DAILY_ENABLE_DEEP_ANALYSIS:
+                logger.info(
+                    ">>> 阶段5: 深度分析已通过配置关闭，仅保留评分与列表输出"
+                )
+            else:
+                for source, scored_papers in scored_papers_by_source.items():
+                    qualified_papers = [p for p in scored_papers if p["score_response"].is_qualified]
 
-                if not qualified_papers:
-                    logger.info(f">>> 阶段5: [{source}] 没有及格论文，跳过深度分析")
-                    continue
+                    if not qualified_papers:
+                        logger.info(f">>> 阶段5: [{source}] 没有及格论文，跳过深度分析")
+                        continue
 
-                papers_with_pdf = []
-                for p in qualified_papers:
-                    paper_meta = p.get("paper_metadata")
-                    if paper_meta and paper_meta.has_pdf_access():
-                        papers_with_pdf.append(p)
+                    papers_with_pdf = []
+                    for p in qualified_papers:
+                        paper_meta = p.get("paper_metadata")
+                        if paper_meta and paper_meta.has_pdf_access():
+                            papers_with_pdf.append(p)
 
-                if not papers_with_pdf:
+                    if not papers_with_pdf:
+                        logger.info(
+                            f">>> 阶段5: [{source}] {len(qualified_papers)} 篇及格论文均无PDF可用，跳过深度分析"
+                        )
+                        continue
+
                     logger.info(
-                        f">>> 阶段5: [{source}] {len(qualified_papers)} 篇及格论文均无PDF可用，跳过深度分析"
+                        f">>> 阶段5: [{source}] 深度分析 {len(papers_with_pdf)}/{len(qualified_papers)} 篇有PDF的及格论文..."
                     )
-                    continue
 
-                logger.info(
-                    f">>> 阶段5: [{source}] 深度分析 {len(papers_with_pdf)}/{len(qualified_papers)} 篇有PDF的及格论文..."
-                )
+                    qualified_papers_with_analysis = []
 
-                qualified_papers_with_analysis = []
-
-                if settings.ENABLE_CONCURRENCY and len(papers_with_pdf) > 1:
-                    logger.info(f"    使用并发模式 (workers={settings.CONCURRENCY_WORKERS})")
-                    with tqdm(
-                        total=len(papers_with_pdf),
-                        desc=f"🔬 [{source}] 深度分析",
-                        unit="篇",
-                        ncols=100,
-                    ) as pbar:
-                        with ThreadPoolExecutor(
-                            max_workers=settings.CONCURRENCY_WORKERS
-                        ) as executor:
-                            futures = {
-                                executor.submit(
-                                    _deep_analyze_single_paper, paper_info, analysis_agent
-                                ): paper_info
-                                for paper_info in papers_with_pdf
-                            }
-                            for future in as_completed(futures):
-                                paper_info = futures[future]
-                                try:
-                                    result = future.result()
-                                    if result:
-                                        qualified_papers_with_analysis.append(
-                                            {
-                                                "paper_id": result["paper_id"],
-                                                "analysis": result["analysis"],
-                                            }
-                                        )
-                                        pm = result.get("paper_meta")
-                                        if pm and pm.arxiv_id:
-                                            pbar.write(
-                                                f"  ✓ 完成 (via arXiv {pm.arxiv_id}): {result['title'][:50]}..."
+                    if settings.ENABLE_CONCURRENCY and len(papers_with_pdf) > 1:
+                        logger.info(f"    使用并发模式 (workers={settings.CONCURRENCY_WORKERS})")
+                        with tqdm(
+                            total=len(papers_with_pdf),
+                            desc=f"🔬 [{source}] 深度分析",
+                            unit="篇",
+                            ncols=100,
+                        ) as pbar:
+                            with ThreadPoolExecutor(
+                                max_workers=settings.CONCURRENCY_WORKERS
+                            ) as executor:
+                                futures = {
+                                    executor.submit(
+                                        _deep_analyze_single_paper, paper_info, analysis_agent
+                                    ): paper_info
+                                    for paper_info in papers_with_pdf
+                                }
+                                for future in as_completed(futures):
+                                    paper_info = futures[future]
+                                    try:
+                                        result = future.result()
+                                        if result:
+                                            qualified_papers_with_analysis.append(
+                                                {
+                                                    "paper_id": result["paper_id"],
+                                                    "analysis": result["analysis"],
+                                                }
                                             )
+                                            pm = result.get("paper_meta")
+                                            if pm and pm.arxiv_id:
+                                                pbar.write(
+                                                    f"  ✓ 完成 (via arXiv {pm.arxiv_id}): {result['title'][:50]}..."
+                                                )
+                                            else:
+                                                pbar.write(f"  ✓ 完成: {result['title'][:55]}...")
                                         else:
-                                            pbar.write(f"  ✓ 完成: {result['title'][:55]}...")
+                                            pbar.write(f"  ✗ 失败: {paper_info['title'][:55]}...")
+                                    except Exception as e:
+                                        logger.error(
+                                            f"深度分析异常 ({paper_info['title'][:30]}...): {e}"
+                                        )
+                                        pbar.write(f"  ✗ 异常: {paper_info['title'][:55]}...")
+                                    pbar.update(1)
+                    else:
+                        with tqdm(
+                            total=len(papers_with_pdf),
+                            desc=f"🔬 [{source}] 深度分析",
+                            unit="篇",
+                            ncols=100,
+                        ) as pbar:
+                            for idx, paper_info in enumerate(papers_with_pdf, 1):
+                                pbar.set_description(f"🔬 [{source}] [{idx}/{len(papers_with_pdf)}]")
+                                pbar.set_postfix_str(f"{paper_info['title'][:35]}...")
+
+                                result = _deep_analyze_single_paper(paper_info, analysis_agent)
+
+                                if result:
+                                    qualified_papers_with_analysis.append(
+                                        {"paper_id": result["paper_id"], "analysis": result["analysis"]}
+                                    )
+                                    pm = result.get("paper_meta")
+                                    if pm and pm.arxiv_id:
+                                        pbar.write(
+                                            f"  ✓ 完成 (via arXiv {pm.arxiv_id}): {result['title'][:50]}..."
+                                        )
                                     else:
-                                        pbar.write(f"  ✗ 失败: {paper_info['title'][:55]}...")
-                                except Exception as e:
-                                    logger.error(
-                                        f"深度分析异常 ({paper_info['title'][:30]}...): {e}"
-                                    )
-                                    pbar.write(f"  ✗ 异常: {paper_info['title'][:55]}...")
-                                pbar.update(1)
-                else:
-                    with tqdm(
-                        total=len(papers_with_pdf),
-                        desc=f"🔬 [{source}] 深度分析",
-                        unit="篇",
-                        ncols=100,
-                    ) as pbar:
-                        for idx, paper_info in enumerate(papers_with_pdf, 1):
-                            pbar.set_description(f"🔬 [{source}] [{idx}/{len(papers_with_pdf)}]")
-                            pbar.set_postfix_str(f"{paper_info['title'][:35]}...")
-
-                            result = _deep_analyze_single_paper(paper_info, analysis_agent)
-
-                            if result:
-                                qualified_papers_with_analysis.append(
-                                    {"paper_id": result["paper_id"], "analysis": result["analysis"]}
-                                )
-                                pm = result.get("paper_meta")
-                                if pm and pm.arxiv_id:
-                                    pbar.write(
-                                        f"  ✓ 完成 (via arXiv {pm.arxiv_id}): {result['title'][:50]}..."
-                                    )
+                                        pbar.write(f"  ✓ 完成: {result['title'][:55]}...")
                                 else:
-                                    pbar.write(f"  ✓ 完成: {result['title'][:55]}...")
-                            else:
-                                pbar.write(f"  ✗ 失败: {paper_info['title'][:55]}...")
+                                    pbar.write(f"  ✗ 失败: {paper_info['title'][:55]}...")
 
-                            pbar.update(1)
+                                pbar.update(1)
 
-                analyses_by_source[source] = qualified_papers_with_analysis
-                logger.info(
-                    f"    [{source}] 深度分析完成: {len(qualified_papers_with_analysis)}/{len(papers_with_pdf)} 篇成功"
-                )
+                    analyses_by_source[source] = qualified_papers_with_analysis
+                    logger.info(
+                        f"    [{source}] 深度分析完成: {len(qualified_papers_with_analysis)}/{len(papers_with_pdf)} 篇成功"
+                    )
 
             # ==================== 阶段6: 生成分数据源报告 ====================
             logger.info(">>> 阶段6: 生成分数据源研究报告...")

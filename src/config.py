@@ -158,6 +158,9 @@ class Settings(BaseSettings):
     ENABLE_HTML_REPORT: bool = True  # 是否同时生成HTML格式报告
     TOKEN_TRACKING_ENABLED: bool = True  # 是否在报告和通知中显示 token 消耗统计
 
+    # ==================== Daily Research 模式配置 ====================
+    DAILY_ENABLE_DEEP_ANALYSIS: bool = True  # 是否在每日研究模式中执行深度分析
+
     # ==================== PDF 解析配置 ====================
     PDF_PARSER_MODE: str = "mineru"  # PDF 解析模式: "mineru" (云端API) 或 "pymupdf" (本地解析)
     MINERU_API_KEY: str = ""  # MinerU API Token
@@ -423,6 +426,13 @@ class Settings(BaseSettings):
             if "report_settings" in config:
                 rpt_cfg = config["report_settings"]
                 self.ENABLE_HTML_REPORT = rpt_cfg.get("enable_html_report", False)
+
+            # 加载 daily research 模式配置
+            if "daily_research" in config:
+                daily_cfg = config["daily_research"]
+                self.DAILY_ENABLE_DEEP_ANALYSIS = daily_cfg.get(
+                    "enable_deep_analysis", True
+                )
 
             # 加载 PDF 解析配置
             if "pdf_parser" in config:
