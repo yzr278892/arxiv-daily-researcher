@@ -15,6 +15,7 @@
 """
 
 import json
+import html
 import logging
 import smtplib
 import hashlib
@@ -45,7 +46,7 @@ EMAIL_TEMPLATE_DIR = (
 )
 
 
-def _load_template(name: str) -> Optional[str]:
+def _load_template(name: str, platform: Optional[str] = None) -> Optional[str]:
     """
     加载通知模板文件。
 
@@ -60,6 +61,7 @@ def _load_template(name: str) -> Optional[str]:
         去除注释后的模板内容，文件不存在时返回 None
     """
     path = TEMPLATE_DIR / f"{name}.md"
+
     if not path.exists():
         logger.debug(f"模板文件不存在: {path}")
         return None
@@ -287,11 +289,11 @@ class WebhookNotifier(BaseNotifier):
     def _format_telegram(self, subject: str, body: str):
         """Telegram Bot"""
         chat_id = self.extra.get("chat_id", "")
-        text = f"*{subject}*\n\n{body}"
+        text = f"<b>{html.escape(subject)}</b>\n\n{body}"
         # Telegram 消息限 4096 字符
         if len(text) > 4000:
             text = text[:3900] + "\n\n...(内容已截断)"
-        payload = {"chat_id": chat_id, "text": text, "parse_mode": "Markdown"}
+        payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
         return self.webhook_url, payload, {"Content-Type": "application/json"}
 
     def _format_slack(self, subject: str, body: str):
@@ -384,7 +386,6 @@ class NotifierAgent:
             return
 
         subject = self._format_subject(result)
-        body = self._format_body(result)
         html_body = self._format_html_body(result)
         attachments = (
             self._collect_attachments(result) if self.settings.NOTIFY_ATTACH_REPORTS else []
@@ -392,6 +393,8 @@ class NotifierAgent:
 
         for notifier in self.notifiers:
             try:
+                platform = self._platform_for_notifier(notifier)
+                body = self._format_body_for_platform(result, platform)
                 if isinstance(notifier, EmailNotifier) and html_body:
                     notifier.send(subject, body, attachments, html_body=html_body)
                 else:
@@ -415,7 +418,6 @@ class NotifierAgent:
             return
 
         subject = self._format_trend_subject(result)
-        body = self._format_trend_body(result)
         html_body = self._format_trend_html_body(result)
         attachments = (
             self._collect_trend_attachments(result) if self.settings.NOTIFY_ATTACH_REPORTS else []
@@ -423,6 +425,8 @@ class NotifierAgent:
 
         for notifier in self.notifiers:
             try:
+                platform = self._platform_for_notifier(notifier)
+                body = self._format_trend_body_for_platform(result, platform)
                 if isinstance(notifier, EmailNotifier) and html_body:
                     notifier.send(subject, body, attachments, html_body=html_body)
                 else:
@@ -453,22 +457,12 @@ class NotifierAgent:
         if "timestamp" not in kwargs:
             kwargs["timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        template = _load_template(template_name)
-        if template:
-            body = _render_template(template, **kwargs)
-        else:
-            body = f"## ArXiv Daily Researcher\n\n"
-            body += (
-                f"<font color=\"warning\">**错误告警**</font> | {kwargs.get('timestamp', '')}\n\n"
-            )
-            for k, v in kwargs.items():
-                if k != "timestamp":
-                    body += f"> {k}: {v}\n"
-
         subject = f"ArXiv Daily Researcher - ERROR ({kwargs.get('timestamp', '')})"
 
         for notifier in self.notifiers:
             try:
+                platform = self._platform_for_notifier(notifier)
+                body = self._format_error_body_for_platform(template_name, platform, **kwargs)
                 if isinstance(notifier, EmailNotifier):
                     html_body = self._format_html_error_body(template_name, **kwargs)
                     notifier.send(subject, body, html_body=html_body)
@@ -513,7 +507,7 @@ class NotifierAgent:
         return f"ArXiv Daily Researcher - {status} ({result.run_timestamp})"
 
     def _format_body(self, result: RunResult) -> str:
-        """使用模板格式化运行结果通知正文，模板不存在时降级为纯文本"""
+        """向后兼容：默认使用通用模板（非 Telegram 专用）"""
         template_name = "success" if result.success else "failure"
         template = _load_template(template_name)
 
@@ -569,6 +563,133 @@ class NotifierAgent:
 
         # 模板不存在时降级为纯文本
         return self._format_body_fallback(result)
+
+    def _format_body_for_platform(self, result: RunResult, platform: Optional[str]) -> str:
+        """使用模板格式化运行结果通知正文，模板不存在时降级为纯文本"""
+        if platform == "telegram":
+            return self._format_telegram_body(result)
+
+        template_name = "success" if result.success else "failure"
+        template = _load_template(template_name)
+
+        # 构建各数据源统计文本
+        source_lines = []
+        for source in sorted(result.papers_by_source.keys()):
+            fetched = result.papers_by_source.get(source, 0)
+            qualified = result.qualified_by_source.get(source, 0)
+            analyzed = result.analyzed_by_source.get(source, 0)
+            source_lines.append(
+                f"> `{source.upper()}` 抓取 **{fetched}** | 及格 **{qualified}** | 分析 **{analyzed}**"
+            )
+        source_summary = "\n".join(source_lines)
+
+        # 构建报告路径文本
+        report_lines = []
+        if result.report_paths:
+            report_lines.append("**报告路径**")
+            for source, path in result.report_paths.items():
+                report_lines.append(f"> `{source}` {path}")
+        report_list = "\n".join(report_lines)
+
+        # 构建 Top-N 论文文本
+        top_lines = []
+        if result.top_papers:
+            top_lines.append(f"**Top {len(result.top_papers)} 论文**")
+            for i, p in enumerate(result.top_papers, 1):
+                title = p.get("title", "")[:60]
+                score = p.get("score", 0)
+                src = p.get("source", "").upper()
+                tldr = p.get("tldr", "")[:80]
+                url = p.get("url", "")
+                top_lines.append(f"> **{i}.** `{src}` {title}")
+                top_lines.append(f'> <font color="comment">Score: {score:.1f} | {tldr}</font>')
+                if url:
+                    top_lines.append(f"> [查看原文]({url})")
+        top_papers = "\n".join(top_lines)
+
+        if template:
+            return _render_template(
+                template,
+                status="SUCCESS" if result.success else "FAILED",
+                timestamp=result.run_timestamp,
+                total_fetched=result.total_papers_fetched,
+                total_qualified=result.total_qualified,
+                total_analyzed=result.total_analyzed,
+                source_summary=source_summary,
+                report_list=report_list,
+                top_papers=top_papers,
+                error_message=result.error_message or "无",
+                token_usage_section=self._format_token_section_md(result.token_usage),
+            )
+
+        # 模板不存在时降级为纯文本
+        return self._format_body_fallback(result)
+
+    def _format_telegram_body(self, result: RunResult) -> str:
+        """Telegram 专用 HTML 正文，使用 Bot API 支持的实体标签。"""
+        status_label = "运行成功" if result.success else "运行失败"
+        source_lines = []
+        for source in sorted(result.papers_by_source.keys()):
+            fetched = result.papers_by_source.get(source, 0)
+            qualified = result.qualified_by_source.get(source, 0)
+            analyzed = result.analyzed_by_source.get(source, 0)
+            source_lines.append(
+                f"<code>{self._html_escape(source.upper())}</code> 抓取 <b>{fetched}</b> | 及格 <b>{qualified}</b> | 分析 <b>{analyzed}</b>"
+            )
+
+        top_cards = []
+        if result.top_papers:
+            for i, paper in enumerate(result.top_papers, 1):
+                title = self._html_escape(paper.get("title", "")[:80])
+                score = paper.get("score", 0)
+                src = self._html_escape(paper.get("source", "").upper())
+                tldr = self._html_escape(paper.get("tldr", "")[:140])
+                url = self._html_escape(paper.get("url", ""))
+                card_lines = [
+                    f"<b>{i}. <code>{src}</code> {title}</b>",
+                    f"<blockquote>Score: <b>{score:.1f}</b>",
+                    f"{tldr}</blockquote>",
+                ]
+                if url:
+                    card_lines.append(f'<a href="{url}">查看原文</a>')
+                top_cards.append("\n".join(card_lines))
+
+        report_lines = []
+        for source, path in sorted(result.report_paths.items()):
+            report_lines.append(f"<code>{self._html_escape(source)}</code> {self._html_escape(path)}")
+
+        sections = [
+            "<b>ArXiv Daily Researcher</b>",
+            f"<b>{status_label}</b> | {self._html_escape(result.run_timestamp)}",
+            "",
+            "<b>本次运行统计</b>",
+            "\n".join(source_lines) if source_lines else "暂无数据",
+        ]
+
+        if result.token_usage and result.token_usage.get("has_data") and self.settings.TOKEN_TRACKING_ENABLED:
+            total = result.token_usage.get("total", 0)
+            tp = result.token_usage.get("total_prompt", 0)
+            tc = result.token_usage.get("total_completion", 0)
+            sections.extend(
+                [
+                    "<b>Token 消耗</b>",
+                    (
+                        f"<blockquote>总计 <b>{total:,}</b> tokens"
+                        f"（输入 {tp:,} / 输出 {tc:,}）</blockquote>"
+                    ),
+                ]
+            )
+
+        if top_cards:
+            sections.extend(["<b>Top 论文</b>", *top_cards])
+
+        if report_lines:
+            sections.extend(["<b>报告路径</b>", "\n".join(report_lines)])
+
+        if not result.success and result.error_message:
+            sections.extend(["<b>错误信息</b>", f"<blockquote>{self._html_escape(result.error_message)}</blockquote>"])
+
+        return "\n".join(sections)
 
     def _format_body_fallback(self, result: RunResult) -> str:
         """模板不存在时的兜底纯文本格式（保持向后兼容）"""
@@ -800,9 +921,18 @@ class NotifierAgent:
         return f"ArXiv Trend Research - {status} ({keywords_str}) ({result.run_timestamp})"
 
     def _format_trend_body(self, result: TrendRunResult) -> str:
+        """向后兼容：默认使用通用模板（非 Telegram 专用）"""
+        return self._format_trend_body_for_platform(result, None)
+
+    def _format_trend_body_for_platform(
+        self, result: TrendRunResult, platform: Optional[str]
+    ) -> str:
         """使用模板格式化趋势分析通知正文"""
+        if platform == "telegram":
+            return self._format_telegram_trend_body(result)
+
         template_name = "research_success" if result.success else "research_failure"
-        template = _load_template(template_name)
+        template = _load_template(template_name, platform=platform)
 
         keywords_str = ", ".join(result.keywords)
         date_range = f"{result.date_from} ~ {result.date_to}"
@@ -832,6 +962,99 @@ class NotifierAgent:
 
         # 降级为纯文本
         return self._format_trend_body_fallback(result)
+
+    def _format_telegram_trend_body(self, result: TrendRunResult) -> str:
+        """Telegram 专用趋势分析 HTML 正文。"""
+        status_label = "运行成功" if result.success else "运行失败"
+        keywords_str = self._html_escape(", ".join(result.keywords))
+        date_range = self._html_escape(f"{result.date_from} ~ {result.date_to}")
+
+        report_lines = []
+        for fmt, path in sorted(result.report_paths.items()):
+            report_lines.append(f"<code>{self._html_escape(fmt.upper())}</code> {self._html_escape(path)}")
+
+        sections = [
+            "<b>ArXiv Trend Research</b>",
+            f"<b>{status_label}</b> | {self._html_escape(result.run_timestamp)}",
+            f"<b>关键词</b> {keywords_str}",
+            f"<b>时间范围</b> {date_range}",
+            (
+                f"<b>统计</b> 论文 <b>{result.total_papers}</b> | TLDR <b>{result.tldr_count}</b> | "
+                f"Skills <b>{result.trend_skills_count}</b>"
+            ),
+        ]
+
+        if result.token_usage and result.token_usage.get("has_data") and self.settings.TOKEN_TRACKING_ENABLED:
+            total = result.token_usage.get("total", 0)
+            tp = result.token_usage.get("total_prompt", 0)
+            tc = result.token_usage.get("total_completion", 0)
+            sections.extend(
+                [
+                    "<b>Token 消耗</b>",
+                    (
+                        f"<blockquote>总计 <b>{total:,}</b> tokens"
+                        f"（输入 {tp:,} / 输出 {tc:,}）</blockquote>"
+                    ),
+                ]
+            )
+
+        if report_lines:
+            sections.extend(["<b>报告路径</b>", "\n".join(report_lines)])
+
+        if not result.success and result.error_message:
+            sections.extend(["<b>错误信息</b>", f"<blockquote>{self._html_escape(result.error_message)}</blockquote>"])
+
+        return "\n".join(sections)
+
+    def _format_error_body_for_platform(
+        self, template_name: str, platform: Optional[str], **kwargs
+    ) -> str:
+        """按平台格式化错误告警正文，模板缺失时使用纯文本兜底。"""
+        if platform == "telegram":
+            return self._format_telegram_error_body(template_name, **kwargs)
+
+        template = _load_template(template_name, platform=platform)
+        if template:
+            return _render_template(template, **kwargs)
+
+        lines = [
+            "## ArXiv Daily Researcher",
+            "",
+            f"**错误告警** | {kwargs.get('timestamp', '')}",
+            "",
+        ]
+        for key, value in kwargs.items():
+            if key != "timestamp":
+                lines.append(f"> {key}: {value}")
+        return "\n".join(lines)
+
+    def _format_telegram_error_body(self, template_name: str, **kwargs) -> str:
+        """Telegram 专用错误通知 HTML 正文。"""
+        title_map = {
+            "error_mineru": "MinerU 错误告警",
+            "error_llm": "LLM 错误告警",
+            "error_network": "网络错误告警",
+            "error_generic": "通用错误告警",
+        }
+        title = title_map.get(template_name, "错误告警")
+
+        timestamp = self._html_escape(str(kwargs.get("timestamp", "")))
+        sections = [
+            "<b>ArXiv Daily Researcher</b>",
+            f"<b>{title}</b> | {timestamp}",
+        ]
+        for key, value in kwargs.items():
+            if key == "timestamp":
+                continue
+            sections.append(f"<b>{self._html_escape(str(key))}</b>")
+            sections.append(f"<blockquote>{self._html_escape(str(value))}</blockquote>")
+        return "\n".join(sections)
+
+    @staticmethod
+    def _platform_for_notifier(notifier: BaseNotifier) -> Optional[str]:
+        if isinstance(notifier, WebhookNotifier):
+            return notifier.platform
+        return None
 
     def _format_trend_body_fallback(self, result: TrendRunResult) -> str:
         """趋势通知模板不存在时的兜底纯文本"""
