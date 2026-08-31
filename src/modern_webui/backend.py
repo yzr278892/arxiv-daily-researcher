@@ -1318,6 +1318,17 @@ def preferences_summary() -> dict[str, Any]:
         raise ModernWebUIError(f"读取收藏数据失败：{exc}") from exc
 
 
+def collect_qualified_favorites() -> dict[str, Any]:
+    """Add all persisted qualifying papers to 收藏 without changing reader marks."""
+    store = open_store()
+    if store is None:
+        raise ModernWebUIError("SQLite 数据库尚未创建。")
+    try:
+        return {"ok": True, **store.collect_qualified_favorites()}
+    except Exception as exc:
+        raise ModernWebUIError(f"收藏通过论文失败：{exc}") from exc
+
+
 def set_preference(payload: Mapping[str, Any]) -> dict[str, Any]:
     # Match the Streamlit report viewer: preferences are usable for a saved
     # daily report even before a worker run has created the history database.

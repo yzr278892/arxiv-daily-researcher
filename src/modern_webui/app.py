@@ -409,6 +409,14 @@ async def favorites_get(request: Request) -> JSONResponse:
         raise _safe_error(exc) from exc
 
 
+async def favorites_collect(request: Request) -> JSONResponse:
+    _require_session(request)
+    try:
+        return JSONResponse(await _blocking_call(backend.collect_qualified_favorites))
+    except Exception as exc:
+        raise _safe_error(exc) from exc
+
+
 async def preference_put(request: Request) -> JSONResponse:
     _require_session(request)
     payload = await _payload(request)
@@ -769,6 +777,7 @@ app = Starlette(
         Route("/api/history/{request_id:str}/retry", history_retry, methods=["POST"]),
         Route("/api/papers", papers_get, methods=["GET"]),
         Route("/api/favorites", favorites_get, methods=["GET"]),
+        Route("/api/favorites/collect", favorites_collect, methods=["POST"]),
         Route("/api/preferences", preference_put, methods=["PUT"]),
         Route("/api/learned-preferences", learned_get, methods=["GET"]),
         Route("/api/extracted-keywords", extracted_keywords_get, methods=["GET"]),

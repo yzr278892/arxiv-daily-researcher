@@ -3432,6 +3432,79 @@ class DailyResearchStore:
             )
         return cursor.rowcount > 0
 
+    def collect_qualified_favorites(self) -> Dict[str, int]:
+        """Add every already-qualified paper to 收藏 without replacing a reader mark.
+
+        This is the historical counterpart to :meth:`add_auto_favorite_if_unmarked`.
+        It reads only persisted scoring results and keeps explicit ``dislike``
+        and ``none`` decisions untouched through the same conflict-safe insert.
+        """
+        now = datetime.now().isoformat()
+        scanned = 0
+        qualified = 0
+        added = 0
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT source, paper_id, canonical_id, version, paper_json, score_json
+                FROM daily_papers
+                WHERE score_json IS NOT NULL AND trim(score_json) <> ''
+                """
+            ).fetchall()
+            scanned = len(rows)
+            for row in rows:
+                score = self._decode_json_object(row["score_json"])
+                if score.get("is_qualified") is not True:
+                    continue
+                qualified += 1
+                metadata = self._decode_json_object(row["paper_json"])
+                title = str(metadata.get("title") or row["paper_id"] or "").strip()[:4_000]
+                raw_authors = metadata.get("authors")
+                authors = [
+                    item.strip()[:500]
+                    for item in raw_authors
+                    if isinstance(item, str) and item.strip()
+                ][:100] if isinstance(raw_authors, list) else []
+                raw_categories = metadata.get("categories")
+                categories = [
+                    item.strip()[:100]
+                    for item in raw_categories
+                    if isinstance(item, str) and item.strip()
+                ][:100] if isinstance(raw_categories, list) else []
+                canonical_id = str(row["canonical_id"] or metadata.get("canonical_id") or "").strip()[:500] or None
+                raw_version = row["version"] if row["version"] not in (None, 0) else metadata.get("version")
+                try:
+                    version = int(raw_version) if raw_version not in (None, "") else None
+                except (TypeError, ValueError):
+                    version = None
+                cursor = conn.execute(
+                    """
+                    INSERT INTO paper_preferences (
+                        source, paper_id, canonical_id, version, preference,
+                        title, authors_json, categories_json, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, 'like', ?, ?, ?, ?, ?)
+                    ON CONFLICT(source, paper_id) DO NOTHING
+                    """,
+                    (
+                        str(row["source"]),
+                        str(row["paper_id"]),
+                        canonical_id,
+                        version,
+                        title or str(row["paper_id"]),
+                        json.dumps(authors, ensure_ascii=False),
+                        json.dumps(categories, ensure_ascii=False),
+                        now,
+                        now,
+                    ),
+                )
+                added += max(0, int(cursor.rowcount))
+        return {
+            "scanned": scanned,
+            "qualified": qualified,
+            "added": added,
+            "preserved": max(0, qualified - added),
+        }
+
     def set_paper_preference(
         self,
         source: str,

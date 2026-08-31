@@ -123,6 +123,62 @@ class PaperPreferenceTests(unittest.TestCase):
                 "none",
             )
 
+    def test_collect_qualified_favorites_is_idempotent_and_keeps_reader_marks(self):
+        import json
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = DailyResearchStore(Path(temp_dir) / "state.db")
+            papers = [
+                (
+                    "qualified",
+                    {"title": "Qualified", "authors": ["Alice"], "categories": ["quant-ph"]},
+                    {"is_qualified": True},
+                ),
+                (
+                    "not-qualified",
+                    {"title": "Not qualified", "authors": ["Bob"], "categories": ["hep-th"]},
+                    {"is_qualified": False},
+                ),
+                (
+                    "manual-mark",
+                    {"title": "Manual mark", "authors": "not-a-list", "categories": "not-a-list"},
+                    {"is_qualified": True},
+                ),
+            ]
+            with store._connect() as conn:
+                for paper_id, metadata, score in papers:
+                    conn.execute(
+                        "INSERT INTO daily_papers (source, paper_id, paper_json, score_json,"
+                        " first_seen_at, last_seen_at, run_id) VALUES (?,?,?,?,?,?,?)",
+                        (
+                            "arxiv",
+                            paper_id,
+                            json.dumps(metadata),
+                            json.dumps(score),
+                            "2026-01-01",
+                            "2026-01-01",
+                            "run-1",
+                        ),
+                    )
+            store.set_paper_preference(
+                "arxiv", "manual-mark", preference="dislike", title="Manual mark"
+            )
+
+            first = store.collect_qualified_favorites()
+
+            self.assertEqual(first, {"scanned": 3, "qualified": 2, "added": 1, "preserved": 1})
+            favorite = store.get_paper_preference("arxiv", "qualified")
+            self.assertEqual(favorite["preference"], "like")
+            self.assertEqual(favorite["authors"], ["Alice"])
+            self.assertEqual(favorite["categories"], ["quant-ph"])
+            self.assertEqual(
+                store.get_paper_preference("arxiv", "manual-mark")["preference"], "dislike"
+            )
+            self.assertIsNone(store.get_paper_preference("arxiv", "not-qualified"))
+
+            second = store.collect_qualified_favorites()
+            self.assertEqual(second, {"scanned": 3, "qualified": 2, "added": 0, "preserved": 2})
+
     def _seed_daily_paper(self, store, paper_id, *, url=None, keywords=None, liked=True):
         import json
         import sqlite3
