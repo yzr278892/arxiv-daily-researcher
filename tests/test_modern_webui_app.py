@@ -102,6 +102,12 @@ class ModernWebUIAppTests(unittest.TestCase):
         self.assertEqual(script.count('class="task-status-region"'), 3)
         self.assertIn(".task-status-region { margin-top: 28px; }", stylesheet)
 
+    def test_history_maintenance_has_an_independent_paper_limit_setting(self) -> None:
+        script = self.client.get("/assets/app.js").text
+
+        self.assertIn("history_maintenance_max_papers_per_run", script)
+        self.assertIn("历史维护每次最多处理论文数（0 不限）", script)
+
     def test_stale_trigger_cleanup_uses_the_authenticated_api_boundary(self) -> None:
         self.assertEqual(self.client.post("/api/triggers/stale", json={}).status_code, 503)
         self.assertEqual(

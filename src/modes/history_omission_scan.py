@@ -4,8 +4,8 @@ The v3.2 HTML importer is the only component that reads archived reports.
 Once a card has been written to SQLite, this workflow uses the delivery ledger,
 paper metadata and supplement backlog exclusively.  Each missed paper is
 handled with the normal daily-research pipeline, while report batches are
-bounded by ``daily_research.max_papers_per_run`` and grouped by ISO calendar
-week (Monday through Sunday).
+bounded by ``history_maintenance.max_papers_per_run`` and grouped by ISO
+calendar week (Monday through Sunday).
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ from typing import Any, Callable, Dict, Optional
 from config import settings
 from notifications import NotifierAgent, WorkflowResult
 from utils.daily_research_store import DailyResearchStore
+from utils.history_maintenance import resolve_history_maintenance_paper_limit
 from utils.legacy_range_scan import scan_source_range
 from utils.token_counter import token_counter
 
@@ -51,6 +52,10 @@ def _notify_result(
         1 for week in weeks if isinstance(week, dict) and week.get("state") == "completed"
     )
     issues = list(summary.get("issues") or [])
+    if summary.get("deferred_by_limit"):
+        issues.append(
+            f"已达到本次历史维护上限 {summary.get('paper_limit')} 篇，剩余遗漏论文会在下次运行时继续"
+        )
     if scan.get("failed_chunks"):
         issues.append(f"{scan['failed_chunks']} 个历史扫描分块失败，后续可再次执行本任务重试")
     result = WorkflowResult(
@@ -273,6 +278,7 @@ def run_history_omission_scan(
     store: Optional[DailyResearchStore] = None,
     notify: bool = True,
     pipeline_factory: Optional[Callable[[], Any]] = None,
+    paper_limit: Optional[int] = None,
 ) -> tuple[int, str, Dict[str, Any]]:
     """Scan SQLite delivery coverage and drain omission rows week by week.
 
@@ -282,6 +288,7 @@ def run_history_omission_scan(
     nested import, repair and omission phases.
     """
     store = store or DailyResearchStore(settings.DAILY_RESEARCH_DB_PATH)
+    effective_limit = resolve_history_maintenance_paper_limit(paper_limit)
     run_id = store.start_run(0, run_kind="history_omission_scan")
     progress = _progress_callback(store, run_id)
     summary: Dict[str, Any] = {
@@ -291,6 +298,9 @@ def run_history_omission_scan(
         "weeks": [],
         "pending_after": 0,
         "issues": [],
+        "paper_limit": effective_limit,
+        "processed": 0,
+        "deferred_by_limit": False,
     }
     if pipeline_factory is None:
         from modes.daily_research import DailyResearchPipeline
@@ -320,7 +330,10 @@ def run_history_omission_scan(
 
         groups = store.missed_scan_week_groups()
         total_pending = sum(groups.values())
-        store.set_run_total(run_id, total_pending)
+        store.set_run_total(
+            run_id,
+            min(total_pending, effective_limit) if effective_limit else total_pending,
+        )
         if not groups:
             summary["pending_after"] = store.supplement_backlog_summary(
                 reasons={"missed_scan"}
@@ -348,7 +361,15 @@ def run_history_omission_scan(
         )
         completed_weeks = 0
         had_batch_failure = False
+        processed_total = 0
         for week_index, (week_start, expected_count) in enumerate(groups.items(), start=1):
+            if effective_limit and processed_total >= effective_limit:
+                summary["deferred_by_limit"] = True
+                logger.info(
+                    "[HistoryOmission] 已达到本次历史维护上限 %s 篇，保留其余自然周积压",
+                    effective_limit,
+                )
+                break
             week_end = week_start + timedelta(days=6)
             week_summary: Dict[str, Any] = {
                 "week_start": week_start.isoformat(),
@@ -389,8 +410,17 @@ def run_history_omission_scan(
                     completed_weeks += 1
                     break
 
+                if effective_limit and processed_total >= effective_limit:
+                    week_summary["state"] = "deferred_by_limit"
+                    week_summary["remaining"] = pending_before
+                    summary["deferred_by_limit"] = True
+                    break
+
                 week_summary["batches"] += 1
                 batch_index = week_summary["batches"]
+                batch_limit = (
+                    0 if not effective_limit else effective_limit - processed_total
+                )
                 progress(
                     phase="history_omission_week",
                     detail=(
@@ -409,10 +439,14 @@ def run_history_omission_scan(
                     supplement_week_start=week_start,
                     supplement_week_end=week_end,
                     report_timestamp=report_stamp,
+                    paper_limit=batch_limit,
                 )
-                week_summary["processed"] += int(
+                batch_processed = int(
                     getattr(result, "total_papers_fetched", 0) or 0
                 )
+                week_summary["processed"] += batch_processed
+                processed_total += batch_processed
+                summary["processed"] = processed_total
                 paths = getattr(result, "report_paths", {}) or {}
                 if isinstance(paths, dict) and paths:
                     week_summary["report_paths"].append(
@@ -479,6 +513,8 @@ def run_history_omission_scan(
                 total=len(groups),
             )
             _save_summary(store, summary)
+            if week_summary["state"] == "deferred_by_limit":
+                break
 
         summary["pending_after"] = int(
             store.supplement_backlog_summary(reasons={"missed_scan"})["pending"] or 0

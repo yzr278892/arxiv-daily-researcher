@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -178,6 +179,71 @@ class LegacyImportWorkflowTests(unittest.TestCase):
             self.assertEqual(result.workflow, "旧历史导入")
             self.assertFalse(result.success)
             self.assertTrue(any("TL;DR API 暂不可用" in item for item in result.issues))
+
+    def test_cardless_supplement_uses_the_history_maintenance_limit(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            store = DailyResearchStore(root / "daily.db")
+            store.record_supplement_backlog([
+                {
+                    "source": "arxiv",
+                    "canonical_id": "2608.1",
+                    "version": 1,
+                    "paper_id": "2608.1v1",
+                    "reason": "missing_data",
+                },
+                {
+                    "source": "arxiv",
+                    "canonical_id": "2608.2",
+                    "version": 1,
+                    "paper_id": "2608.2v1",
+                    "reason": "missing_data",
+                },
+            ])
+            calls = []
+
+            class _Pipeline:
+                def run(self, **kwargs):
+                    calls.append(kwargs)
+                    rows = store.claim_supplement_backlog(
+                        kwargs["paper_limit"], reasons=kwargs["supplement_reasons"]
+                    )
+                    store.resolve_supplement_backlog(
+                        "fake-supplement",
+                        [(row["source"], row["canonical_id"], row["version"]) for row in rows],
+                        status="delivered",
+                    )
+                    return SimpleNamespace(
+                        success=True,
+                        interrupted=False,
+                        total_papers_fetched=len(rows),
+                        report_paths={},
+                    )
+
+            summary: dict = {}
+            with (
+                self._environment(root),
+                patch.object(
+                    legacy_import.settings,
+                    "DAILY_MAX_PAPERS_PER_RUN",
+                    99,
+                ),
+                patch.object(
+                    legacy_import.settings,
+                    "HISTORY_MAINTENANCE_MAX_PAPERS_PER_RUN",
+                    1,
+                ),
+                patch("modes.daily_research.DailyResearchPipeline", _Pipeline),
+            ):
+                self.assertEqual(
+                    legacy_import._run_automatic_supplement(store, summary), 0
+                )
+
+            self.assertEqual(len(calls), 1)
+            self.assertEqual(calls[0]["paper_limit"], 1)
+            self.assertEqual(summary["supplement"]["processed"], 1)
+            self.assertTrue(summary["supplement"]["deferred_by_limit"])
+            self.assertEqual(store.supplement_backlog_summary()["pending"], 1)
 
     def test_interrupted_import_marks_parent_run_failed(self):
         with tempfile.TemporaryDirectory() as temp_dir:

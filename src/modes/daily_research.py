@@ -615,6 +615,7 @@ def _load_supplement_candidates(
     reasons: Optional[set[str] | list[str] | tuple[str, ...]] = None,
     published_from: Optional[date] = None,
     published_to: Optional[date] = None,
+    paper_limit: Optional[int] = None,
 ) -> Tuple[
     Dict[str, List[PaperMetadata]], List[Tuple[str, str, int]], int
 ]:
@@ -624,7 +625,13 @@ def _load_supplement_candidates(
     元数据获取失败条数)。缺 paper_json 的 arXiv 行按 ID 补抓元数据；
     抓不到或其他来源无法补抓的行记为 failed 留待再次重试。
     """
-    limit = int(getattr(settings, "DAILY_MAX_PAPERS_PER_RUN", 0) or 0)
+    limit = (
+        int(getattr(settings, "DAILY_MAX_PAPERS_PER_RUN", 0) or 0)
+        if paper_limit is None
+        else paper_limit
+    )
+    if isinstance(limit, bool) or not isinstance(limit, int) or limit < 0:
+        raise ValueError("补充报告论文上限必须是非负整数（0 表示不限）")
     # ``0`` is the documented unlimited setting for every daily-style run.
     # Read the ordered backlog without applying the report cap here: a broken
     # legacy row must be recorded as retryable *and then skipped* so a later,
@@ -989,6 +996,7 @@ class DailyResearchPipeline:
         supplement_week_start: Optional[date] = None,
         supplement_week_end: Optional[date] = None,
         report_timestamp: Optional[datetime] = None,
+        paper_limit: Optional[int] = None,
     ):
         """
         执行每日研究完整流程。
@@ -1002,7 +1010,8 @@ class DailyResearchPipeline:
 
         ``supplement_reasons`` 和 ``supplement_week_start/end`` 让历史遗漏
         工作流只消费自己的 SQLite 积压，并以真实自然周拆分补充报告。
-        它们不改变普通补充运行的兼容行为。
+        它们不改变普通补充运行的兼容行为。``paper_limit`` 仅供历史维护
+        调用覆盖补充报告的每日上限。
         """
         if run_kind == "backfill" and target_date is None:
             raise ValueError("backfill 运行必须提供 target_date")
@@ -1013,9 +1022,10 @@ class DailyResearchPipeline:
                 supplement_week_start,
                 supplement_week_end,
                 report_timestamp,
+                paper_limit,
             )
         ):
-            raise ValueError("补充报告筛选与自定义时间戳只能用于 supplement 运行")
+            raise ValueError("补充报告筛选、时间戳和论文上限只能用于 supplement 运行")
         if supplement_week_start is not None and not isinstance(supplement_week_start, date):
             raise ValueError("补充报告周起始日期必须是 date")
         if supplement_week_end is not None and not isinstance(supplement_week_end, date):
@@ -1028,6 +1038,12 @@ class DailyResearchPipeline:
             raise ValueError("补充报告周起始日期不能晚于结束日期")
         if report_timestamp is not None and not isinstance(report_timestamp, datetime):
             raise ValueError("补充报告时间戳必须是 datetime")
+        if paper_limit is not None and (
+            isinstance(paper_limit, bool)
+            or not isinstance(paper_limit, int)
+            or paper_limit < 0
+        ):
+            raise ValueError("补充报告论文上限必须是非负整数（0 表示不限）")
         store = None
         run_id = None
         notifier = None
@@ -1220,6 +1236,7 @@ class DailyResearchPipeline:
                     reasons=supplement_reasons,
                     published_from=supplement_week_start,
                     published_to=supplement_week_end,
+                    paper_limit=paper_limit,
                 )
                 registered_candidate_count = sum(
                     len(papers) for papers in papers_by_source.values()

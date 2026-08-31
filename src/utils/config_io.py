@@ -138,6 +138,15 @@ def validate_config_document(config: object) -> Dict[str, Any]:
             raise ValueError(
                 "daily_research.max_papers_per_run 必须是非负整数（0 表示不限）"
             )
+    history_maintenance = config.get("history_maintenance")
+    if history_maintenance is not None:
+        if not isinstance(history_maintenance, dict):
+            raise ValueError("history_maintenance 配置段必须是对象")
+        limit = history_maintenance.get("max_papers_per_run", 0)
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit < 0:
+            raise ValueError(
+                "history_maintenance.max_papers_per_run 必须是非负整数（0 表示不限）"
+            )
     backup = config.get("backup")
     if backup is not None:
         if not isinstance(backup, dict):
@@ -870,6 +879,7 @@ def build_config_dict(
     daily_research_persistence_enabled: bool = True,
     daily_research_db_path: str = "data/daily_research/daily_research.db",
     daily_max_papers_per_run: int = 200,
+    history_maintenance_max_papers_per_run: int = 200,
     daily_run_time: str = "12:00",
     daily_enable_deep_analysis: bool = True,
     legacy_import_full_repair_enabled: bool = False,
@@ -929,6 +939,15 @@ def build_config_dict(
     ):
         raise ValueError(
             "daily_research.max_papers_per_run 必须是非负整数（0 表示不限）"
+        )
+
+    if (
+        isinstance(history_maintenance_max_papers_per_run, bool)
+        or not isinstance(history_maintenance_max_papers_per_run, int)
+        or history_maintenance_max_papers_per_run < 0
+    ):
+        raise ValueError(
+            "history_maintenance.max_papers_per_run 必须是非负整数（0 表示不限）"
         )
 
     if not isinstance(daily_run_time, str) or not re.fullmatch(
@@ -1186,6 +1205,9 @@ def build_config_dict(
             "max_papers_per_run": daily_max_papers_per_run,
             "run_time": daily_run_time,
             "db_path": daily_research_db_path,
+        },
+        "history_maintenance": {
+            "max_papers_per_run": history_maintenance_max_papers_per_run,
         },
         "legacy_history": {
             "full_repair_enabled": legacy_import_full_repair_enabled,
@@ -1564,6 +1586,15 @@ def flatten_config_dict(config: Dict[str, Any]) -> Dict[str, Any]:
     flat["daily_run_time"] = dr.get("run_time", "12:00")
     flat["daily_research_db_path"] = dr.get(
         "db_path", "data/daily_research/daily_research.db"
+    )
+
+    # Older config files controlled historical maintenance with the daily
+    # cap. Keep that effective value when they are displayed/saved once.
+    history_maintenance = config.get("history_maintenance", {})
+    if not isinstance(history_maintenance, dict):
+        history_maintenance = {}
+    flat["history_maintenance_max_papers_per_run"] = history_maintenance.get(
+        "max_papers_per_run", flat["daily_max_papers_per_run"]
     )
 
     # Legacy history import

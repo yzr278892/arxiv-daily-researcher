@@ -23,6 +23,7 @@ from utils.daily_research_fingerprints import (
     build_stage_input_fingerprints,
 )
 from utils.daily_research_store import DailyResearchStore
+from utils.history_maintenance import resolve_history_maintenance_paper_limit
 from utils.history_report_patch import patch_historical_reports
 from utils.llm_health import make_llm_health_recorder
 from utils.token_counter import token_counter
@@ -112,6 +113,10 @@ def _notify_result(
     if not settings.ENABLE_NOTIFICATIONS:
         return
     issues = list(summary.get("issues") or [])
+    if summary.get("deferred_by_limit"):
+        issues.append(
+            f"已达到本次历史维护上限 {summary.get('paper_limit')} 篇，剩余论文会在下次运行时继续"
+        )
     if summary.get("pending_after"):
         issues.append(f"仍有 {summary['pending_after']} 篇历史论文待补全或待写回报告")
     result = WorkflowResult(
@@ -149,14 +154,17 @@ def run_history_data_repair(
     *,
     store: Optional[DailyResearchStore] = None,
     notify: bool = True,
+    paper_limit: Optional[int] = None,
 ) -> tuple[int, str, Dict[str, Any]]:
-    """Run one complete SQLite history repair pass.
+    """Run one bounded SQLite history repair pass.
 
     ``notify=False`` is used by full legacy import so its caller can emit one
     consolidated workflow notification instead of a notification for every
-    internal step.
+    internal step. ``paper_limit`` is an internal/test override; normal calls
+    use ``history_maintenance.max_papers_per_run``.
     """
     store = store or DailyResearchStore(settings.DAILY_RESEARCH_DB_PATH)
+    effective_limit = resolve_history_maintenance_paper_limit(paper_limit)
     run_id = store.start_run(0, run_kind="history_data_repair")
     summary: Dict[str, Any] = {
         "started_at": datetime.now().isoformat(),
@@ -168,6 +176,8 @@ def run_history_data_repair(
         "stage_failures": 0,
         "issues": [],
         "pending_after": 0,
+        "paper_limit": effective_limit,
+        "deferred_by_limit": False,
     }
     agent: Optional[AnalysisAgent] = None
     all_keywords: Optional[Dict[str, float]] = None
@@ -177,13 +187,15 @@ def run_history_data_repair(
             token_counter.reset()
         store.record_run_phase(run_id, "history_repair", detail="从 SQLite 检查已交付历史")
         candidates = store.history_repair_candidates(
-            include_deep_analysis=bool(settings.DAILY_ENABLE_DEEP_ANALYSIS)
+            include_deep_analysis=bool(settings.DAILY_ENABLE_DEEP_ANALYSIS),
+            limit=effective_limit,
         )
         summary["candidates"] = len(candidates)
         store.set_run_total(run_id, len(candidates))
         logger.info(
-            "[HistoryRepair] SQLite 检查完成：发现 %s 篇需要补全或写回报告的论文",
+            "[HistoryRepair] SQLite 检查完成：本次处理 %s 篇需要补全或写回报告的论文（上限：%s）",
             len(candidates),
+            effective_limit or "不限",
         )
         if not candidates:
             summary["finished_at"] = datetime.now().isoformat()
@@ -377,6 +389,11 @@ def run_history_data_repair(
         summary["pending_after"] = store.history_repair_summary(
             include_deep_analysis=bool(settings.DAILY_ENABLE_DEEP_ANALYSIS)
         )["pending"]
+        summary["deferred_by_limit"] = bool(
+            effective_limit
+            and len(candidates) >= effective_limit
+            and summary["pending_after"]
+        )
         summary["finished_at"] = datetime.now().isoformat()
         exit_code = 0 if not (
             summary["stage_failures"] or summary["report_patch_failures"]

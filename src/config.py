@@ -320,6 +320,11 @@ class Settings(BaseSettings):
     # cron；显式设置的 CRON_SCHEDULE 环境变量优先于该值。
     DAILY_RUN_TIME: str = "12:00"
 
+    # Historical repair, legacy supplements and omission-report generation
+    # have their own workload budget. Older config files fall back to the
+    # daily cap when loaded so upgrading does not unexpectedly change work.
+    HISTORY_MAINTENANCE_MAX_PAPERS_PER_RUN: int = 200
+
     # v3.2 archives can be imported in a lightweight ledger-only mode.  The
     # optional full workflow additionally repairs missing SQLite fields and
     # scans the covered historical range for omitted arXiv papers.
@@ -945,6 +950,29 @@ class Settings(BaseSettings):
                         daily_cfg["db_path"],
                         label="daily_research.db_path",
                     )
+
+            # 历史维护与每日研究使用独立的论文处理上限。旧配置没有该段时
+            # 保持与旧版一致：回退到已经加载的每日研究上限。
+            history_maintenance_cfg = config.get("history_maintenance")
+            if history_maintenance_cfg is None:
+                self.HISTORY_MAINTENANCE_MAX_PAPERS_PER_RUN = (
+                    self.DAILY_MAX_PAPERS_PER_RUN
+                )
+            else:
+                if not isinstance(history_maintenance_cfg, dict):
+                    raise ValueError("history_maintenance 配置段必须是对象")
+                history_limit = history_maintenance_cfg.get(
+                    "max_papers_per_run", self.DAILY_MAX_PAPERS_PER_RUN
+                )
+                if (
+                    isinstance(history_limit, bool)
+                    or not isinstance(history_limit, int)
+                    or history_limit < 0
+                ):
+                    raise ValueError(
+                        "history_maintenance.max_papers_per_run 必须是非负整数（0 表示不限）"
+                    )
+                self.HISTORY_MAINTENANCE_MAX_PAPERS_PER_RUN = history_limit
 
             if "legacy_history" in config:
                 legacy_cfg = config["legacy_history"]

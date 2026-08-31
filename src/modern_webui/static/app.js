@@ -165,6 +165,8 @@ const MODERN_EN_TRANSLATIONS = Object.freeze({
   "报告包含全部论文": "Include all papers in reports",
   "本次最多处理论文数（0 不限）": "Maximum papers this run (0 = unlimited)",
   "每日运行时间": "Daily run time",
+  "历史维护每次最多处理论文数（0 不限）": "Maximum papers per history-maintenance task (0 = unlimited)",
+  "适用于历史数据补全、历史遗漏补充和完整旧历史导入中的补充报告；不会影响每日研究。": "Applies to historical data repair, omission supplements, and supplements in a full legacy import. It does not affect daily research.",
   "选择过去日期范围后开始运行。系统会按天把任务写入持久化队列，并与其他研究任务安全互斥。": "Choose a past date range and start the run. Jobs are stored in a durable per-day queue and safely interlocked with other research tasks.",
   "开始日期": "Start date",
   "结束日期": "End date",
@@ -2495,7 +2497,8 @@ function historyActions(data) {
     .filter((task) => ["queued", "starting", "running"].includes(task.state))
     .map((task) => task.mode));
   const fullRepair = Boolean(configValue("legacy_import_full_repair_enabled", false));
-  return `<p class="hint-text">导入旧版本 HTML 报告中的论文。SQLite 是历史论文数据的唯一索引；HTML 解析与新报告生成都会同步写入。</p>${field({ label: "启用完整补全流程", key: "legacy_import_full_repair_enabled", type: "checkbox", fallback: false })}<p id="history-full-repair-hint" class="hint-text">${historyFullRepairHint(fullRepair)}</p><div class="action-row"><button id="history-import" class="primary-button" ${pendingModes.has("legacy_import") ? "disabled" : ""}>读取旧历史 <span>→</span></button></div><h3>历史维护</h3><div class="action-row history-maintenance-actions"><button id="history-repair" class="secondary-button compact-button" ${pendingModes.has("history_data_repair") ? "disabled" : ""}>补全历史数据</button><button id="history-omission" class="secondary-button compact-button" ${pendingModes.has("history_omission_scan") ? "disabled" : ""}>扫描历史遗漏</button></div>`;
+  const historyLimit = `<div class="form-grid two">${field({ label: "历史维护每次最多处理论文数（0 不限）", key: "history_maintenance_max_papers_per_run", type: "number", min: 0, max: 100000, step: 1, fallback: 200, help: "适用于历史数据补全、历史遗漏补充和完整旧历史导入中的补充报告；不会影响每日研究。" })}</div>`;
+  return `<p class="hint-text">导入旧版本 HTML 报告中的论文。SQLite 是历史论文数据的唯一索引；HTML 解析与新报告生成都会同步写入。</p>${field({ label: "启用完整补全流程", key: "legacy_import_full_repair_enabled", type: "checkbox", fallback: false })}<p id="history-full-repair-hint" class="hint-text">${historyFullRepairHint(fullRepair)}</p><div class="action-row"><button id="history-import" class="primary-button" ${pendingModes.has("legacy_import") ? "disabled" : ""}>读取旧历史 <span>→</span></button></div><h3>历史维护</h3>${historyLimit}<div class="action-row history-maintenance-actions"><button id="history-repair" class="secondary-button compact-button" ${pendingModes.has("history_data_repair") ? "disabled" : ""}>补全历史数据</button><button id="history-omission" class="secondary-button compact-button" ${pendingModes.has("history_omission_scan") ? "disabled" : ""}>扫描历史遗漏</button></div>`;
 }
 
 function historyStatusPanel(data) {

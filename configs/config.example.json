@@ -222,6 +222,13 @@
     "db_path": "data/daily_research/daily_research.db"
   },
 
+  // Historical repair and supplement reports use this independent cap.
+  // HTML indexing and source-range scans still complete; excess SQLite work
+  // remains pending for the next history-maintenance task. 0 = unlimited.
+  "history_maintenance": {
+    "max_papers_per_run": 3
+  },
+
   // Legacy HTML can always be indexed into SQLite. Enable this only when
   // the same import should also repair missing fields and scan omissions.
   "legacy_history": {

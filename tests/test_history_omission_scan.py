@@ -259,6 +259,56 @@ class HistoryOmissionScanTests(unittest.TestCase):
         pending = self.store.supplement_backlog_summary(reasons={"missing_data"})
         self.assertEqual(pending["pending"], 1)
 
+    def test_history_maintenance_limit_bounds_all_omission_batches(self):
+        calls = []
+
+        class _Pipeline:
+            def run(self, **kwargs):
+                calls.append(kwargs)
+                rows = self_store.claim_supplement_backlog(
+                    kwargs["paper_limit"],
+                    reasons=kwargs["supplement_reasons"],
+                    published_from=kwargs["supplement_week_start"],
+                    published_to=kwargs["supplement_week_end"],
+                )
+                self_store.resolve_supplement_backlog(
+                    "fake-supplement",
+                    [(row["source"], row["canonical_id"], row["version"]) for row in rows],
+                    status="delivered",
+                )
+                return SimpleNamespace(
+                    success=True,
+                    interrupted=False,
+                    total_papers_fetched=len(rows),
+                    report_paths={},
+                )
+
+        self_store = self.store
+        with patch(
+            "modes.history_omission_scan._scan_sqlite_history",
+            return_value={
+                "range_start": "2026-03-02",
+                "range_end": "2026-03-09",
+                "papers_scanned": 3,
+                "missed_found": 0,
+                "failed_chunks": 0,
+                "errors": [],
+            },
+        ):
+            exit_code, _run_id, summary = run_history_omission_scan(
+                store=self.store,
+                notify=False,
+                pipeline_factory=_Pipeline,
+                paper_limit=2,
+            )
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["paper_limit"], 2)
+        self.assertEqual(summary["processed"], 2)
+        self.assertTrue(summary["deferred_by_limit"])
+        self.assertEqual(summary["pending_after"], 1)
+
     def test_failed_supplement_batch_marks_scan_run_failed(self):
         class _FailingPipeline:
             def run(self, **_kwargs):

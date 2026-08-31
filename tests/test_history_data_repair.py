@@ -106,6 +106,50 @@ class HistoryDataRepairWorkflowTests(unittest.TestCase):
             delivered=True,
         )
 
+    def _add_missing_tldr_candidate(self, paper_id: str) -> None:
+        paper = PaperMetadata(
+            paper_id=paper_id,
+            title=f"Repairable {paper_id}",
+            authors=["Bob"],
+            abstract="Another abstract.",
+            published_date=datetime(2026, 3, 6),
+            url=f"https://arxiv.org/abs/{paper_id}",
+            source="arxiv",
+        )
+        self.store.import_legacy_paper(
+            {
+                "source": "arxiv",
+                "paper_id": paper.paper_id,
+                "canonical_id": paper.canonical_id,
+                "version": paper.version,
+                "paper_json": paper.to_dict(),
+                "score_json": json.dumps(
+                    {
+                        "total_score": 4.0,
+                        "keyword_scores": {"quantum": 4.0},
+                        "author_bonus": 0.0,
+                        "expert_authors_found": [],
+                        "passing_score": 10.0,
+                        "is_qualified": False,
+                        "reasoning": "old score",
+                        "tldr": "",
+                        "extracted_keywords": [],
+                    }
+                ),
+                "abstract_cn": "已有中文翻译。",
+                "analysis_json": None,
+                "score_status": "succeeded",
+                "tldr_status": "pending",
+                "translation_status": "succeeded",
+                "analysis_status": "not_required",
+                "completed_at": "2026-03-06T08:00:00",
+                "delivered_at": "2026-03-06T08:00:00",
+                "delivery_run_id": self.delivery_run,
+                "report_path": str(self.report),
+            },
+            delivered=True,
+        )
+
     def tearDown(self):
         self.temp.cleanup()
 
@@ -178,6 +222,33 @@ class HistoryDataRepairWorkflowTests(unittest.TestCase):
         self.assertIn("有步骤未完成", row["error"])
         repaired = self.store.get_paper_record("arxiv", "2603.12345v1")
         self.assertEqual(repaired["tldr_status"], "failed")
+
+    def test_history_maintenance_limit_defers_extra_repair_candidates(self):
+        self._add_missing_tldr_candidate("2603.54321v1")
+
+        class _Agent:
+            def __init__(self, *_args, **_kwargs):
+                pass
+
+            def generate_tldr(self, *_args, **_kwargs):
+                return "补全 TL;DR。"
+
+            def translate_abstract(self, *_args, **_kwargs):
+                return "补全中文翻译。"
+
+        with (
+            patch("modes.history_data_repair.AnalysisAgent", _Agent),
+            patch("modes.history_data_repair.settings.DAILY_ENABLE_DEEP_ANALYSIS", False),
+        ):
+            exit_code, _run_id, summary = run_history_data_repair(
+                store=self.store, notify=False, paper_limit=1
+            )
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(summary["paper_limit"], 1)
+        self.assertEqual(summary["candidates"], 1)
+        self.assertTrue(summary["deferred_by_limit"])
+        self.assertEqual(summary["pending_after"], 1)
 
 
 if __name__ == "__main__":

@@ -186,6 +186,41 @@ class SupplementRunTests(unittest.TestCase):
             self.assertTrue(result.success)
             self.assertEqual(reporter_log, [])
 
+    def test_supplement_paper_limit_can_override_the_daily_cap_for_history_tasks(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            db_path = root / "daily.db"
+            report_path = root / "ARXIV_Report.html"
+            reporter_log = []
+            store = DailyResearchStore(db_path)
+            store.record_supplement_backlog([
+                {
+                    "source": "arxiv",
+                    "canonical_id": "2602.60",
+                    "version": 1,
+                    "paper_id": "2602.60v1",
+                    "reason": "missing_analysis",
+                    "paper_json": _paper("2602.60v1").to_dict(),
+                },
+                {
+                    "source": "arxiv",
+                    "canonical_id": "2602.61",
+                    "version": 1,
+                    "paper_id": "2602.61v1",
+                    "reason": "missing_analysis",
+                    "paper_json": _paper("2602.61v1").to_dict(),
+                },
+            ])
+
+            with _pipeline_overrides(root, db_path, report_path, reporter_log):
+                result = DailyResearchPipeline().run(
+                    run_kind="supplement", paper_limit=2
+                )
+
+            self.assertTrue(result.success)
+            self.assertEqual(result.total_papers_fetched, 2)
+            self.assertEqual(store.supplement_backlog_summary()["pending"], 0)
+
     def test_supplement_loader_fetches_missing_metadata_by_id(self):
         from modes.daily_research import _load_supplement_candidates
 

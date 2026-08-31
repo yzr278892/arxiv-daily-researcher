@@ -23,6 +23,7 @@ if __package__ in (None, ""):
 from config import settings
 from notifications import NotifierAgent, WorkflowResult
 from utils.daily_research_store import DailyResearchStore
+from utils.history_maintenance import resolve_history_maintenance_paper_limit
 from utils.legacy_history import LEGACY_IMPORT_STATE_KEY, import_legacy_history
 from utils.run_lock import daily_workflow_gate, legacy_import_activity_gate, run_lock
 
@@ -162,8 +163,9 @@ def _run_automatic_supplement(
     summary: dict[str, Any],
     *,
     progress_callback=None,
+    paper_limit: Optional[int] = None,
 ) -> int:
-    """Drain non-omission compatibility backlog into capped reports.
+    """Drain a bounded non-omission compatibility backlog into reports.
 
     Missing report cards from legacy JSON history have no original HTML to
     patch, so they remain ordinary supplement reports. ``missed_scan`` rows
@@ -172,6 +174,7 @@ def _run_automatic_supplement(
     The caller owns both workflow gates.
     """
     reasons = {"missing_data", "missing_translation", "missing_analysis"}
+    effective_limit = resolve_history_maintenance_paper_limit(paper_limit)
     try:
         pending_before = int(
             store.supplement_backlog_summary(reasons=reasons).get("pending", 0) or 0
@@ -187,6 +190,8 @@ def _run_automatic_supplement(
             "pending_before": pending_before,
             "processed": 0,
             "batches": [],
+            "paper_limit": effective_limit,
+            "deferred_by_limit": False,
         }
     )
     if pending_before <= 0:
@@ -198,9 +203,9 @@ def _run_automatic_supplement(
     supplement["state"] = "running"
     _save_summary(store, summary)
     logger.info(
-        "[LegacySupplement] 自动处理 %s 条无报告历史数据；每份报告上限为 %s",
+        "[LegacySupplement] 自动处理 %s 条无报告历史数据；本次历史维护上限为 %s",
         pending_before,
-        getattr(settings, "DAILY_MAX_PAPERS_PER_RUN", 0) or "不限",
+        effective_limit or "不限",
     )
 
     from modes.daily_research import DailyResearchPipeline
@@ -214,8 +219,25 @@ def _run_automatic_supplement(
             if batch_pending_before <= 0:
                 supplement.update({"state": "completed", "pending_after": 0})
                 break
+            if effective_limit and supplement["processed"] >= effective_limit:
+                supplement.update(
+                    {
+                        "state": "deferred_by_limit",
+                        "pending_after": batch_pending_before,
+                        "deferred_by_limit": True,
+                    }
+                )
+                logger.info(
+                    "[LegacySupplement] 已达到本次历史维护上限 %s 篇，保留 %s 条积压",
+                    effective_limit,
+                    batch_pending_before,
+                )
+                break
 
             batch_index += 1
+            batch_limit = (
+                0 if not effective_limit else effective_limit - supplement["processed"]
+            )
             if progress_callback is not None:
                 progress_callback(
                     phase="legacy_supplement",
@@ -228,7 +250,9 @@ def _run_automatic_supplement(
                 batch_pending_before,
             )
             result = DailyResearchPipeline().run(
-                run_kind="supplement", supplement_reasons=reasons
+                run_kind="supplement",
+                supplement_reasons=reasons,
+                paper_limit=batch_limit,
             )
             batch = {
                 "pending_before": batch_pending_before,

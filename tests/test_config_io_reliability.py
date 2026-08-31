@@ -331,9 +331,11 @@ class ConfigIOReliabilityTests(unittest.TestCase):
     def test_daily_queue_limit_round_trips_and_sqlite_is_mandatory(self):
         config = build_config_dict(
             daily_max_papers_per_run=10,
+            history_maintenance_max_papers_per_run=4,
             daily_research_persistence_enabled=False,
         )
         self.assertEqual(config["daily_research"]["max_papers_per_run"], 10)
+        self.assertEqual(config["history_maintenance"]["max_papers_per_run"], 4)
         self.assertNotIn("persistence_enabled", config["daily_research"])
 
         flat = flatten_config_dict(
@@ -345,7 +347,16 @@ class ConfigIOReliabilityTests(unittest.TestCase):
             }
         )
         self.assertEqual(flat["daily_max_papers_per_run"], 7)
+        self.assertEqual(flat["history_maintenance_max_papers_per_run"], 7)
         self.assertTrue(flat["daily_research_persistence_enabled"])
+
+        explicit_history = flatten_config_dict(
+            {
+                "daily_research": {"max_papers_per_run": 7},
+                "history_maintenance": {"max_papers_per_run": 2},
+            }
+        )
+        self.assertEqual(explicit_history["history_maintenance_max_papers_per_run"], 2)
 
         for invalid in (-1, True, "5"):
             with self.subTest(invalid=invalid):
@@ -355,6 +366,37 @@ class ConfigIOReliabilityTests(unittest.TestCase):
                     validate_config_document(
                         {"daily_research": {"max_papers_per_run": invalid}}
                     )
+                with self.assertRaisesRegex(ValueError, "非负整数"):
+                    build_config_dict(history_maintenance_max_papers_per_run=invalid)
+                with self.assertRaisesRegex(ValueError, "非负整数"):
+                    validate_config_document(
+                        {"history_maintenance": {"max_papers_per_run": invalid}}
+                    )
+
+    def test_history_maintenance_limit_is_independent_with_legacy_fallback(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "config.json"
+            config_path.write_text(
+                """
+                {
+                  daily_research: {max_papers_per_run: 7},
+                  history_maintenance: {max_papers_per_run: 2}
+                }
+                """,
+                encoding="utf-8",
+            )
+            configured = Settings()
+            configured.load_from_search_config(config_path)
+            self.assertEqual(configured.DAILY_MAX_PAPERS_PER_RUN, 7)
+            self.assertEqual(configured.HISTORY_MAINTENANCE_MAX_PAPERS_PER_RUN, 2)
+
+            config_path.write_text(
+                "{daily_research: {max_papers_per_run: 7}}",
+                encoding="utf-8",
+            )
+            legacy = Settings()
+            legacy.load_from_search_config(config_path)
+            self.assertEqual(legacy.HISTORY_MAINTENANCE_MAX_PAPERS_PER_RUN, 7)
 
     def test_local_backup_retention_round_trips_without_an_upper_limit(self):
         config = build_config_dict(
