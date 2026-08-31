@@ -216,7 +216,6 @@ h3 { margin: 0 0 14px; font-size: .92rem; line-height: 1.45; }
 .action-row + .table-wrap,
 .action-row + .native-scroll-table { margin-top: 17px; }
 .task-status-region { margin-top: 28px; }
-.history-maintenance-actions { margin-top: 10px; }
 .inline-result { color: var(--muted); font-size: .79rem; line-height: 1.45; }
 .inline-result.success { color: var(--success); }
 .inline-result.error { color: var(--danger); }

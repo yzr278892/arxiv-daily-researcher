@@ -82,6 +82,10 @@ SUPPORTED_MODES = frozenset(
         "backfill_run",
     }
 )
+HISTORY_MAINTENANCE_MODES = frozenset(
+    {"legacy_import", "history_data_repair", "history_omission_scan"}
+)
+NORMAL_TRIGGER_MODES = SUPPORTED_MODES - HISTORY_MAINTENANCE_MODES
 # 面板触发的后台作业：不接受任何参数。
 _NO_ARGS_MODES = frozenset(
     {"daily_research", "history_data_repair", "history_omission_scan", "supplement_run"}
@@ -576,6 +580,122 @@ def read_trigger_payload(request_path: Path) -> Dict[str, Any]:
     return validate_trigger_payload(payload)
 
 
+def _history_maintenance_schedule_from_runtime_config() -> tuple[str, str, str]:
+    """Read the current scheduler settings without retaining stale config.
+
+    The worker watcher invokes this in a short-lived process before claiming
+    an eligible history request.  That deliberately makes a just-saved WebUI
+    scheduling change effective on the next poll without a worker restart.
+    """
+    from utils.config_io import read_config_json
+    from utils.history_maintenance import (
+        DEFAULT_HISTORY_MAINTENANCE_RUN_MODE,
+        DEFAULT_HISTORY_MAINTENANCE_TIME_WINDOW_END,
+        DEFAULT_HISTORY_MAINTENANCE_TIME_WINDOW_START,
+        resolve_history_maintenance_schedule,
+    )
+
+    config = read_config_json()
+    history_maintenance = config.get("history_maintenance", {})
+    if not isinstance(history_maintenance, Mapping):
+        raise ValueError("history_maintenance 配置段必须是对象")
+    return resolve_history_maintenance_schedule(
+        history_maintenance.get("run_mode", DEFAULT_HISTORY_MAINTENANCE_RUN_MODE),
+        history_maintenance.get(
+            "time_window_start", DEFAULT_HISTORY_MAINTENANCE_TIME_WINDOW_START
+        ),
+        history_maintenance.get(
+            "time_window_end", DEFAULT_HISTORY_MAINTENANCE_TIME_WINDOW_END
+        ),
+    )
+
+
+def _worker_has_active_lock(data_dir: Path) -> bool:
+    """Whether a worker operation is currently holding a visible run lock."""
+    from utils.run_lock import is_lock_held
+
+    run_dir = Path(data_dir) / "run"
+    try:
+        lock_paths = sorted(run_dir.glob("*.lock"), key=lambda path: path.name)
+    except OSError:
+        # An unreadable lock directory is not proof that the backend is idle.
+        # Defer history work rather than risking a concurrent SQLite writer.
+        return True
+    for lock_path in lock_paths:
+        try:
+            if is_lock_held(lock_path):
+                return True
+        except OSError:
+            return True
+    return False
+
+
+def next_eligible_trigger_request(
+    data_dir: Path,
+    *,
+    now: Optional[datetime] = None,
+    history_schedule: tuple[object, object, object] | None = None,
+) -> Optional[Path]:
+    """Return one queue request that the watcher may claim now.
+
+    Normal research work always takes priority. A queued history task is left
+    in place until there are no held worker run locks; a time-window schedule
+    additionally waits for its local-time interval. A malformed request is
+    returned in filename order so the regular executor can reject and consume
+    it instead of leaving an unselectable poison file in the durable queue.
+    """
+    queue_dir = trigger_directory(Path(data_dir))
+    try:
+        request_paths = sorted(
+            (path for path in queue_dir.glob("*.json") if path.is_file()),
+            key=lambda path: path.name,
+        )
+    except OSError:
+        return None
+    if not request_paths:
+        return None
+
+    requests: list[tuple[Path, Dict[str, Any]]] = []
+    for request_path in request_paths:
+        try:
+            payload = read_trigger_payload(request_path)
+        except (OSError, TriggerValidationError, ValueError):
+            return request_path
+        requests.append((request_path, payload))
+
+    # A normal task submitted after a waiting history operation must not be
+    # trapped behind it. Preserve filename order among normal requests.
+    for request_path, payload in requests:
+        if payload["mode"] in NORMAL_TRIGGER_MODES:
+            return request_path
+
+    # All remaining validated requests are historical maintenance. Defer all
+    # of them while any visible worker operation owns a lock, including a
+    # cron-launched keyword maintenance task that is not represented by this
+    # WebUI queue.
+    if _worker_has_active_lock(Path(data_dir)):
+        return None
+
+    if history_schedule is None:
+        run_mode, window_start, window_end = (
+            _history_maintenance_schedule_from_runtime_config()
+        )
+    else:
+        from utils.history_maintenance import resolve_history_maintenance_schedule
+
+        run_mode, window_start, window_end = resolve_history_maintenance_schedule(
+            *history_schedule
+        )
+    if run_mode == "time_window":
+        from utils.history_maintenance import history_maintenance_window_is_open
+
+        if not history_maintenance_window_is_open(
+            now or datetime.now(), window_start, window_end
+        ):
+            return None
+    return requests[0][0]
+
+
 def build_main_command(payload: Mapping[str, Any], project_root: Path) -> list[str]:
     """Build a list-only command; untrusted request text is never shell-expanded."""
     request = validate_trigger_payload(payload)
@@ -867,16 +987,25 @@ def _parse_cli(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Rotate bounded trigger status and restart-marker audit files",
     )
     parser.add_argument(
+        "--next-eligible-request",
+        action="store_true",
+        help="Print the next request currently eligible for the worker watcher",
+    )
+    parser.add_argument(
         "--data-dir",
         type=Path,
         default=None,
-        help="Application data directory used with --maintain-trigger-files",
+        help="Application data directory used with watcher maintenance commands",
     )
     return parser.parse_args(argv)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = _parse_cli(argv)
+    if args.maintain_trigger_files and args.next_eligible_request:
+        raise SystemExit(
+            "--maintain-trigger-files and --next-eligible-request cannot be combined"
+        )
     if args.maintain_trigger_files:
         if args.request_path is not None or args.data_dir is None:
             raise SystemExit(
@@ -884,8 +1013,23 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             )
         run_trigger_maintenance(args.data_dir)
         return 0
+    if args.next_eligible_request:
+        if args.request_path is not None or args.data_dir is None:
+            raise SystemExit(
+                "--next-eligible-request requires --data-dir and no request path"
+            )
+        try:
+            request_path = next_eligible_trigger_request(args.data_dir)
+        except (OSError, ValueError) as exc:
+            print(f"[webui-trigger] 无法读取历史维护调度配置: {exc}", file=sys.stderr)
+            return 2
+        if request_path is not None:
+            print(request_path)
+        return 0
     if args.request_path is None:
-        raise SystemExit("request_path is required unless --maintain-trigger-files is used")
+        raise SystemExit(
+            "request_path is required unless a watcher maintenance command is used"
+        )
     return execute_trigger_request(args.request_path, pid_file=args.pid_file)
 
 

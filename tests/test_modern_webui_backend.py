@@ -679,6 +679,38 @@ class ModernBackendTests(unittest.TestCase):
 
         self.assertEqual(payload["tasks"], [])
 
+    def test_history_status_explains_a_time_window_queue(self) -> None:
+        records = [
+            {
+                "request_id": "queued",
+                "mode": "history_omission_scan",
+                "state": "queued",
+                "created_at": "2026-08-31T00:00:00+00:00",
+                "updated_at": "",
+                "issue": "",
+                "args": {},
+            }
+        ]
+        store = MagicMock()
+        store.get_app_state.return_value = ""
+        store.active_run_progress.return_value = None
+        flat = {
+            "history_maintenance_run_mode": "time_window",
+            "history_maintenance_time_window_start": "00:00",
+            "history_maintenance_time_window_end": "06:00",
+        }
+        with patch.object(backend, "flat_config", return_value=flat), patch.object(
+            backend, "open_store", return_value=store
+        ), patch.object(backend, "task_records", return_value=records), patch.object(
+            backend, "run_status", return_value={"is_active": False}
+        ):
+            payload = backend.history_status()
+
+        self.assertEqual(payload["schedule"]["run_mode"], "time_window")
+        self.assertEqual(
+            payload["tasks"][0]["progress"], "等待 00:00–06:00 时段及后端空闲"
+        )
+
     def test_daily_status_hides_history_locks_but_keeps_launch_guard(self) -> None:
         history_lock = {"name": "legacy_import.lock", "pid": 42}
         with patch.object(backend, "flat_config", return_value={}), patch.object(

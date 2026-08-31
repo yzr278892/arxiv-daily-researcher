@@ -389,6 +389,9 @@ class ConfigIOReliabilityTests(unittest.TestCase):
             configured.load_from_search_config(config_path)
             self.assertEqual(configured.DAILY_MAX_PAPERS_PER_RUN, 7)
             self.assertEqual(configured.HISTORY_MAINTENANCE_MAX_PAPERS_PER_RUN, 2)
+            self.assertEqual(configured.HISTORY_MAINTENANCE_RUN_MODE, "idle")
+            self.assertEqual(configured.HISTORY_MAINTENANCE_TIME_WINDOW_START, "00:00")
+            self.assertEqual(configured.HISTORY_MAINTENANCE_TIME_WINDOW_END, "06:00")
 
             config_path.write_text(
                 "{daily_research: {max_papers_per_run: 7}}",
@@ -397,6 +400,62 @@ class ConfigIOReliabilityTests(unittest.TestCase):
             legacy = Settings()
             legacy.load_from_search_config(config_path)
             self.assertEqual(legacy.HISTORY_MAINTENANCE_MAX_PAPERS_PER_RUN, 7)
+
+    def test_history_maintenance_schedule_round_trips_and_validates_windows(self):
+        from datetime import datetime
+
+        from utils.history_maintenance import history_maintenance_window_is_open
+
+        config = build_config_dict(
+            history_maintenance_run_mode="time_window",
+            history_maintenance_time_window_start="22:30",
+            history_maintenance_time_window_end="6:05",
+        )
+        self.assertEqual(
+            config["history_maintenance"],
+            {
+                "max_papers_per_run": 200,
+                "run_mode": "time_window",
+                "time_window_start": "22:30",
+                "time_window_end": "06:05",
+            },
+        )
+        flat = flatten_config_dict(config)
+        self.assertEqual(flat["history_maintenance_run_mode"], "time_window")
+        self.assertEqual(flat["history_maintenance_time_window_start"], "22:30")
+        self.assertEqual(flat["history_maintenance_time_window_end"], "06:05")
+        validate_config_document(config)
+
+        self.assertTrue(
+            history_maintenance_window_is_open(
+                datetime(2026, 8, 31, 23, 0), "22:30", "06:05"
+            )
+        )
+        self.assertTrue(
+            history_maintenance_window_is_open(
+                datetime(2026, 8, 31, 1, 0), "22:30", "06:05"
+            )
+        )
+        self.assertFalse(
+            history_maintenance_window_is_open(
+                datetime(2026, 8, 31, 12, 0), "22:30", "06:05"
+            )
+        )
+
+        invalid_documents = [
+            {"history_maintenance": {"run_mode": "overnight"}},
+            {"history_maintenance": {"time_window_start": "24:00"}},
+            {
+                "history_maintenance": {
+                    "time_window_start": "00:00",
+                    "time_window_end": "00:00",
+                }
+            },
+        ]
+        for document in invalid_documents:
+            with self.subTest(document=document):
+                with self.assertRaises(ValueError):
+                    validate_config_document(document)
 
     def test_auto_favorite_qualified_papers_defaults_true_and_round_trips(self):
         config = build_config_dict(auto_favorite_qualified_papers=False)

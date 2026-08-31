@@ -167,6 +167,14 @@ const MODERN_EN_TRANSLATIONS = Object.freeze({
   "每日运行时间": "Daily run time",
   "历史维护每次最多处理论文数（0 不限）": "Maximum papers per history-maintenance task (0 = unlimited)",
   "适用于历史数据补全、历史遗漏补充和完整旧历史导入中的补充报告；不会影响每日研究。": "Applies to historical data repair, omission supplements, and supplements in a full legacy import. It does not affect daily research.",
+  "历史维护运行方式": "History maintenance schedule",
+  "闲时运行": "Run when idle",
+  "指定时间段运行": "Run in a time window",
+  "闲时运行会等待普通任务和已排队的普通请求完成，再自动开始历史维护。": "Idle mode waits for normal work and queued normal requests to finish before starting history maintenance.",
+  "指定时段开始": "Window start",
+  "指定时段结束": "Window end",
+  "指定时间段内仍会等待后端空闲，避免与正常任务争抢资源。": "The worker still waits until idle within this window, avoiding contention with normal work.",
+  "运行方式修改后，请使用顶部“保存所有更改”使后续历史任务按新规则调度。": "After changing the schedule, use Save All Changes at the top so subsequent history tasks follow the new rule.",
   "选择过去日期范围后开始运行。系统会按天把任务写入持久化队列，并与其他研究任务安全互斥。": "Choose a past date range and start the run. Jobs are stored in a durable per-day queue and safely interlocked with other research tasks.",
   "开始日期": "Start date",
   "结束日期": "End date",
@@ -962,7 +970,7 @@ function statusCard(status, options = {}) {
     ? `<button class="danger-button" data-stop-task="${escapeAttribute(status.stop_kind || options.kind || "")}">停止当前任务</button>`
     : "";
   const refresh = options.refresh === false ? "" : `<button class="secondary-button" data-refresh-status="${escapeAttribute(options.kind || "daily")}">刷新状态</button>`;
-  return `<div class="status-card"><div class="status-line"><i class="status-dot ${escapeAttribute(task.state || "idle")}"></i><div><p class="eyebrow">当前任务</p><h3>${escapeHtml(task.label || "正在读取状态")}</h3><p class="muted">${escapeHtml(task.phase || "")}</p></div><span class="timestamp">${task.started_at ? `开始于 ${escapeHtml(formatTime(task.started_at))}` : ""}</span></div>${counterText ? `<p class="status-counters">${escapeHtml(counterText)}</p>` : ""}${progress}${lockLine}${relatedLine}${triggerNotice(status)}${task.detail ? `<p class="issue-box">${escapeHtml(task.detail)}</p>` : ""}${liveLog}<div class="action-row">${options.startLabel ? `<button class="primary-button" data-start-task="${escapeAttribute(options.mode)}" ${status.can_start ? "" : "disabled"}>${escapeHtml(options.startLabel)} <span>→</span></button>` : ""}${stop}${refresh}</div></div>`;
+  return `<div class="status-card"><div class="status-line"><i class="status-dot ${escapeAttribute(task.state || "idle")}"></i><div><p class="eyebrow">当前任务</p><h3>${escapeHtml(task.label || "正在读取状态")}</h3><p class="muted">${escapeHtml(task.phase || "")}</p></div><span class="timestamp">${task.started_at ? `开始于 ${escapeHtml(formatTime(task.started_at))}` : ""}</span></div>${counterText ? `<p class="status-counters">${escapeHtml(counterText)}</p>` : ""}${progress}${lockLine}${relatedLine}${triggerNotice(status)}${task.detail ? `<p class="issue-box">${escapeHtml(task.detail)}</p>` : ""}${liveLog}<div class="action-row">${options.startLabel ? `<button class="primary-button" data-start-task="${escapeAttribute(options.mode)}" ${status.can_start ? "" : "disabled"}>${escapeHtml(options.startLabel)}</button>` : ""}${stop}${refresh}</div></div>`;
 }
 
 function metrics(items) {
@@ -973,7 +981,7 @@ async function fetchStatus(kind) { return api(`/api/status/${encodeURIComponent(
 
 function dailyLaunch(status) {
   const launchHint = status.can_start ? "" : '<p class="hint-text">已有任务运行或正在等待工作进程接手；完成后可再次启动。</p>';
-  return `<div class="action-row"><button class="primary-button" data-start-task="daily_research" ${status.can_start ? "" : "disabled"}>开始每日研究 <span>→</span></button></div>${launchHint}`;
+  return `<div class="action-row"><button class="primary-button" data-start-task="daily_research" ${status.can_start ? "" : "disabled"}>开始每日研究</button></div>${launchHint}`;
 }
 
 function dailyQueue(status) {
@@ -1047,7 +1055,7 @@ function pastDailyMarkup(status, values) {
   const yesterday = relativeLocalDateKey(-1);
   const queue = status.backfill || {};
   const hasQueue = ["pending", "running", "completed", "failed"].some((key) => Number(queue[key] || 0) > 0);
-  return `${section("过去日报", `<p class="hint-text">选择过去日期范围后开始运行。系统会按天把任务写入持久化队列，并与其他研究任务安全互斥。</p><div class="form-grid two"><label class="form-field"><span>开始日期</span><input id="backfill-from" type="date" min="1991-01-01" max="${yesterday}" value="${escapeAttribute(values.from)}" /></label><label class="form-field"><span>结束日期</span><input id="backfill-to" type="date" min="1991-01-01" max="${yesterday}" value="${escapeAttribute(values.to)}" /></label></div><div class="action-row"><button id="backfill-start" class="primary-button" ${status.can_start ? "" : "disabled"}>开始运行 <span>→</span></button><button id="past-status-refresh" class="secondary-button">刷新状态</button></div>${triggerNotice(status)}${compactTaskNotice(status)}`, { icon: "🗓" })}${divider()}${section("过去日报队列", hasQueue ? metrics([
+  return `${section("过去日报", `<p class="hint-text">选择过去日期范围后开始运行。系统会按天把任务写入持久化队列，并与其他研究任务安全互斥。</p><div class="form-grid two"><label class="form-field"><span>开始日期</span><input id="backfill-from" type="date" min="1991-01-01" max="${yesterday}" value="${escapeAttribute(values.from)}" /></label><label class="form-field"><span>结束日期</span><input id="backfill-to" type="date" min="1991-01-01" max="${yesterday}" value="${escapeAttribute(values.to)}" /></label></div><div class="action-row"><button id="backfill-start" class="primary-button" ${status.can_start ? "" : "disabled"}>开始运行</button><button id="past-status-refresh" class="secondary-button">刷新状态</button></div>${triggerNotice(status)}${compactTaskNotice(status)}`, { icon: "🗓" })}${divider()}${section("过去日报队列", hasQueue ? metrics([
     { label: "等待中", value: formatNumber(queue.pending), help: queue.next_date ? `下一日期：${queue.next_date}` : "暂无待处理日期" },
     { label: "运行中", value: formatNumber(queue.running), help: queue.active_date ? `当前日期：${queue.active_date}` : "" },
     { label: "已完成", value: formatNumber(queue.completed), help: "已生成历史日期报告" },
@@ -1174,7 +1182,7 @@ async function renderTrend(token) {
   if (token !== state.renderToken) return;
   let templates = Array.isArray(templateData.items) ? templateData.items : [];
   const form = renderTrendForm(templates);
-  root.innerHTML = `${pageHeader()}${section("趋势研究", `${form.run}<div id="trend-launch"><div class="action-row"><button id="trend-start" class="primary-button" ${status.can_start ? "" : "disabled"}>开始运行 <span>→</span></button></div></div><div id="trend-status-content" class="task-status-region">${statusCard(status, { kind: "trend", refresh: false })}</div>`, { icon: "📈" })}${divider()}${section("分析参数", form.parameters, { icon: "🔍" })}${divider()}${section("趋势研究配置", form.configuration, { icon: "⚙️", hint: "输出格式会在保存时转换为兼容配置。" })}`;
+  root.innerHTML = `${pageHeader()}${section("趋势研究", `${form.run}<div id="trend-launch"><div class="action-row"><button id="trend-start" class="primary-button" ${status.can_start ? "" : "disabled"}>开始运行</button></div></div><div id="trend-status-content" class="task-status-region">${statusCard(status, { kind: "trend", refresh: false })}</div>`, { icon: "📈" })}${divider()}${section("分析参数", form.parameters, { icon: "🔍" })}${divider()}${section("趋势研究配置", form.configuration, { icon: "⚙️", hint: "输出格式会在保存时转换为兼容配置。" })}`;
   bindCommon(root);
   const preserveTrend = () => {
     const prior = state.pageData.trend || {};
@@ -1315,7 +1323,7 @@ function updateTrendStatus(root, status) {
   const launch = $("#trend-launch", root);
   const statusHost = $("#trend-status-content", root);
   if (!launch || !statusHost) return false;
-  launch.innerHTML = `<div class="action-row"><button id="trend-start" class="primary-button" ${status.can_start ? "" : "disabled"}>开始运行 <span>→</span></button></div>`;
+  launch.innerHTML = `<div class="action-row"><button id="trend-start" class="primary-button" ${status.can_start ? "" : "disabled"}>开始运行</button></div>`;
   statusHost.innerHTML = statusCard(status, { kind: "trend", refresh: false });
   bindCommon(statusHost);
   applyLocale(launch);
@@ -1545,7 +1553,7 @@ async function loadReportPreview(report, reports, token, chooseReport) {
     const marked = buildMarkedReportHtml(html, paperResponse.items || []);
     const previous = report.type === "daily" ? findAdjacentDailyReport(report, reports.daily, -1) : null;
     const next = report.type === "daily" ? findAdjacentDailyReport(report, reports.daily, 1) : null;
-    const navigation = report.type === "daily" ? `<div class="report-navigation"><button class="secondary-button compact-button" data-report-nav="${previous ? escapeAttribute(previous.id) : ""}" ${previous ? "" : "disabled"}>← 前一天</button><button class="secondary-button compact-button" data-report-nav="${next ? escapeAttribute(next.id) : ""}" ${next ? "" : "disabled"}>后一天 →</button></div>` : "";
+    const navigation = report.type === "daily" ? `<div class="report-navigation"><button class="secondary-button compact-button" data-report-nav="${previous ? escapeAttribute(previous.id) : ""}" ${previous ? "" : "disabled"}>← 前一天</button><button class="secondary-button compact-button" data-report-nav="${next ? escapeAttribute(next.id) : ""}" ${next ? "" : "disabled"}>后一天</button></div>` : "";
     // ``#report-preview`` starts as a loading placeholder.  Drop that class
     // once real content arrives; retaining it wraps the full preview card in
     // a second, oversized dashed border.
@@ -1715,7 +1723,7 @@ function paperCard(item) {
 async function renderPaperSearch(token) {
   const root = $("#page-root");
   const values = state.pageData.search || { query: "", source: "", completed_from: "", completed_to: "", min_score: "", liked_only: false, page: 0, size: 20 };
-  root.innerHTML = `${pageHeader()}${section("检索条件", `<div class="form-grid two"><label class="form-field"><span>关键词</span><input id="search-query" value="${escapeAttribute(values.query)}" placeholder="标题、摘要、TL;DR 或关键词" /></label><label class="form-field"><span>来源</span><select id="search-source"><option value="">全部来源</option></select></label><label class="form-field"><span>完成日期开始</span><input id="search-from" type="date" value="${escapeAttribute(values.completed_from)}" /></label><label class="form-field"><span>完成日期结束</span><input id="search-to" type="date" value="${escapeAttribute(values.completed_to)}" /></label><label class="form-field"><span>最低分数</span><input id="search-score" type="number" step="0.5" min="0" value="${escapeAttribute(values.min_score)}" /></label><label class="toggle-field"><span>仅收藏论文</span><input id="search-liked" type="checkbox" ${values.liked_only ? "checked" : ""}/><i></i></label></div><div class="action-row"><button id="search-run" class="primary-button">搜索 <span>→</span></button></div>`, { icon: "🔍" })}<div id="search-results"></div>`;
+  root.innerHTML = `${pageHeader()}${section("检索条件", `<div class="form-grid two"><label class="form-field"><span>关键词</span><input id="search-query" value="${escapeAttribute(values.query)}" placeholder="标题、摘要、TL;DR 或关键词" /></label><label class="form-field"><span>来源</span><select id="search-source"><option value="">全部来源</option></select></label><label class="form-field"><span>完成日期开始</span><input id="search-from" type="date" value="${escapeAttribute(values.completed_from)}" /></label><label class="form-field"><span>完成日期结束</span><input id="search-to" type="date" value="${escapeAttribute(values.completed_to)}" /></label><label class="form-field"><span>最低分数</span><input id="search-score" type="number" step="0.5" min="0" value="${escapeAttribute(values.min_score)}" /></label><label class="toggle-field"><span>仅收藏论文</span><input id="search-liked" type="checkbox" ${values.liked_only ? "checked" : ""}/><i></i></label></div><div class="action-row"><button id="search-run" class="primary-button">搜索</button></div>`, { icon: "🔍" })}<div id="search-results"></div>`;
   const sourceSelect = $("#search-source");
   try {
     const sourceProbe = await api("/api/papers?limit=5&offset=0");
@@ -2531,13 +2539,37 @@ function historyFullRepairHint(enabled) {
     : "关闭后仅导入 HTML 已包含的论文，避免新的每日研究重复处理。";
 }
 
+const HISTORY_SCHEDULE_FIELDS = [
+  "history_maintenance_run_mode",
+  "history_maintenance_time_window_start",
+  "history_maintenance_time_window_end",
+];
+
+function historyScheduleHasUnsavedChanges() {
+  return HISTORY_SCHEDULE_FIELDS.some((key) => Object.prototype.hasOwnProperty.call(state.draft.config, key));
+}
+
+function historyQueueMessage() {
+  const mode = String(state.settings?.config?.history_maintenance_run_mode || "idle");
+  return mode === "time_window"
+    ? "历史维护任务已加入队列，将在指定时段且后端空闲时自动运行。"
+    : "历史维护任务已加入队列，将在后端空闲时自动运行。";
+}
+
+function requireSavedHistorySchedule() {
+  if (!historyScheduleHasUnsavedChanges()) return true;
+  toast("历史维护运行方式有未保存修改，请先保存配置后再提交任务。", "error");
+  return false;
+}
+
 function historyActions(data) {
   const pendingModes = new Set(historyTasks(data)
     .filter((task) => ["queued", "starting", "running"].includes(task.state))
     .map((task) => task.mode));
   const fullRepair = Boolean(configValue("legacy_import_full_repair_enabled", false));
-  const historyLimit = `<div class="form-grid two">${field({ label: "历史维护每次最多处理论文数（0 不限）", key: "history_maintenance_max_papers_per_run", type: "number", min: 0, max: 100000, step: 1, fallback: 200, help: "适用于历史数据补全、历史遗漏补充和完整旧历史导入中的补充报告；不会影响每日研究。" })}</div>`;
-  return `<p class="hint-text">导入旧版本 HTML 报告中的论文。SQLite 是历史论文数据的唯一索引；HTML 解析与新报告生成都会同步写入。</p>${field({ label: "启用完整补全流程", key: "legacy_import_full_repair_enabled", type: "checkbox", fallback: false })}<p id="history-full-repair-hint" class="hint-text">${historyFullRepairHint(fullRepair)}</p><div class="action-row"><button id="history-import" class="primary-button" ${pendingModes.has("legacy_import") ? "disabled" : ""}>读取旧历史 <span>→</span></button></div><h3>历史维护</h3>${historyLimit}<div class="action-row history-maintenance-actions"><button id="history-repair" class="secondary-button compact-button" ${pendingModes.has("history_data_repair") ? "disabled" : ""}>补全历史数据</button><button id="history-omission" class="secondary-button compact-button" ${pendingModes.has("history_omission_scan") ? "disabled" : ""}>扫描历史遗漏</button></div>`;
+  const runMode = String(configValue("history_maintenance_run_mode", "idle")) === "time_window" ? "time_window" : "idle";
+  const scheduleFields = `<div class="form-grid two">${field({ label: "历史维护每次最多处理论文数（0 不限）", key: "history_maintenance_max_papers_per_run", type: "number", min: 0, max: 100000, step: 1, fallback: 200, help: "适用于历史数据补全、历史遗漏补充和完整旧历史导入中的补充报告；不会影响每日研究。" })}${field({ label: "历史维护运行方式", key: "history_maintenance_run_mode", type: "select", fallback: "idle", choices: [{ value: "idle", label: "闲时运行" }, { value: "time_window", label: "指定时间段运行" }], help: "闲时运行会等待普通任务和已排队的普通请求完成，再自动开始历史维护。" })}</div><div id="history-time-window" class="form-grid two" ${runMode === "time_window" ? "" : "hidden"}>${field({ label: "指定时段开始", key: "history_maintenance_time_window_start", type: "time", fallback: "00:00" })}${field({ label: "指定时段结束", key: "history_maintenance_time_window_end", type: "time", fallback: "06:00" })}</div><p id="history-schedule-mode-hint" class="hint-text">${runMode === "time_window" ? "指定时间段内仍会等待后端空闲，避免与正常任务争抢资源。" : "闲时运行会等待普通任务和已排队的普通请求完成，再自动开始历史维护。"}</p><p class="hint-text">运行方式修改后，请使用顶部“保存所有更改”使后续历史任务按新规则调度。</p>`;
+  return `<p class="hint-text">导入旧版本 HTML 报告中的论文。SQLite 是历史论文数据的唯一索引；HTML 解析与新报告生成都会同步写入。</p>${field({ label: "启用完整补全流程", key: "legacy_import_full_repair_enabled", type: "checkbox", fallback: false })}<p id="history-full-repair-hint" class="hint-text">${historyFullRepairHint(fullRepair)}</p><div class="action-row history-maintenance-actions"><button id="history-import" class="primary-button" ${pendingModes.has("legacy_import") ? "disabled" : ""}>读取旧历史</button><button id="history-repair" class="secondary-button compact-button" ${pendingModes.has("history_data_repair") ? "disabled" : ""}>补全历史数据</button><button id="history-omission" class="secondary-button compact-button" ${pendingModes.has("history_omission_scan") ? "disabled" : ""}>扫描历史遗漏</button></div><h3>历史维护</h3>${scheduleFields}`;
 }
 
 function historyStatusPanel(data) {
@@ -2552,20 +2584,21 @@ function historyStatusPanel(data) {
 function bindHistoryLaunchers(root) {
   $("#history-import", root)?.addEventListener("click", async () => {
     try {
+      if (!requireSavedHistorySchedule()) return;
       const selectedFullRepair = Boolean(configValue("legacy_import_full_repair_enabled", false));
       // Like the Streamlit control, this submits the live switch as a task
       // argument.  It must not persist unrelated configuration edits merely
       // because the operator starts an idle-time import.
       await api("/api/tasks/legacy_import", { method: "POST", body: { args: { full_repair: selectedFullRepair } } });
-      toast("旧历史导入已加入闲时队列。 ");
+      toast(historyQueueMessage(), "success");
       await refreshHistoryStatus(root);
     } catch (error) { toast(error.message, "error"); }
   });
   $("#history-repair", root)?.addEventListener("click", async () => {
-    try { await api("/api/tasks/history_data_repair", { method: "POST", body: { args: {} } }); toast("历史数据补全已加入队列。 "); await refreshHistoryStatus(root); } catch (error) { toast(error.message, "error"); }
+    try { if (!requireSavedHistorySchedule()) return; await api("/api/tasks/history_data_repair", { method: "POST", body: { args: {} } }); toast(historyQueueMessage(), "success"); await refreshHistoryStatus(root); } catch (error) { toast(error.message, "error"); }
   });
   $("#history-omission", root)?.addEventListener("click", async () => {
-    try { await api("/api/tasks/history_omission_scan", { method: "POST", body: { args: {} } }); toast("历史遗漏扫描已加入队列。 "); await refreshHistoryStatus(root); } catch (error) { toast(error.message, "error"); }
+    try { if (!requireSavedHistorySchedule()) return; await api("/api/tasks/history_omission_scan", { method: "POST", body: { args: {} } }); toast(historyQueueMessage(), "success"); await refreshHistoryStatus(root); } catch (error) { toast(error.message, "error"); }
   });
 }
 
@@ -2633,6 +2666,17 @@ async function renderHistory(token) {
     if (!hint) return;
     hint.textContent = historyFullRepairHint(event.target.checked);
     applyLocale(hint);
+  });
+  $('[data-field="history_maintenance_run_mode"]', root)?.addEventListener("change", (event) => {
+    const timeWindow = $("#history-time-window", root);
+    if (!timeWindow) return;
+    timeWindow.hidden = event.target.value !== "time_window";
+    const hint = $("#history-schedule-mode-hint", root);
+    if (hint) hint.textContent = event.target.value === "time_window"
+      ? "指定时间段内仍会等待后端空闲，避免与正常任务争抢资源。"
+      : "闲时运行会等待普通任务和已排队的普通请求完成，再自动开始历史维护。";
+    applyLocale(timeWindow);
+    if (hint) applyLocale(hint);
   });
   $("#history-auto-refresh", root)?.addEventListener("change", (event) => {
     state.pageData.historyAutoRefresh = event.target.checked;

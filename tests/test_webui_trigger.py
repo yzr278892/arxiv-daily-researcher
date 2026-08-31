@@ -3,6 +3,7 @@ import json
 import os
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -16,6 +17,7 @@ from utils.webui_trigger import (  # noqa: E402
     build_trigger_payload,
     enqueue_trigger,
     execute_trigger_request,
+    next_eligible_trigger_request,
     read_trigger_payload,
     rotate_restart_request_markers,
     rotate_trigger_statuses,
@@ -303,6 +305,70 @@ class WebUITriggerTests(unittest.TestCase):
                     execute_trigger_request(claimed_path, project_root=root, pid_file=pid_file), 0
                 )
             self.assertFalse(pid_file.exists())
+
+    def test_normal_request_passes_waiting_history_maintenance(self):
+        """A history request outside its window cannot block normal research."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            data_dir = Path(temp_dir) / "data"
+            history = enqueue_trigger(data_dir, "legacy_import", full_repair=False)
+            normal = enqueue_trigger(data_dir, "daily_research")
+
+            selected = next_eligible_trigger_request(
+                data_dir,
+                now=datetime(2026, 8, 31, 12, 0),
+                history_schedule=("time_window", "00:00", "06:00"),
+            )
+
+        self.assertEqual(selected, normal)
+        self.assertNotEqual(selected, history)
+
+    def test_history_maintenance_waits_for_idle_and_respects_time_window(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            data_dir = Path(temp_dir) / "data"
+            request = enqueue_trigger(data_dir, "history_data_repair")
+
+            with patch(
+                "utils.webui_trigger._worker_has_active_lock", return_value=True
+            ):
+                self.assertIsNone(
+                    next_eligible_trigger_request(
+                        data_dir,
+                        now=datetime(2026, 8, 31, 1, 0),
+                        history_schedule=("idle", "00:00", "06:00"),
+                    )
+                )
+
+            self.assertIsNone(
+                next_eligible_trigger_request(
+                    data_dir,
+                    now=datetime(2026, 8, 31, 12, 0),
+                    history_schedule=("time_window", "00:00", "06:00"),
+                )
+            )
+            self.assertEqual(
+                next_eligible_trigger_request(
+                    data_dir,
+                    now=datetime(2026, 8, 31, 1, 0),
+                    history_schedule=("time_window", "00:00", "06:00"),
+                ),
+                request,
+            )
+
+    def test_invalid_queued_request_is_still_selected_for_rejection(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            data_dir = Path(temp_dir) / "data"
+            queue_dir = data_dir / "run" / "webui_triggers"
+            queue_dir.mkdir(parents=True)
+            malformed = queue_dir / "00000000_invalid.json"
+            malformed.write_text("not json", encoding="utf-8")
+            enqueue_trigger(data_dir, "daily_research")
+
+            selected = next_eligible_trigger_request(
+                data_dir,
+                history_schedule=("idle", "00:00", "06:00"),
+            )
+
+        self.assertEqual(selected, malformed)
 
 
 if __name__ == "__main__":

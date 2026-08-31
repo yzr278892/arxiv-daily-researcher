@@ -136,6 +136,30 @@ class ModernWebUIAppTests(unittest.TestCase):
         self.assertIn("history_maintenance_max_papers_per_run", script)
         self.assertIn("历史维护每次最多处理论文数（0 不限）", script)
 
+    def test_history_maintenance_exposes_shared_schedule_and_plain_buttons(self) -> None:
+        script = self.client.get("/assets/app.js").text
+        start = script.index("function historyActions")
+        end = script.index("function historyStatusPanel", start)
+        history_actions = script[start:end]
+
+        self.assertIn("history_maintenance_run_mode", history_actions)
+        self.assertIn("history_maintenance_time_window_start", history_actions)
+        self.assertIn("history_maintenance_time_window_end", history_actions)
+        self.assertIn('id="history-time-window"', history_actions)
+        self.assertIn(
+            '<button id="history-import" class="primary-button"', history_actions
+        )
+        self.assertIn(
+            '<button id="history-repair" class="secondary-button compact-button"',
+            history_actions,
+        )
+        self.assertIn(
+            '<button id="history-omission" class="secondary-button compact-button"',
+            history_actions,
+        )
+        self.assertNotIn("<span>→</span>", script)
+        self.assertNotIn("后一天 →", script)
+
     def test_stale_trigger_cleanup_uses_the_authenticated_api_boundary(self) -> None:
         self.assertEqual(self.client.post("/api/triggers/stale", json={}).status_code, 503)
         self.assertEqual(

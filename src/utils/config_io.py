@@ -19,6 +19,12 @@ from utils.source_registry import (
     definitions_for_builtin_codes,
     validate_source_definitions,
 )
+from utils.history_maintenance import (
+    DEFAULT_HISTORY_MAINTENANCE_RUN_MODE,
+    DEFAULT_HISTORY_MAINTENANCE_TIME_WINDOW_END,
+    DEFAULT_HISTORY_MAINTENANCE_TIME_WINDOW_START,
+    resolve_history_maintenance_schedule,
+)
 
 # ==================== Path Constants ====================
 
@@ -147,6 +153,18 @@ def validate_config_document(config: object) -> Dict[str, Any]:
             raise ValueError(
                 "history_maintenance.max_papers_per_run 必须是非负整数（0 表示不限）"
             )
+        resolve_history_maintenance_schedule(
+            history_maintenance.get(
+                "run_mode", DEFAULT_HISTORY_MAINTENANCE_RUN_MODE
+            ),
+            history_maintenance.get(
+                "time_window_start",
+                DEFAULT_HISTORY_MAINTENANCE_TIME_WINDOW_START,
+            ),
+            history_maintenance.get(
+                "time_window_end", DEFAULT_HISTORY_MAINTENANCE_TIME_WINDOW_END
+            ),
+        )
     favorites = config.get("favorites")
     if favorites is not None:
         if not isinstance(favorites, dict):
@@ -890,6 +908,9 @@ def build_config_dict(
     daily_max_papers_per_run: int = 200,
     auto_favorite_qualified_papers: bool = True,
     history_maintenance_max_papers_per_run: int = 200,
+    history_maintenance_run_mode: str = DEFAULT_HISTORY_MAINTENANCE_RUN_MODE,
+    history_maintenance_time_window_start: str = DEFAULT_HISTORY_MAINTENANCE_TIME_WINDOW_START,
+    history_maintenance_time_window_end: str = DEFAULT_HISTORY_MAINTENANCE_TIME_WINDOW_END,
     daily_run_time: str = "12:00",
     daily_enable_deep_analysis: bool = True,
     legacy_import_full_repair_enabled: bool = False,
@@ -958,6 +979,15 @@ def build_config_dict(
         raise ValueError(
             "history_maintenance.max_papers_per_run 必须是非负整数（0 表示不限）"
         )
+    (
+        history_maintenance_run_mode,
+        history_maintenance_time_window_start,
+        history_maintenance_time_window_end,
+    ) = resolve_history_maintenance_schedule(
+        history_maintenance_run_mode,
+        history_maintenance_time_window_start,
+        history_maintenance_time_window_end,
+    )
     if not isinstance(auto_favorite_qualified_papers, bool):
         raise ValueError("favorites.auto_favorite_qualified_papers 必须是布尔值")
 
@@ -1222,6 +1252,9 @@ def build_config_dict(
         },
         "history_maintenance": {
             "max_papers_per_run": history_maintenance_max_papers_per_run,
+            "run_mode": history_maintenance_run_mode,
+            "time_window_start": history_maintenance_time_window_start,
+            "time_window_end": history_maintenance_time_window_end,
         },
         "legacy_history": {
             "full_repair_enabled": legacy_import_full_repair_enabled,
@@ -1616,6 +1649,15 @@ def flatten_config_dict(config: Dict[str, Any]) -> Dict[str, Any]:
         history_maintenance = {}
     flat["history_maintenance_max_papers_per_run"] = history_maintenance.get(
         "max_papers_per_run", flat["daily_max_papers_per_run"]
+    )
+    flat["history_maintenance_run_mode"] = history_maintenance.get(
+        "run_mode", DEFAULT_HISTORY_MAINTENANCE_RUN_MODE
+    )
+    flat["history_maintenance_time_window_start"] = history_maintenance.get(
+        "time_window_start", DEFAULT_HISTORY_MAINTENANCE_TIME_WINDOW_START
+    )
+    flat["history_maintenance_time_window_end"] = history_maintenance.get(
+        "time_window_end", DEFAULT_HISTORY_MAINTENANCE_TIME_WINDOW_END
     )
 
     # Legacy history import

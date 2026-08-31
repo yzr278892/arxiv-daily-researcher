@@ -64,6 +64,12 @@ from utils.webui_trigger import (
     trigger_directory,
     trigger_status_directory,
 )
+from utils.history_maintenance import (
+    DEFAULT_HISTORY_MAINTENANCE_RUN_MODE,
+    DEFAULT_HISTORY_MAINTENANCE_TIME_WINDOW_END,
+    DEFAULT_HISTORY_MAINTENANCE_TIME_WINDOW_START,
+    resolve_history_maintenance_schedule,
+)
 from modern_webui.arxiv_categories import ARXIV_CATEGORIES, format_arxiv_category
 
 
@@ -1123,6 +1129,7 @@ def history_status() -> dict[str, Any]:
     task currently being processed.
     """
     flat = flat_config()
+    schedule = _history_maintenance_schedule(flat)
     store = open_store(flat)
     summary = None
     if store is not None:
@@ -1146,26 +1153,50 @@ def history_status() -> dict[str, Any]:
         if str(row.get("retry_of") or "").strip()
     }
     records = [
-        _history_task_row(row, active_progress)
+        _history_task_row(row, active_progress, schedule)
         for row in all_records
         if row["state"] != "succeeded"
         and str(row.get("request_id") or "") not in retried_request_ids
     ]
     return {
         "status": run_status("history"),
+        "schedule": {
+            "run_mode": schedule[0],
+            "time_window_start": schedule[1],
+            "time_window_end": schedule[2],
+        },
         "last_import": summary,
         "tasks": records,
     }
 
 
+def _history_maintenance_schedule(flat: Mapping[str, Any]) -> tuple[str, str, str]:
+    """Return saved scheduling values for history-page status wording."""
+    return resolve_history_maintenance_schedule(
+        flat.get("history_maintenance_run_mode", DEFAULT_HISTORY_MAINTENANCE_RUN_MODE),
+        flat.get(
+            "history_maintenance_time_window_start",
+            DEFAULT_HISTORY_MAINTENANCE_TIME_WINDOW_START,
+        ),
+        flat.get(
+            "history_maintenance_time_window_end",
+            DEFAULT_HISTORY_MAINTENANCE_TIME_WINDOW_END,
+        ),
+    )
+
+
 def _history_task_progress(
-    record: Mapping[str, Any], progress: Mapping[str, Any] | None
+    record: Mapping[str, Any],
+    progress: Mapping[str, Any] | None,
+    schedule: tuple[str, str, str],
 ) -> str:
     """Turn a receipt plus optional SQLite heartbeat into concise task text."""
     state = str(record.get("state") or "")
     mode = str(record.get("mode") or "")
     if state == "queued":
-        return "已加入闲时队列，等待其他研究任务完成"
+        if schedule[0] == "time_window":
+            return f"等待 {schedule[1]}–{schedule[2]} 时段及后端空闲"
+        return "等待后端空闲"
     if state == "starting":
         return "工作进程正在接手任务"
     if state != "running":
@@ -1194,7 +1225,9 @@ def _history_task_progress(
 
 
 def _history_task_row(
-    record: Mapping[str, Any], progress: Mapping[str, Any] | None
+    record: Mapping[str, Any],
+    progress: Mapping[str, Any] | None,
+    schedule: tuple[str, str, str],
 ) -> dict[str, Any]:
     """Provide the UI-only columns used by the history task table."""
     row = dict(record)
@@ -1204,7 +1237,7 @@ def _history_task_row(
     row["completed_at"] = (
         str(row.get("updated_at") or "") if state not in _LIVE_TASK_STATES else ""
     )
-    row["progress"] = _history_task_progress(row, progress)
+    row["progress"] = _history_task_progress(row, progress, schedule)
     row["retryable"] = state in _RETRYABLE_TASK_STATES
     return row
 

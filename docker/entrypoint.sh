@@ -243,7 +243,13 @@ trigger_watcher() {
                 echo "[trigger-watcher] Failed to archive WebUI restart request; leaving it queued"
             fi
         fi
-        REQUEST_FILE=$(adr_run_as_user find "$TRIGGER_DIR" -maxdepth 1 -type f -name '*.json' -print | sort | head -n 1)
+        # Normal research requests may pass queued history maintenance. The
+        # selector also applies the saved idle/time-window policy before a
+        # history request is claimed, so it never blocks this watcher merely
+        # by being the lexicographically first JSON file.
+        REQUEST_FILE=$(adr_run_as_user python /app/src/utils/webui_trigger.py \
+            --next-eligible-request --data-dir /app/data) || \
+            echo "[trigger-watcher] Eligible-request selection failed; will retry"
         if [ -n "$REQUEST_FILE" ]; then
             CLAIMED_FILE="${REQUEST_FILE%.json}.running"
             # Atomic claim prevents a future watcher implementation or a manual

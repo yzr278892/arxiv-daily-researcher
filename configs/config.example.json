@@ -231,8 +231,14 @@
   // Historical repair and supplement reports use this independent cap.
   // HTML indexing and source-range scans still complete; excess SQLite work
   // remains pending for the next history-maintenance task. 0 = unlimited.
+  // All three manual history tasks share the same scheduler. ``idle`` only
+  // starts after normal worker jobs and their queued requests are clear.
+  // ``time_window`` additionally limits starts to a local-time window.
   "history_maintenance": {
-    "max_papers_per_run": 3
+    "max_papers_per_run": 3,
+    "run_mode": "idle",
+    "time_window_start": "00:00",
+    "time_window_end": "06:00"
   },
 
   // Legacy HTML can always be indexed into SQLite. Enable this only when

@@ -15,6 +15,12 @@ from utils.source_registry import (
     validate_source_definitions,
 )
 from utils.config_io import ConfigMigrationError, ensure_runtime_config_path
+from utils.history_maintenance import (
+    DEFAULT_HISTORY_MAINTENANCE_RUN_MODE,
+    DEFAULT_HISTORY_MAINTENANCE_TIME_WINDOW_END,
+    DEFAULT_HISTORY_MAINTENANCE_TIME_WINDOW_START,
+    resolve_history_maintenance_schedule,
+)
 
 # 1. 定义基础路径：获取项目根目录（src/ 的上级目录）
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -328,6 +334,16 @@ class Settings(BaseSettings):
     # have their own workload budget. Older config files fall back to the
     # daily cap when loaded so upgrading does not unexpectedly change work.
     HISTORY_MAINTENANCE_MAX_PAPERS_PER_RUN: int = 200
+    # All manually launched history-maintenance modes share one scheduler.
+    # ``idle`` waits for normal worker work to clear; ``time_window`` only
+    # admits work during the configured local-time window.
+    HISTORY_MAINTENANCE_RUN_MODE: str = DEFAULT_HISTORY_MAINTENANCE_RUN_MODE
+    HISTORY_MAINTENANCE_TIME_WINDOW_START: str = (
+        DEFAULT_HISTORY_MAINTENANCE_TIME_WINDOW_START
+    )
+    HISTORY_MAINTENANCE_TIME_WINDOW_END: str = (
+        DEFAULT_HISTORY_MAINTENANCE_TIME_WINDOW_END
+    )
 
     # v3.2 archives can be imported in a lightweight ledger-only mode.  The
     # optional full workflow additionally repairs missing SQLite fields and
@@ -991,6 +1007,23 @@ class Settings(BaseSettings):
                         "history_maintenance.max_papers_per_run 必须是非负整数（0 表示不限）"
                     )
                 self.HISTORY_MAINTENANCE_MAX_PAPERS_PER_RUN = history_limit
+                (
+                    self.HISTORY_MAINTENANCE_RUN_MODE,
+                    self.HISTORY_MAINTENANCE_TIME_WINDOW_START,
+                    self.HISTORY_MAINTENANCE_TIME_WINDOW_END,
+                ) = resolve_history_maintenance_schedule(
+                    history_maintenance_cfg.get(
+                        "run_mode", self.HISTORY_MAINTENANCE_RUN_MODE
+                    ),
+                    history_maintenance_cfg.get(
+                        "time_window_start",
+                        self.HISTORY_MAINTENANCE_TIME_WINDOW_START,
+                    ),
+                    history_maintenance_cfg.get(
+                        "time_window_end",
+                        self.HISTORY_MAINTENANCE_TIME_WINDOW_END,
+                    ),
+                )
 
             if "legacy_history" in config:
                 legacy_cfg = config["legacy_history"]
