@@ -196,6 +196,24 @@ class ModernBackendTests(unittest.TestCase):
         self.assertEqual(lines[1], "line 5")
         self.assertEqual(lines[-1], "line 19")
 
+    def test_log_tail_reader_bounds_large_files_without_losing_latest_lines(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "long-running.log"
+            path.write_text(
+                "\n".join(f"line {index}" for index in range(50_000)),
+                encoding="utf-8",
+            )
+            lines, truncated, skipped = backend._read_log_tail_lines(
+                path,
+                max_lines=4,
+                chunk_size=64,
+                max_bytes=128,
+            )
+
+        self.assertTrue(truncated)
+        self.assertIsNone(skipped)
+        self.assertEqual(lines, ["line 49996", "line 49997", "line 49998", "line 49999"])
+
     def test_scoped_stop_targets_only_matching_lock(self) -> None:
         locks = [
             {"name": "daily_research.lock", "pid": 101},

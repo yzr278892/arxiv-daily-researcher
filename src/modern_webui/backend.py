@@ -679,6 +679,51 @@ def _newest_log_with_prefixes(prefixes: tuple[str, ...]) -> Path | None:
         return None
 
 
+def _read_log_tail_lines(
+    path: Path,
+    *,
+    max_lines: int,
+    chunk_size: int = 32 * 1024,
+    max_bytes: int = 256 * 1024,
+) -> tuple[list[str], bool, int | None]:
+    """Read a bounded tail without loading an entire long-running log.
+
+    The status cards poll while work is active, and a full ``read_text`` on a
+    multi-megabyte task log turns each small refresh into unnecessary disk I/O
+    and allocation.  Reading backwards keeps the final lines available with
+    a fixed memory budget.  An exact hidden-line count is only known when the
+    whole file fit in that bounded read; callers use a clear generic marker
+    otherwise.
+    """
+    visible_limit = max(1, int(max_lines))
+    block_size = max(1, int(chunk_size))
+    byte_limit = max(block_size, int(max_bytes))
+    chunks: list[bytes] = []
+    newline_count = 0
+    bytes_read = 0
+    with path.open("rb") as handle:
+        handle.seek(0, 2)
+        position = handle.tell()
+        while (
+            position > 0
+            and newline_count <= visible_limit
+            and bytes_read < byte_limit
+        ):
+            size = min(block_size, position, byte_limit - bytes_read)
+            if size <= 0:
+                break
+            position -= size
+            handle.seek(position)
+            block = handle.read(size)
+            chunks.append(block)
+            bytes_read += len(block)
+            newline_count += block.count(b"\n")
+    lines = b"".join(reversed(chunks)).decode("utf-8", errors="replace").splitlines()
+    truncated = position > 0 or len(lines) > visible_limit
+    skipped = len(lines) - visible_limit if position == 0 and len(lines) > visible_limit else None
+    return lines[-visible_limit:], truncated, skipped
+
+
 def _live_log_tail(locks: Iterable[Mapping[str, Any]]) -> dict[str, Any] | None:
     """Build the bounded live-log payload used by a running status card."""
     selected: Path | None = None
@@ -695,21 +740,26 @@ def _live_log_tail(locks: Iterable[Mapping[str, Any]]) -> dict[str, Any] | None:
         return None
     try:
         relative = selected.relative_to(LOGS_DIR).as_posix()
-        lines = selected.read_text(encoding="utf-8", errors="replace").splitlines()
+        max_lines = 15
+        visible, truncated, skipped = _read_log_tail_lines(
+            selected, max_lines=max_lines
+        )
     except (OSError, ValueError):
         return None
     # Status cards refresh frequently while a task is active.  Fifteen recent
     # lines give useful progress and failure context without turning the
     # dashboard into a second full log viewer.
-    max_lines = 15
-    skipped = max(0, len(lines) - max_lines)
-    visible = lines[-max_lines:]
-    if skipped:
-        visible.insert(0, f"… 已隐藏较早的 {skipped} 行 …")
+    if truncated:
+        marker = (
+            f"… 已隐藏较早的 {skipped} 行 …"
+            if skipped is not None
+            else f"… 已隐藏较早的内容，仅显示最后 {max_lines} 行 …"
+        )
+        visible.insert(0, marker)
     return {
         "name": relative,
         "content": "\n".join(visible),
-        "truncated": bool(skipped),
+        "truncated": truncated,
     }
 
 
@@ -2145,13 +2195,16 @@ def read_log(token: str, *, max_lines: int = 300) -> dict[str, Any]:
         raise ModernWebUIError("日志路径无效。") from exc
     if path.suffix != ".log" or not path.is_file():
         raise ModernWebUIError("日志文件不存在。")
+    max_lines = max(100, min(int(max_lines), 5_000))
     try:
-        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        selected, truncated, skipped = _read_log_tail_lines(path, max_lines=max_lines)
     except OSError as exc:
         raise ModernWebUIError(f"读取日志失败：{exc}") from exc
-    max_lines = max(100, min(int(max_lines), 5_000))
-    skipped = max(0, len(lines) - max_lines)
-    selected = lines[-max_lines:]
-    if skipped:
-        selected.insert(0, f"… 已隐藏较早的 {skipped} 行 …")
-    return {"name": relative, "content": "\n".join(selected), "truncated": bool(skipped)}
+    if truncated:
+        marker = (
+            f"… 已隐藏较早的 {skipped} 行 …"
+            if skipped is not None
+            else f"… 已隐藏较早的内容，仅显示最后 {max_lines} 行 …"
+        )
+        selected.insert(0, marker)
+    return {"name": relative, "content": "\n".join(selected), "truncated": truncated}

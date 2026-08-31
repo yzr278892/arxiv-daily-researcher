@@ -1237,6 +1237,14 @@ class DailyResearchStore:
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_paper_entities_doi ON paper_entities(doi)"
         )
+        # The archive's normal first view is the most recently completed
+        # logical papers.  Keep its filter and ordering covered together so
+        # the WebUI does not sort the entire historical entity table before
+        # showing its first page.
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_paper_entities_completed "
+            "ON paper_entities(completed_at DESC, last_seen_at DESC, entity_id DESC)"
+        )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_paper_entity_aliases_entity "
             "ON paper_entity_aliases(entity_id)"
@@ -4043,19 +4051,50 @@ class DailyResearchStore:
         where_clause = " AND ".join(conditions)
         bounded_limit = max(1, min(int(limit), 200))
         bounded_offset = max(0, int(offset))
+        # The common initial archive view has no source/date/text/preference
+        # filter.  ``paper_entities.completed_at`` is the derived maximum of
+        # its completed variants and is rebuilt whenever a paper record is
+        # registered, merged or migrated.  Querying that canonical logical
+        # layer directly is therefore equivalent to the general EXISTS
+        # predicate, while the completed-time index avoids thousands of
+        # correlated SQLite probes on a populated history database.
+        unfiltered_completed_view = not any(
+            (
+                normalized_source,
+                min_score is not None,
+                completed_from,
+                completed_to,
+                stripped,
+                liked_only,
+            )
+        )
         with self._connect() as conn:
-            total_row = conn.execute(
-                f"SELECT COUNT(*) FROM paper_entities pe WHERE {where_clause}", params
-            ).fetchone()
-            rows = conn.execute(
-                f"""
-                SELECT pe.* FROM paper_entities pe
-                WHERE {where_clause}
-                ORDER BY COALESCE(pe.completed_at, pe.last_seen_at) DESC, pe.entity_id DESC
-                LIMIT ? OFFSET ?
-                """,
-                [*params, bounded_limit, bounded_offset],
-            ).fetchall()
+            if unfiltered_completed_view:
+                total_row = conn.execute(
+                    "SELECT COUNT(*) FROM paper_entities WHERE completed_at IS NOT NULL"
+                ).fetchone()
+                rows = conn.execute(
+                    """
+                    SELECT pe.* FROM paper_entities pe
+                    WHERE pe.completed_at IS NOT NULL
+                    ORDER BY pe.completed_at DESC, pe.last_seen_at DESC, pe.entity_id DESC
+                    LIMIT ? OFFSET ?
+                    """,
+                    (bounded_limit, bounded_offset),
+                ).fetchall()
+            else:
+                total_row = conn.execute(
+                    f"SELECT COUNT(*) FROM paper_entities pe WHERE {where_clause}", params
+                ).fetchone()
+                rows = conn.execute(
+                    f"""
+                    SELECT pe.* FROM paper_entities pe
+                    WHERE {where_clause}
+                    ORDER BY COALESCE(pe.completed_at, pe.last_seen_at) DESC, pe.entity_id DESC
+                    LIMIT ? OFFSET ?
+                    """,
+                    [*params, bounded_limit, bounded_offset],
+                ).fetchall()
             items = [
                 self._entity_search_item(
                     row, self._entity_variants_with_conn(conn, row["entity_id"])
