@@ -17,6 +17,7 @@ from starlette import status
 from starlette.applications import Starlette
 from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException
+from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse, Response
@@ -796,6 +797,13 @@ app = Starlette(
     ],
     exception_handlers={HTTPException: http_exception_handler},
 )
+# The management panel is often reached through a reverse proxy or a LAN
+# rather than directly on localhost. Its JavaScript, stylesheet and shared
+# translation catalogue compress very well; without middleware every full
+# load transfers their uncompressed payloads. Starlette skips already
+# compressed/binary responses, so report downloads and backup exports retain
+# their existing behaviour.
+app.add_middleware(GZipMiddleware, minimum_size=500)
 app.add_middleware(
     SessionMiddleware,
     secret_key=_session_secret(),

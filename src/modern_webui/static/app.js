@@ -366,6 +366,12 @@ const state = {
   theme: window.localStorage.getItem("adr-modern-theme") === "dark" ? "dark" : "light",
   configurationDirty: false,
   translationIndex: new Map(),
+  translationsLoaded: false,
+  translationsPromise: null,
+  // Chinese is the authored UI language. Until English has been selected,
+  // walking every newly-rendered DOM node merely returns the source text and
+  // makes large local refreshes feel needlessly sluggish.
+  hasUsedEnglish: window.localStorage.getItem("adr-modern-language") === "en",
   originalText: new WeakMap(),
   originalAttributes: new WeakMap(),
 };
@@ -453,7 +459,11 @@ function toggleTheme() {
 }
 
 function applyLocale(root = document) {
-  localizeRoot(root);
+  // The authored Chinese tree needs no translation. Avoid a full TreeWalker
+  // pass for every page/status refresh until a user has actually switched to
+  // English at least once in this browser session.
+  if (state.language === "en" || state.hasUsedEnglish) localizeRoot(root);
+  else document.documentElement.lang = "zh-CN";
   renderLanguageButton();
 }
 
@@ -475,16 +485,50 @@ function reportCountLabel(count) {
   return state.language === "en" ? `${count} report${count === 1 ? "" : "s"}` : `${count} 份报告`;
 }
 
-async function loadTranslations() {
-  const payload = await api("/api/i18n");
-  const entries = payload?.items && typeof payload.items === "object" ? Object.values(payload.items) : [];
-  state.translationIndex = new Map(entries
-    .filter((entry) => entry && typeof entry.zh === "string" && typeof entry.en === "string")
-    .map((entry) => [entry.zh, entry.en]));
+function loadTranslations() {
+  if (state.translationsLoaded) return Promise.resolve();
+  if (state.translationsPromise) return state.translationsPromise;
+  state.translationsPromise = api("/api/i18n")
+    .then((payload) => {
+      const entries = payload?.items && typeof payload.items === "object" ? Object.values(payload.items) : [];
+      state.translationIndex = new Map(entries
+        .filter((entry) => entry && typeof entry.zh === "string" && typeof entry.en === "string")
+        .map((entry) => [entry.zh, entry.en]));
+      state.translationsLoaded = true;
+    })
+    .finally(() => { state.translationsPromise = null; });
+  return state.translationsPromise;
 }
 
-function toggleLanguage() {
-  state.language = state.language === "en" ? "zh" : "en";
+function warmTranslations() {
+  if (state.translationsLoaded || state.translationsPromise) return;
+  const request = () => { void loadTranslations().catch(() => null); };
+  // Do not compete with first paint or the first status request. The idle
+  // preload keeps a later English switch immediate in normal use.
+  if ("requestIdleCallback" in window) window.requestIdleCallback(request, { timeout: 2000 });
+  else window.setTimeout(request, 800);
+}
+
+async function toggleLanguage() {
+  const nextLanguage = state.language === "en" ? "zh" : "en";
+  const button = $("#language-button");
+  if (nextLanguage === "en" && !state.translationsLoaded) {
+    // English is an explicit choice, so load the complete shared catalogue
+    // before changing language. This keeps the initial Chinese screen off
+    // the critical path without ever showing a partially translated page.
+    if (button) button.disabled = true;
+    try {
+      await loadTranslations();
+    } catch (_) {
+      // The small modern-only catalogue still gives a useful fallback when a
+      // transient request fails. A later idle retry can fill in the shared
+      // wording without making the language control unresponsive.
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+  state.language = nextLanguage;
+  if (nextLanguage === "en") state.hasUsedEnglish = true;
   window.localStorage.setItem("adr-modern-language", state.language);
   renderNavigation();
   if (!state.auth?.authenticated) {
@@ -3257,7 +3301,7 @@ async function initialize() {
   $("#login-form").addEventListener("submit", loginSubmit);
   $("#setup-form").addEventListener("submit", setupSubmit);
   $("#skip-auth-button").addEventListener("click", skipAuth);
-  $("#language-button").addEventListener("click", toggleLanguage);
+  $("#language-button").addEventListener("click", () => { void toggleLanguage(); });
   $("#theme-button").addEventListener("click", toggleTheme);
   $("#logout-button").addEventListener("click", logout);
   $("#save-button").addEventListener("click", () => saveAll(true));
@@ -3278,10 +3322,14 @@ async function initialize() {
   window.addEventListener("hashchange", () => { readLocation(); renderNavigation(); renderPage(); });
   try {
     applyTheme();
-    await loadTranslations().catch(() => null);
-    state.auth = await api("/api/auth/status");
-    if (!state.auth.authenticated) { showAuth(state.auth); return; }
-    await loadSettings(); showApp(); renderPage();
+    // Start authentication immediately. Chinese is already embedded in the
+    // document, so the large shared catalogue is non-critical; English still
+    // loads it in parallel with the auth round trip.
+    const authRequest = api("/api/auth/status");
+    if (state.language === "en") await loadTranslations().catch(() => null);
+    state.auth = await authRequest;
+    if (!state.auth.authenticated) { showAuth(state.auth); warmTranslations(); return; }
+    await loadSettings(); showApp(); renderPage(); warmTranslations();
   } catch (error) {
     showAuth({ configured: false, enabled: true });
     $("#auth-hint").textContent = localizedString(error.message);

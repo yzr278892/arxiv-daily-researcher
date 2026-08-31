@@ -53,6 +53,15 @@ class ModernWebUIAppTests(unittest.TestCase):
             "en": "📄 Reports",
         })
 
+    def test_large_frontend_assets_use_http_compression(self) -> None:
+        """Remote/LAN clients should not fetch the full plain JS payload."""
+        response = self.client.get("/assets/app.js", headers={"Accept-Encoding": "gzip"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers.get("content-encoding"), "gzip")
+        # httpx transparently decodes the body for TestClient callers.
+        self.assertIn("const NAVIGATION", response.text)
+
     def test_report_preview_drops_the_loading_placeholder_style(self) -> None:
         """Loaded previews must not retain the loading state's dashed frame."""
         response = self.client.get("/assets/app.js")
