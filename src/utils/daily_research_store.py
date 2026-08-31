@@ -3382,6 +3382,48 @@ class DailyResearchStore:
 
     # ==================== Paper preferences ====================
 
+    def add_auto_favorite_if_unmarked(
+        self,
+        source: str,
+        paper_id: str,
+        *,
+        title: str,
+        canonical_id: Optional[str] = None,
+        version: Optional[int] = None,
+        authors: Optional[list[str]] = None,
+        categories: Optional[list[str]] = None,
+    ) -> bool:
+        """Add one automatic 收藏 without replacing a reader decision.
+
+        Automatic qualification is a convenience for the reading list, not a
+        reader-provided learning signal. ``DO NOTHING`` makes the insert safe
+        across retries and concurrent workers, while preserving ``like``,
+        ``dislike`` and explicit ``none`` rows exactly as the reader left them.
+        """
+        now = datetime.now().isoformat()
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO paper_preferences (
+                    source, paper_id, canonical_id, version, preference,
+                    title, authors_json, categories_json, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, 'like', ?, ?, ?, ?, ?)
+                ON CONFLICT(source, paper_id) DO NOTHING
+                """,
+                (
+                    source,
+                    paper_id,
+                    canonical_id,
+                    version,
+                    title,
+                    json.dumps(list(authors or []), ensure_ascii=False),
+                    json.dumps(list(categories or []), ensure_ascii=False),
+                    now,
+                    now,
+                ),
+            )
+        return cursor.rowcount > 0
+
     def set_paper_preference(
         self,
         source: str,

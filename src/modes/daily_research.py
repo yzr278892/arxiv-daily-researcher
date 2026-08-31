@@ -283,6 +283,33 @@ def _record_v1_learning_signals(store, source, paper, score_response):
         logger.debug("v1 学习信号记录失败", exc_info=True)
 
 
+def _auto_favorite_qualified_paper(store, source, paper, score_response) -> None:
+    """Put qualified papers in 收藏 without overriding an explicit reader mark."""
+    if (
+        store is None
+        or not getattr(settings, "AUTO_FAVORITE_QUALIFIED_PAPERS", True)
+        or not getattr(score_response, "is_qualified", False)
+    ):
+        return
+    try:
+        added = store.add_auto_favorite_if_unmarked(
+            source,
+            paper.paper_id,
+            title=paper.title,
+            canonical_id=getattr(paper, "canonical_id", None),
+            version=getattr(paper, "version", None),
+            authors=list(getattr(paper, "authors", None) or []),
+            categories=list(getattr(paper, "categories", None) or []),
+        )
+    except Exception:
+        # 收藏 is a convenience layer. A failure here must not invalidate a
+        # successfully scored paper or prevent it from being retried/delivered.
+        logger.warning("自动收藏及格论文失败: %s:%s", source, paper.paper_id, exc_info=True)
+        return
+    if added:
+        logger.info("自动收藏及格论文: %s:%s", source, paper.paper_id)
+
+
 def _score_single_paper(
     paper,
     source,
@@ -478,6 +505,10 @@ def _score_or_hydrate_paper(
                 ),
             )
             score_is_new = True
+
+        _auto_favorite_qualified_paper(
+            store, source, paper, scored["score_response"]
+        )
 
         record = store.get_paper_record(source, paper.paper_id)
         translation_required = bool(paper.abstract and paper.abstract.strip())

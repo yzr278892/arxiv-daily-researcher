@@ -78,6 +78,14 @@ class ModernWebUIAppTests(unittest.TestCase):
         self.assertIn('pagedTable("favorite-papers"', response.text)
         self.assertNotIn('class="favorite-card"', response.text)
 
+    def test_favorites_page_has_an_auto_favorite_settings_card(self) -> None:
+        script = self.client.get("/assets/app.js").text
+
+        self.assertIn("function favoritesSettingsCard", script)
+        self.assertIn("auto_favorite_qualified_papers", script)
+        self.assertIn('id="favorite-settings-save"', script)
+        self.assertIn("function saveFavoriteSettings", script)
+
     def test_usage_summary_has_horizontal_headers_and_one_value_row(self) -> None:
         response = self.client.get("/assets/app.js")
         start = response.text.index("function usageSummaryTable")

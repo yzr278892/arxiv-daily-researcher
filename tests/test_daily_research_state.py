@@ -114,6 +114,33 @@ class DailyResearchStateTests(unittest.TestCase):
             self.assertEqual(record["translation_status"], "failed")
             self.assertIsNotNone(record["score_json"])
 
+    def test_qualified_score_is_automatically_favorited_when_enabled(self):
+        with tempfile.TemporaryDirectory() as temp_dir, patch.object(
+            settings, "AUTO_FAVORITE_QUALIFIED_PAPERS", True
+        ):
+            store = DailyResearchStore(Path(temp_dir) / "daily.db")
+            paper = _paper()
+            run_id = store.start_run(1)
+
+            self._run_score_or_hydrate(store, run_id, paper, _Agent(), {"quantum": 1.0})
+
+            preference = store.get_paper_preference("arxiv", paper.paper_id)
+            self.assertIsNotNone(preference)
+            self.assertEqual(preference["preference"], "like")
+            self.assertEqual(preference["title"], paper.title)
+
+    def test_qualified_score_is_not_automatically_favorited_when_disabled(self):
+        with tempfile.TemporaryDirectory() as temp_dir, patch.object(
+            settings, "AUTO_FAVORITE_QUALIFIED_PAPERS", False
+        ):
+            store = DailyResearchStore(Path(temp_dir) / "daily.db")
+            paper = _paper()
+            run_id = store.start_run(1)
+
+            self._run_score_or_hydrate(store, run_id, paper, _Agent(), {"quantum": 1.0})
+
+            self.assertIsNone(store.get_paper_preference("arxiv", paper.paper_id))
+
     def test_score_fingerprint_change_rescores_an_incomplete_paper(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             store = DailyResearchStore(Path(temp_dir) / "daily.db")

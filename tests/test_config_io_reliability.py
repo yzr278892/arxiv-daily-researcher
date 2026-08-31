@@ -398,6 +398,35 @@ class ConfigIOReliabilityTests(unittest.TestCase):
             legacy.load_from_search_config(config_path)
             self.assertEqual(legacy.HISTORY_MAINTENANCE_MAX_PAPERS_PER_RUN, 7)
 
+    def test_auto_favorite_qualified_papers_defaults_true_and_round_trips(self):
+        config = build_config_dict(auto_favorite_qualified_papers=False)
+        self.assertFalse(config["favorites"]["auto_favorite_qualified_papers"])
+        self.assertFalse(
+            flatten_config_dict(config)["auto_favorite_qualified_papers"]
+        )
+        self.assertTrue(
+            flatten_config_dict({})["auto_favorite_qualified_papers"]
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "config.json"
+            config_path.write_text(
+                "{favorites: {auto_favorite_qualified_papers: false}}",
+                encoding="utf-8",
+            )
+            configured = Settings()
+            configured.load_from_search_config(config_path)
+            self.assertFalse(configured.AUTO_FAVORITE_QUALIFIED_PAPERS)
+
+        for invalid in (0, "true", None):
+            with self.subTest(invalid=invalid):
+                with self.assertRaisesRegex(ValueError, "必须是布尔值"):
+                    build_config_dict(auto_favorite_qualified_papers=invalid)
+                with self.assertRaisesRegex(ValueError, "必须是布尔值"):
+                    validate_config_document(
+                        {"favorites": {"auto_favorite_qualified_papers": invalid}}
+                    )
+
     def test_local_backup_retention_round_trips_without_an_upper_limit(self):
         config = build_config_dict(
             backup_local_retention_days=21,

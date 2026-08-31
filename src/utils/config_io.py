@@ -147,6 +147,15 @@ def validate_config_document(config: object) -> Dict[str, Any]:
             raise ValueError(
                 "history_maintenance.max_papers_per_run 必须是非负整数（0 表示不限）"
             )
+    favorites = config.get("favorites")
+    if favorites is not None:
+        if not isinstance(favorites, dict):
+            raise ValueError("favorites 配置段必须是对象")
+        auto_favorite = favorites.get("auto_favorite_qualified_papers", True)
+        if not isinstance(auto_favorite, bool):
+            raise ValueError(
+                "favorites.auto_favorite_qualified_papers 必须是布尔值"
+            )
     backup = config.get("backup")
     if backup is not None:
         if not isinstance(backup, dict):
@@ -879,6 +888,7 @@ def build_config_dict(
     daily_research_persistence_enabled: bool = True,
     daily_research_db_path: str = "data/daily_research/daily_research.db",
     daily_max_papers_per_run: int = 200,
+    auto_favorite_qualified_papers: bool = True,
     history_maintenance_max_papers_per_run: int = 200,
     daily_run_time: str = "12:00",
     daily_enable_deep_analysis: bool = True,
@@ -940,7 +950,6 @@ def build_config_dict(
         raise ValueError(
             "daily_research.max_papers_per_run 必须是非负整数（0 表示不限）"
         )
-
     if (
         isinstance(history_maintenance_max_papers_per_run, bool)
         or not isinstance(history_maintenance_max_papers_per_run, int)
@@ -949,6 +958,8 @@ def build_config_dict(
         raise ValueError(
             "history_maintenance.max_papers_per_run 必须是非负整数（0 表示不限）"
         )
+    if not isinstance(auto_favorite_qualified_papers, bool):
+        raise ValueError("favorites.auto_favorite_qualified_papers 必须是布尔值")
 
     if not isinstance(daily_run_time, str) or not re.fullmatch(
         r"\d{1,2}:\d{2}", str(daily_run_time).strip()
@@ -1205,6 +1216,9 @@ def build_config_dict(
             "max_papers_per_run": daily_max_papers_per_run,
             "run_time": daily_run_time,
             "db_path": daily_research_db_path,
+        },
+        "favorites": {
+            "auto_favorite_qualified_papers": auto_favorite_qualified_papers,
         },
         "history_maintenance": {
             "max_papers_per_run": history_maintenance_max_papers_per_run,
@@ -1586,6 +1600,13 @@ def flatten_config_dict(config: Dict[str, Any]) -> Dict[str, Any]:
     flat["daily_run_time"] = dr.get("run_time", "12:00")
     flat["daily_research_db_path"] = dr.get(
         "db_path", "data/daily_research/daily_research.db"
+    )
+
+    favorites = config.get("favorites", {})
+    if not isinstance(favorites, dict):
+        favorites = {}
+    flat["auto_favorite_qualified_papers"] = favorites.get(
+        "auto_favorite_qualified_papers", True
     )
 
     # Older config files controlled historical maintenance with the daily

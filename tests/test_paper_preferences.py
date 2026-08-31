@@ -72,6 +72,57 @@ class PaperPreferenceTests(unittest.TestCase):
             )
             self.assertEqual(mapping, {("arxiv", "1"): "like"})
 
+    def test_auto_favorite_is_idempotent_and_preserves_reader_decisions(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = DailyResearchStore(Path(temp_dir) / "state.db")
+            added = store.add_auto_favorite_if_unmarked(
+                "arxiv",
+                "2401.00001v1",
+                title="Automatic paper",
+                canonical_id="2401.00001",
+                version=1,
+                authors=["Alice"],
+                categories=["quant-ph"],
+            )
+            self.assertTrue(added)
+            self.assertFalse(
+                store.add_auto_favorite_if_unmarked(
+                    "arxiv", "2401.00001v1", title="Changed title"
+                )
+            )
+            preference = store.get_paper_preference("arxiv", "2401.00001v1")
+            self.assertEqual(preference["preference"], "like")
+            self.assertEqual(preference["title"], "Automatic paper")
+            # Automatic saves are a reading-list convenience, not an explicit
+            # user signal for learned-preference scoring.
+            self.assertEqual(store.get_learned_preference_terms(), [])
+
+            store.set_paper_preference(
+                "arxiv", "2401.00001v1", preference="dislike", title="Manual"
+            )
+            self.assertFalse(
+                store.add_auto_favorite_if_unmarked(
+                    "arxiv", "2401.00001v1", title="Automatic retry"
+                )
+            )
+            self.assertEqual(
+                store.get_paper_preference("arxiv", "2401.00001v1")["preference"],
+                "dislike",
+            )
+
+            store.set_paper_preference(
+                "arxiv", "2401.00001v1", preference="none", title="Manual"
+            )
+            self.assertFalse(
+                store.add_auto_favorite_if_unmarked(
+                    "arxiv", "2401.00001v1", title="Automatic retry"
+                )
+            )
+            self.assertEqual(
+                store.get_paper_preference("arxiv", "2401.00001v1")["preference"],
+                "none",
+            )
+
     def _seed_daily_paper(self, store, paper_id, *, url=None, keywords=None, liked=True):
         import json
         import sqlite3

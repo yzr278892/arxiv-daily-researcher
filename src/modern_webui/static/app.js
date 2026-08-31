@@ -220,6 +220,12 @@ const MODERN_EN_TRANSLATIONS = Object.freeze({
   "显示非 arXiv 来源报告": "Show reports from non-arXiv sources",
   "收藏的论文": "Favorite Papers",
   "收藏画像": "Preference Profile",
+  "收藏设置": "Favorite Settings",
+  "自动收藏及格论文": "Automatically favorite qualifying papers",
+  "之后完成评分且及格的论文会自动加入收藏；不会覆盖你手动设置的不喜欢或已清除的标记。": "Papers that qualify in future scoring runs are added to Favorites automatically. Your manual dislike and cleared marks are never overwritten.",
+  "自动收藏会在论文通过当前评分规则时将其加入收藏；默认开启。": "Adds a paper to Favorites when it passes the current scoring policy. Enabled by default.",
+  "保存收藏设置": "Save Favorite Settings",
+  "收藏设置已保存。": "Favorite settings saved.",
   "正向偏好": "Positive preference",
   "负向偏好": "Negative preference",
   "按标记时间倒序展示；点击标题可打开论文页面。": "Newest marks first; select a title to open the paper page.",
@@ -1581,36 +1587,69 @@ async function renderFavorites(token) {
   root.innerHTML = `${pageHeader()}<div class="loading">正在读取收藏数据…</div>`;
   const data = await api("/api/favorites");
   if (token !== state.renderToken) return;
+  const settingsCard = favoritesSettingsCard();
   if (!data.available) {
-    root.innerHTML = `${pageHeader()}${section("收藏", '<p class="empty-state">SQLite 数据库尚未创建；运行一次每日研究或导入历史后即可查看。</p>', { icon: "⭐" })}`;
-    return;
+    root.innerHTML = `${pageHeader()}${section("收藏", '<p class="empty-state">SQLite 数据库尚未创建；运行一次每日研究或导入历史后即可查看。</p>', { icon: "⭐" })}${divider()}${settingsCard}`;
+  } else {
+    const likeCount = Number(data.counts?.like || 0);
+    const dislikeCount = Number(data.counts?.dislike || 0);
+    if (!likeCount && !dislikeCount) {
+      root.innerHTML = `${pageHeader()}${section("收藏", '<p class="empty-state">尚未标记论文。可直接在每日研究报告的论文卡片中使用 👍 或 👎。</p>', { icon: "⭐" })}${divider()}${settingsCard}`;
+    } else {
+      const likedRows = Array.isArray(data.liked) ? data.liked : [];
+      const paperTitle = (row) => {
+        const fallback = String(row.source || "").toLowerCase() === "arxiv" && row.paper_id
+          ? `https://arxiv.org/abs/${row.paper_id}`
+          : null;
+        const url = safeExternalUrl(row.url) || fallback;
+        return url
+          ? `<a href="${escapeAttribute(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(row.title || row.paper_id)}</a>`
+          : escapeHtml(row.title || row.paper_id);
+      };
+      const likedList = likedRows.length
+        ? `<p class="hint-text">按标记时间倒序展示；点击标题可打开论文页面。</p><div class="favorite-papers-table">${pagedTable("favorite-papers", [
+          { label: "收藏时间", value: (row) => formatTime(row.updated_at) },
+          { label: "论文", html: paperTitle },
+          { label: "来源", value: (row) => row.source || "—" },
+          { label: "论文标识", value: (row) => row.paper_id || "—" },
+        ], likedRows, { empty: "暂无 👍 收藏论文。" })}</div>`
+        : '<p class="empty-state">暂无 👍 收藏论文。</p>';
+      root.innerHTML = `${pageHeader()}${section("收藏的论文", `${metrics([{ label: "👍 收藏", value: formatNumber(likeCount), help: "正向偏好" }, { label: "👎 不喜欢", value: formatNumber(dislikeCount), help: "负向偏好" }])}${likedList}`, { icon: "⭐" })}${divider()}${section("收藏画像", `<div class="form-grid two"><div><p class="scroll-list-label">收藏作者 Top</p>${nativeScrollTable([{ label: "作者", key: "name" }, { label: "收藏次数", key: "count" }], data.authors || [], { empty: "暂无收藏作者统计", visibleRows: 10 })}</div><div><p class="scroll-list-label">收藏关键词</p>${nativeScrollTable([{ label: "关键词", key: "keyword" }, { label: "次数", key: "count" }], data.keywords || [], { empty: "暂无收藏关键词统计", visibleRows: 10 })}</div></div>`, { icon: "🧩" })}${divider()}${settingsCard}`;
+    }
   }
-  const likeCount = Number(data.counts?.like || 0);
-  const dislikeCount = Number(data.counts?.dislike || 0);
-  if (!likeCount && !dislikeCount) {
-    root.innerHTML = `${pageHeader()}${section("收藏", '<p class="empty-state">尚未标记论文。可直接在每日研究报告的论文卡片中使用 👍 或 👎。</p>', { icon: "⭐" })}`;
-    return;
-  }
-  const likedRows = Array.isArray(data.liked) ? data.liked : [];
-  const paperTitle = (row) => {
-    const fallback = String(row.source || "").toLowerCase() === "arxiv" && row.paper_id
-      ? `https://arxiv.org/abs/${row.paper_id}`
-      : null;
-    const url = safeExternalUrl(row.url) || fallback;
-    return url
-      ? `<a href="${escapeAttribute(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(row.title || row.paper_id)}</a>`
-      : escapeHtml(row.title || row.paper_id);
-  };
-  const likedList = likedRows.length
-    ? `<p class="hint-text">按标记时间倒序展示；点击标题可打开论文页面。</p><div class="favorite-papers-table">${pagedTable("favorite-papers", [
-      { label: "收藏时间", value: (row) => formatTime(row.updated_at) },
-      { label: "论文", html: paperTitle },
-      { label: "来源", value: (row) => row.source || "—" },
-      { label: "论文标识", value: (row) => row.paper_id || "—" },
-    ], likedRows, { empty: "暂无 👍 收藏论文。" })}</div>`
-    : '<p class="empty-state">暂无 👍 收藏论文。</p>';
-  root.innerHTML = `${pageHeader()}${section("收藏的论文", `${metrics([{ label: "👍 收藏", value: formatNumber(likeCount), help: "正向偏好" }, { label: "👎 不喜欢", value: formatNumber(dislikeCount), help: "负向偏好" }])}${likedList}`, { icon: "⭐" })}${divider()}${section("收藏画像", `<div class="form-grid two"><div><p class="scroll-list-label">收藏作者 Top</p>${nativeScrollTable([{ label: "作者", key: "name" }, { label: "收藏次数", key: "count" }], data.authors || [], { empty: "暂无收藏作者统计", visibleRows: 10 })}</div><div><p class="scroll-list-label">收藏关键词</p>${nativeScrollTable([{ label: "关键词", key: "keyword" }, { label: "次数", key: "count" }], data.keywords || [], { empty: "暂无收藏关键词统计", visibleRows: 10 })}</div></div>`, { icon: "🧩" })}`;
   bindCommon(root);
+  bindFavoriteSettings(root);
+}
+
+function favoritesSettingsCard() {
+  return section("收藏设置", `<p class="hint-text">之后完成评分且及格的论文会自动加入收藏；不会覆盖你手动设置的不喜欢或已清除的标记。</p>${field({ label: "自动收藏及格论文", key: "auto_favorite_qualified_papers", type: "checkbox", fallback: true, help: "自动收藏会在论文通过当前评分规则时将其加入收藏；默认开启。" })}<div class="action-row"><button id="favorite-settings-save" type="button" class="primary-button">保存收藏设置</button></div>`, { icon: "⚙️", saveHint: false });
+}
+
+async function saveFavoriteSettings() {
+  const autoFavorite = booleanValue(configValue("auto_favorite_qualified_papers", true), true);
+  try {
+    const result = await api("/api/settings", {
+      method: "PUT",
+      body: { config: { auto_favorite_qualified_papers: autoFavorite }, env: {}, clear_env: [] },
+    });
+    state.settings = result;
+    delete state.draft.config.auto_favorite_qualified_papers;
+    state.configurationDirty = Boolean(
+      Object.keys(state.draft.config).length
+      || Object.keys(state.draft.env).length
+      || state.draft.clearEnv.size
+    );
+    updateConfigurationDirtyIndicator();
+    toast("收藏设置已保存。", "success");
+  } catch (error) {
+    toast(error.message, "error");
+  }
+}
+
+function bindFavoriteSettings(root) {
+  $("#favorite-settings-save", root)?.addEventListener("click", () => {
+    void saveFavoriteSettings();
+  });
 }
 
 function pagedItemsMarkup(id, items, empty = "暂无数据") {

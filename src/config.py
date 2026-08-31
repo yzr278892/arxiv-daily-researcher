@@ -320,6 +320,10 @@ class Settings(BaseSettings):
     # cron；显式设置的 CRON_SCHEDULE 环境变量优先于该值。
     DAILY_RUN_TIME: str = "12:00"
 
+    # Newly qualified papers are kept in the 收藏 ledger by default. This is
+    # deliberately independent from manual preference-learning signals.
+    AUTO_FAVORITE_QUALIFIED_PAPERS: bool = True
+
     # Historical repair, legacy supplements and omission-report generation
     # have their own workload budget. Older config files fall back to the
     # daily cap when loaded so upgrading does not unexpectedly change work.
@@ -950,6 +954,20 @@ class Settings(BaseSettings):
                         daily_cfg["db_path"],
                         label="daily_research.db_path",
                     )
+
+            favorites_cfg = config.get("favorites")
+            if favorites_cfg is not None:
+                if not isinstance(favorites_cfg, dict):
+                    raise ValueError("favorites 配置段必须是对象")
+                auto_favorite = favorites_cfg.get(
+                    "auto_favorite_qualified_papers",
+                    self.AUTO_FAVORITE_QUALIFIED_PAPERS,
+                )
+                if not isinstance(auto_favorite, bool):
+                    raise ValueError(
+                        "favorites.auto_favorite_qualified_papers 必须是布尔值"
+                    )
+                self.AUTO_FAVORITE_QUALIFIED_PAPERS = auto_favorite
 
             # 历史维护与每日研究使用独立的论文处理上限。旧配置没有该段时
             # 保持与旧版一致：回退到已经加载的每日研究上限。

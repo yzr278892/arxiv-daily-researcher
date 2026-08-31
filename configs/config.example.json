@@ -222,6 +222,12 @@
     "db_path": "data/daily_research/daily_research.db"
   },
 
+  // Add newly qualified papers to 收藏 automatically. This does not replace
+  // a paper that the reader has already marked or cleared manually.
+  "favorites": {
+    "auto_favorite_qualified_papers": true
+  },
+
   // Historical repair and supplement reports use this independent cap.
   // HTML indexing and source-range scans still complete; excess SQLite work
   // remains pending for the next history-maintenance task. 0 = unlimited.
