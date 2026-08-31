@@ -322,6 +322,18 @@ docker compose up -d config-panel
 
 Docker and local panel: <http://127.0.0.1:8501>
 
+The default listener is local-only. For direct access from a trusted Tailscale network, set this host's Tailscale IPv4 in `.env`, then recreate only the WebUI:
+
+~~~env
+ADR_WEBUI_BIND_HOST=100.x.y.z
+~~~
+
+~~~bash
+docker compose up -d --no-deps --force-recreate config-panel
+~~~
+
+Then open `http://100.x.y.z:8501`. This keeps Docker's host-network semantics, so no `ports:` mapping is needed. Do not use `0.0.0.0`, and initialize a WebUI administrator account before sharing access.
+
 The WebUI and worker share <code>.env</code>, <code>configs/</code>, <code>data/</code>, and <code>logs/</code>. The primary sidebar groups pages as Run, Content, Configuration, and System; the secondary pages remain in the top bar, retaining context on long configuration pages. A saved configuration is loaded by the next task. After changing the run time, use the sidebar worker-restart control to reinstall cron.
 
 #### 18 pages and navigation groups
@@ -395,7 +407,7 @@ The wizard is a convenient starting point, while the panel offers a practical da
 Docker Compose starts two services:
 
 - <code>arxiv-daily-researcher</code>: worker, cron, queue watcher, and research tasks
-- <code>config-panel</code>: modern management WebUI bound to <code>127.0.0.1:8501</code>
+- <code>config-panel</code>: modern management WebUI bound to <code>127.0.0.1:8501</code> by default
 
 #### Build from source
 
@@ -463,6 +475,7 @@ The WebUI writes task requests through shared volumes, and the worker watches th
 | <code>SETUP_WIZARD</code> | <code>auto</code> | Check and start the setup wizard during first deployment |
 | <code>ADR_WORKER_IMAGE</code> | local worker image | Select a GHCR worker image |
 | <code>ADR_WEBUI_IMAGE</code> | local WebUI image | Select a GHCR WebUI image |
+| <code>ADR_WEBUI_BIND_HOST</code> | <code>127.0.0.1</code> | WebUI listener; a trusted Tailnet may use this host's Tailscale IPv4. Do not set <code>0.0.0.0</code>. |
 
 </details>
 
@@ -477,7 +490,7 @@ CHEAP_LLM__BASE_URL=http://127.0.0.1:11434/v1
 CHEAP_LLM__MODEL_NAME=qwen2.5:7b
 ~~~
 
-The worker and WebUI both use host-network semantics, so they reach host-local LLMs, proxies, and DNS through the same addresses. The panel itself listens only on <code>127.0.0.1:8501</code>; configure reverse proxies and VPN access for the deployment topology.
+The worker and WebUI both use host-network semantics, so they reach host-local LLMs, proxies, and DNS through the same addresses. The panel listens on <code>127.0.0.1:8501</code> by default; configure reverse proxies and VPN access for the deployment topology.
 
 </details>
 

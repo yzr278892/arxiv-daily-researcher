@@ -322,6 +322,18 @@ docker compose up -d config-panel
 
 Docker 与本地面板地址：<http://127.0.0.1:8501>
 
+默认只监听本机。若仅需从可信 Tailscale 网络访问，可在 `.env` 填入本机的 Tailscale IPv4 后重建 WebUI：
+
+~~~env
+ADR_WEBUI_BIND_HOST=100.x.y.z
+~~~
+
+~~~bash
+docker compose up -d --no-deps --force-recreate config-panel
+~~~
+
+随后打开 `http://100.x.y.z:8501`。此方式保持 Docker 的宿主机网络语义，不需要 `ports:` 映射；请勿设为 `0.0.0.0`，并应先完成 WebUI 管理员账户初始化。
+
 WebUI 与 worker 共享 <code>.env</code>、<code>configs/</code>、<code>data/</code> 和 <code>logs/</code>。左侧一级导航分为运行、内容、配置、系统；二级页面保留在顶部，避免在长配置页中丢失上下文。保存后的配置会在下一次任务加载；修改运行时间后可通过侧栏按钮重启 worker 以重装 cron。
 
 #### 18 个页面与导航分组
@@ -395,7 +407,7 @@ WebUI 与 worker 共享 <code>.env</code>、<code>configs/</code>、<code>data/<
 Docker Compose 启动两个服务：
 
 - <code>arxiv-daily-researcher</code>：worker、cron、队列监听和研究任务
-- <code>config-panel</code>：仅监听本机 <code>127.0.0.1:8501</code> 的现代管理 WebUI
+- <code>config-panel</code>：默认监听本机 <code>127.0.0.1:8501</code> 的现代管理 WebUI
 
 #### 从源码构建
 
@@ -463,6 +475,7 @@ WebUI 通过共享卷写入任务触发请求，worker 监听触发队列并启�
 | <code>SETUP_WIZARD</code>          | <code>auto</code> | 首次部署时检查并启动配置向导                                |
 | <code>ADR_WORKER_IMAGE</code>      | 本地 worker 镜像 | 指定 GHCR worker 镜像                                       |
 | <code>ADR_WEBUI_IMAGE</code>       | 本地 WebUI 镜像  | 指定 GHCR WebUI 镜像                                        |
+| <code>ADR_WEBUI_BIND_HOST</code>   | <code>127.0.0.1</code> | WebUI 监听地址；可信 Tailnet 直连可填本机 Tailscale IPv4，勿设为 <code>0.0.0.0</code> |
 
 </details>
 
@@ -477,7 +490,7 @@ CHEAP_LLM__BASE_URL=http://127.0.0.1:11434/v1
 CHEAP_LLM__MODEL_NAME=qwen2.5:7b
 ~~~
 
-worker 与 WebUI 都使用宿主机网络，以相同方式访问宿主机上的本地 LLM、代理和 DNS。面板仅绑定 <code>127.0.0.1:8501</code>；反向代理、VPN 或本地服务地址应按部署网络拓扑配置。
+worker 与 WebUI 都使用宿主机网络，以相同方式访问宿主机上的本地 LLM、代理和 DNS。面板默认绑定 <code>127.0.0.1:8501</code>；反向代理、VPN 或本地服务地址应按部署网络拓扑配置。
 
 </details>
 

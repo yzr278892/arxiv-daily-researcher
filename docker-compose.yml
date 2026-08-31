@@ -77,14 +77,15 @@ services:
 
     # Match the worker's localhost semantics so WebUI connection tests can
     # reach host-side proxies and local LLM services exactly as scheduled jobs
-    # do. The browser service stays bound to loopback unless an authenticated
-    # reverse proxy is deliberately configured by the operator.
+    # do. Keep the browser service on loopback by default. A trusted Tailnet
+    # deployment may set ADR_WEBUI_BIND_HOST to this host's Tailscale IPv4;
+    # do not use 0.0.0.0 without a deliberately configured access boundary.
     network_mode: host
     command:
       - uvicorn
       - src.modern_webui.app:app
       - --host
-      - 127.0.0.1
+      - ${ADR_WEBUI_BIND_HOST:-127.0.0.1}
       - --port
       - "8501"
 
@@ -109,7 +110,7 @@ services:
           memory: 64M
 
     healthcheck:
-      test: [ "CMD", "python", "/app/src/utils/container_health.py", "webui", "--url", "http://127.0.0.1:8501/api/health" ]
+      test: [ "CMD", "python", "/app/src/utils/container_health.py", "webui", "--url", "http://${ADR_WEBUI_BIND_HOST:-127.0.0.1}:8501/api/health" ]
       interval: 30s
       timeout: 15s
       retries: 3
