@@ -68,10 +68,17 @@ def _urlsafe_b64decode(value: str) -> Optional[bytes]:
         return None
 
 
-def verify_password_hash(password_hash: str, password: str) -> Optional[bool]:
-    """Verify a PBKDF2 record stored by the account manager."""
+def _password_hash_components(password_hash: object) -> Optional[tuple[int, bytes, bytes]]:
+    """Parse and cheaply validate the persisted PBKDF2 record structure.
+
+    Loading the account registry is on the request path for every protected
+    WebUI endpoint.  It must validate stored records without deriving a test
+    password hash: PBKDF2 is intentionally expensive and using it merely to
+    inspect an already persisted record added roughly half a second to each
+    request on the deployment host.
+    """
     try:
-        scheme, raw_iterations, encoded_salt, encoded_digest = password_hash.split(":", 3)
+        scheme, raw_iterations, encoded_salt, encoded_digest = str(password_hash).split(":", 3)
         iterations = int(raw_iterations)
         if scheme != _HASH_SCHEME or not 100_000 <= iterations <= 1_000_000:
             return None
@@ -81,6 +88,15 @@ def verify_password_hash(password_hash: str, password: str) -> Optional[bool]:
             return None
     except (AttributeError, ValueError, UnicodeEncodeError, binascii.Error):
         return None
+    return iterations, salt, expected_digest
+
+
+def verify_password_hash(password_hash: str, password: str) -> Optional[bool]:
+    """Verify a PBKDF2 record stored by the account manager."""
+    components = _password_hash_components(password_hash)
+    if components is None:
+        return None
+    iterations, salt, expected_digest = components
     actual_digest = hashlib.pbkdf2_hmac(
         "sha256", password.encode("utf-8"), salt, iterations
     )
@@ -117,7 +133,7 @@ def _read_accounts(raw_value: object) -> tuple[Account, ...]:
         if (
             not _USERNAME_PATTERN.fullmatch(username)
             or username in usernames
-            or verify_password_hash(password_hash, "") is None
+            or _password_hash_components(password_hash) is None
         ):
             return ()
         is_owner = bool(item.get("o")) and not owner_seen
@@ -140,6 +156,9 @@ def read_auth_config(env_values: Mapping[str, object]) -> AuthConfig:
     else:
         username = str(env_values.get("WEBUI_ADMIN_USERNAME", "")).strip()
         password_hash = str(env_values.get("WEBUI_ADMIN_PASSWORD_HASH", "")).strip()
+        # Keep the legacy single-account fallback behavior unchanged: an old
+        # malformed value remains a configured account whose login check
+        # fails safely, rather than unexpectedly exposing first-run setup.
         if _USERNAME_PATTERN.fullmatch(username) and password_hash:
             accounts = (Account(username, password_hash, is_owner=True),)
     return AuthConfig(
@@ -205,7 +224,7 @@ def serialize_accounts(accounts: tuple[Account, ...] | list[Account]) -> str:
         if (
             validate_username(account.username)
             or account.username in seen
-            or verify_password_hash(account.password_hash, "") is None
+            or _password_hash_components(account.password_hash) is None
         ):
             raise ValueError("账户列表无效。")
         seen.add(account.username)

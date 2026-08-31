@@ -13,6 +13,7 @@ from unittest.mock import patch
 from starlette.testclient import TestClient
 
 from modern_webui import app as modern_app
+from modern_webui import auth as modern_auth
 
 
 class ModernWebUIAppTests(unittest.TestCase):
@@ -61,6 +62,25 @@ class ModernWebUIAppTests(unittest.TestCase):
         self.assertEqual(response.headers.get("content-encoding"), "gzip")
         # httpx transparently decodes the body for TestClient callers.
         self.assertIn("const NAVIGATION", response.text)
+
+    def test_reading_the_account_registry_does_not_derive_a_test_password(self) -> None:
+        """Authenticated requests must not run PBKDF2 just to parse .env."""
+        owner = modern_auth.Account(
+            "owner_user", modern_auth.hash_password("secret6"), is_owner=True
+        )
+        values = {
+            "WEBUI_AUTH_ENABLED": "true",
+            "WEBUI_ACCOUNTS": modern_auth.serialize_accounts((owner,)),
+        }
+        with patch.object(
+            modern_auth,
+            "verify_password_hash",
+            side_effect=AssertionError("registry parsing must be structural only"),
+        ):
+            config = modern_auth.read_auth_config(values)
+
+        self.assertTrue(config.enabled)
+        self.assertEqual(config.accounts, (owner,))
 
     def test_report_preview_drops_the_loading_placeholder_style(self) -> None:
         """Loaded previews must not retain the loading state's dashed frame."""

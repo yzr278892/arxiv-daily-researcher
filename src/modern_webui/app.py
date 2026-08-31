@@ -79,8 +79,10 @@ def _session_secret() -> str:
     return session_secret(_auth_config())
 
 
-def _modern_session_authenticated(request: Request) -> bool:
-    config = _auth_config()
+def _modern_session_authenticated(request: Request, config: Any | None = None) -> bool:
+    """Check a browser session against an optionally preloaded auth config."""
+    if config is None:
+        config = _auth_config()
     if not config.enabled:
         return True
     if not _configured(config):
@@ -114,7 +116,7 @@ def _require_session(request: Request) -> None:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="管理员账户尚未初始化。",
         )
-    if not _modern_session_authenticated(request):
+    if not _modern_session_authenticated(request, config):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="请先登录。")
 
 
@@ -185,7 +187,7 @@ async def auth_status(request: Request) -> JSONResponse:
         {
             "enabled": config.enabled,
             "configured": configured,
-            "authenticated": _modern_session_authenticated(request) if configured else False,
+            "authenticated": _modern_session_authenticated(request, config) if configured else False,
             "username": username if isinstance(username, str) else None,
             "session_timeout_minutes": config.session_timeout_minutes,
         }
