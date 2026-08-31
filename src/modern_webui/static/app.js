@@ -576,6 +576,11 @@ async function toggleLanguage() {
   renderNavigation();
   if (!state.auth?.authenticated) {
     showAuth(state.auth || { enabled: true, configured: false });
+  } else {
+    // Some controls are assembled from localeText() while rendering (for
+    // example pagers). Re-render the active page so switching back to
+    // Chinese cannot leave those dynamic English strings behind.
+    await renderPage({ preserveScroll: true });
   }
   applyLocale(document);
   updateConfigurationDirtyIndicator();
@@ -2364,7 +2369,8 @@ function proxyNoProxyEditor() {
 
 function renderProxySettings() {
   const enabled = Boolean(configValue("proxy_enabled", false));
-  const dependent = `${field({ label: "代理地址", key: "proxy_url", fallback: "", placeholder: "http://127.0.0.1:7890", help: "支持 HTTP 和 SOCKS5 代理。" })}${proxyNoProxyEditor()}${divider()}<h3>🎯 代理范围</h3><div class="proxy-scope-list">${field({ label: "ArXiv API", key: "proxy_arxiv", type: "checkbox", fallback: true, help: "export.arxiv.org" })}${field({ label: "OpenAlex API", key: "proxy_openalex", type: "checkbox", fallback: false, help: "期刊论文数据源" })}${field({ label: "Hugging Face Papers API", key: "proxy_huggingface_papers", type: "checkbox", fallback: false, help: "可选补充论文流" })}${field({ label: "Semantic Scholar API", key: "proxy_semantic_scholar", type: "checkbox", fallback: false, help: "TL;DR 增强" })}${field({ label: "LLM API", key: "proxy_llm_api", type: "checkbox", fallback: false, help: "评分和分析" })}${field({ label: "通知 Webhook", key: "proxy_notifications", type: "checkbox", fallback: false, help: "通知推送" })}${field({ label: "WebDAV 同步", key: "proxy_webdav", type: "checkbox", fallback: true, help: "备份和恢复" })}${field({ label: "检查更新", key: "proxy_update_check", type: "checkbox", fallback: false, help: "GitHub Release" })}</div>`;
+  const fields = `<div class="proxy-settings-stack">${field({ label: "代理地址", key: "proxy_url", fallback: "", placeholder: "http://127.0.0.1:7890", help: "支持 HTTP 和 SOCKS5 代理。" })}${proxyNoProxyEditor()}</div>`;
+  const dependent = `${fields}${divider()}<h3>🎯 代理范围</h3><div class="proxy-scope-list">${field({ label: "ArXiv API", key: "proxy_arxiv", type: "checkbox", fallback: true, help: "export.arxiv.org" })}${field({ label: "OpenAlex API", key: "proxy_openalex", type: "checkbox", fallback: false, help: "期刊论文数据源" })}${field({ label: "Hugging Face Papers API", key: "proxy_huggingface_papers", type: "checkbox", fallback: false, help: "可选补充论文流" })}${field({ label: "Semantic Scholar API", key: "proxy_semantic_scholar", type: "checkbox", fallback: false, help: "TL;DR 增强" })}${field({ label: "LLM API", key: "proxy_llm_api", type: "checkbox", fallback: false, help: "评分和分析" })}${field({ label: "通知 Webhook", key: "proxy_notifications", type: "checkbox", fallback: false, help: "通知推送" })}${field({ label: "WebDAV 同步", key: "proxy_webdav", type: "checkbox", fallback: true, help: "备份和恢复" })}${field({ label: "检查更新", key: "proxy_update_check", type: "checkbox", fallback: false, help: "GitHub Release" })}</div>`;
   return section("网络代理设置", `${field({ label: "启用网络代理", key: "proxy_enabled", type: "checkbox", fallback: false })}<div id="proxy-dependent" ${enabled ? "" : "hidden"}>${dependent}</div>`, { icon: "🌐" });
 }
 
@@ -2628,7 +2634,7 @@ function historyActions(data) {
     .map((task) => task.mode));
   const fullRepair = Boolean(configValue("legacy_import_full_repair_enabled", false));
   const runMode = String(configValue("history_maintenance_run_mode", "idle")) === "time_window" ? "time_window" : "idle";
-  const scheduleFields = `<div class="history-schedule-settings">${field({ label: "历史维护每次最多处理论文数（0 不限）", key: "history_maintenance_max_papers_per_run", type: "number", min: 0, max: 100000, step: 1, fallback: 200 })}${field({ label: "历史维护运行方式", key: "history_maintenance_run_mode", type: "select", fallback: "idle", choices: [{ value: "idle", label: "闲时运行" }, { value: "time_window", label: "指定时间段运行" }] })}<div id="history-time-window" class="form-grid two" ${runMode === "time_window" ? "" : "hidden"}>${field({ label: "指定时段开始", key: "history_maintenance_time_window_start", type: "time", fallback: "00:00" })}${field({ label: "指定时段结束", key: "history_maintenance_time_window_end", type: "time", fallback: "06:00" })}</div></div>`;
+  const scheduleFields = `<div class="history-schedule-settings">${field({ label: "历史维护每次最多处理论文数（0 不限）", key: "history_maintenance_max_papers_per_run", type: "number", min: 0, max: 100000, step: 1, fallback: 200 })}${field({ label: "历史维护运行方式", key: "history_maintenance_run_mode", type: "select", fallback: "idle", choices: [{ value: "idle", label: "闲时运行" }, { value: "time_window", label: "指定时间段运行" }] })}<div id="history-time-window" class="form-grid two history-time-window" ${runMode === "time_window" ? "" : "hidden"}>${field({ label: "指定时段开始", key: "history_maintenance_time_window_start", type: "time", fallback: "00:00" })}${field({ label: "指定时段结束", key: "history_maintenance_time_window_end", type: "time", fallback: "06:00" })}</div></div>`;
   return `${field({ label: "启用完整补全流程", key: "legacy_import_full_repair_enabled", type: "checkbox", fallback: false })}<p id="history-full-repair-hint" class="hint-text">${historyFullRepairHint(fullRepair)}</p><div class="action-row history-maintenance-actions"><button id="history-import" class="primary-button" ${pendingModes.has("legacy_import") ? "disabled" : ""}>读取旧历史</button><button id="history-repair" class="secondary-button compact-button" ${pendingModes.has("history_data_repair") ? "disabled" : ""}>补全历史数据</button><button id="history-omission" class="secondary-button compact-button" ${pendingModes.has("history_omission_scan") ? "disabled" : ""}>扫描历史遗漏</button></div><h3>运行设置</h3>${scheduleFields}`;
 }
 

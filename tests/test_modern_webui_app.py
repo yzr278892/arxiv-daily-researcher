@@ -193,7 +193,7 @@ class ModernWebUIAppTests(unittest.TestCase):
         self.assertIn("history_maintenance_run_mode", history_actions)
         self.assertIn("history_maintenance_time_window_start", history_actions)
         self.assertIn("history_maintenance_time_window_end", history_actions)
-        self.assertIn('id="history-time-window"', history_actions)
+        self.assertIn('id="history-time-window" class="form-grid two history-time-window"', history_actions)
         self.assertIn(
             '<button id="history-import" class="primary-button"', history_actions
         )
@@ -213,7 +213,29 @@ class ModernWebUIAppTests(unittest.TestCase):
         stylesheet = self.client.get("/assets/app.css").text
 
         self.assertIn("select:not([multiple]) {", stylesheet)
-        self.assertIn("background-image: var(--select-chevron), linear-gradient(var(--line), var(--line))", stylesheet)
+        self.assertIn("-webkit-appearance: none;", stylesheet)
+        self.assertIn("background-image: var(--select-chevron);", stylesheet)
+        self.assertIn(".pager select { box-sizing: border-box; min-width: 86px; min-height: 27px;", stylesheet)
+        self.assertIn(".pager select:hover { background-image: var(--select-chevron-active); }", stylesheet)
+        self.assertIn("text-align-last: center;", stylesheet)
+
+    def test_language_switch_rerenders_dynamic_locale_text(self) -> None:
+        script = self.client.get("/assets/app.js").text
+        start = script.index("async function toggleLanguage")
+        end = script.index("function escapeHtml", start)
+        language_toggle = script[start:end]
+
+        self.assertIn("await renderPage({ preserveScroll: true });", language_toggle)
+        self.assertIn("function pageSizeLabel", script)
+
+    def test_configuration_forms_keep_explicit_vertical_spacing(self) -> None:
+        script = self.client.get("/assets/app.js").text
+        stylesheet = self.client.get("/assets/app.css").text
+
+        self.assertIn('class="proxy-settings-stack"', script)
+        self.assertIn(".history-schedule-settings { display: grid; row-gap: 32px; }", stylesheet)
+        self.assertIn("#proxy-dependent, #webdav-dependent { margin-top: 28px; }", stylesheet)
+        self.assertIn("#backup-list { margin-top: 28px; }", stylesheet)
 
     def test_stale_trigger_cleanup_uses_the_authenticated_api_boundary(self) -> None:
         self.assertEqual(self.client.post("/api/triggers/stale", json={}).status_code, 503)
