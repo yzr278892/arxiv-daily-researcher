@@ -98,13 +98,61 @@ class ModernWebUIAppTests(unittest.TestCase):
         self.assertIn('pagedTable("favorite-papers"', response.text)
         self.assertNotIn('class="favorite-card"', response.text)
 
-    def test_favorites_page_has_an_auto_favorite_settings_card(self) -> None:
+    def test_favorites_page_uses_sidebar_save_and_has_batch_collect_action(self) -> None:
         script = self.client.get("/assets/app.js").text
 
         self.assertIn("function favoritesSettingsCard", script)
         self.assertIn("auto_favorite_qualified_papers", script)
-        self.assertIn('id="favorite-settings-save"', script)
-        self.assertIn("function saveFavoriteSettings", script)
+        self.assertIn('id="favorite-collect-qualified"', script)
+        self.assertIn('"/api/favorites/collect"', script)
+        self.assertNotIn('id="favorite-settings-save"', script)
+        self.assertNotIn("function saveFavoriteSettings", script)
+
+    def test_favorite_collection_endpoint_requires_a_session_and_forwards_result(self) -> None:
+        self.assertEqual(self.client.post("/api/favorites/collect", json={}).status_code, 503)
+        self.assertEqual(
+            self.client.post(
+                "/api/auth/setup",
+                json={
+                    "username": "favorite_admin",
+                    "password": "secret6",
+                    "password_confirmation": "secret6",
+                },
+            ).status_code,
+            200,
+        )
+        expected = {"ok": True, "scanned": 4, "qualified": 2, "added": 1, "preserved": 1}
+        with patch.object(modern_app.backend, "collect_qualified_favorites", return_value=expected) as collect:
+            response = self.client.post("/api/favorites/collect", json={})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), expected)
+        collect.assert_called_once_with()
+
+    def test_notification_test_endpoint_uses_the_selected_channel(self) -> None:
+        self.assertEqual(
+            self.client.post(
+                "/api/auth/setup",
+                json={
+                    "username": "notification_admin",
+                    "password": "secret6",
+                    "password_confirmation": "secret6",
+                },
+            ).status_code,
+            200,
+        )
+        with patch.object(
+            modern_app.backend,
+            "test_notification",
+            return_value={"ok": True, "message": "测试通知已发送。"},
+        ) as send:
+            response = self.client.post(
+                "/api/notifications/telegram/test", json={"TELEGRAM_CHAT_ID": "draft-chat"}
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["ok"], True)
+        send.assert_called_once_with("telegram", {"TELEGRAM_CHAT_ID": "draft-chat"})
 
     def test_usage_summary_has_horizontal_headers_and_one_value_row(self) -> None:
         response = self.client.get("/assets/app.js")
@@ -159,6 +207,13 @@ class ModernWebUIAppTests(unittest.TestCase):
         )
         self.assertNotIn("<span>→</span>", script)
         self.assertNotIn("后一天 →", script)
+        self.assertNotIn("运行方式修改后，请使用顶部", script)
+
+    def test_native_selects_share_the_source_chevron_treatment(self) -> None:
+        stylesheet = self.client.get("/assets/app.css").text
+
+        self.assertIn("select:not([multiple]) {", stylesheet)
+        self.assertIn("background-image: var(--select-chevron), linear-gradient(var(--line), var(--line))", stylesheet)
 
     def test_stale_trigger_cleanup_uses_the_authenticated_api_boundary(self) -> None:
         self.assertEqual(self.client.post("/api/triggers/stale", json={}).status_code, 503)

@@ -28,24 +28,24 @@ const NAVIGATION = [
 ];
 
 const PAGE_META = {
-  daily_research: ["运行 / 每日研究", "每日研究", "扫描、筛选、分析与报告生成。任务仍由现有 Worker 队列安全执行。"],
-  past_daily: ["运行 / 过去日报", "过去日报", "按自然日将指定时间段加入队列，逐日生成与当日一致的报告。"],
-  trend_tasks: ["运行 / 趋势任务", "趋势任务", "对指定关键词和时间段执行独立趋势研究。"],
-  reports: ["内容 / 报告查看", "报告查看", "浏览日报、趋势研究和关键词趋势报告。"],
-  favorites: ["内容 / 收藏", "收藏", "查看已标记论文、作者偏好和关键词偏好。"],
-  paper_search: ["内容 / 论文检索", "论文检索", "从 SQLite 多维论文历史库检索已处理论文及其来源变体。"],
-  keywords: ["配置 / 关键词", "关键词", "设置研究背景、主关键词和参考文献关键词提取。"],
-  data_sources: ["配置 / 数据源", "数据源", "管理内置 arXiv 与额外数据来源。"],
-  scoring: ["配置 / 评分", "评分", "控制论文资格判定、排序与作者偏好。"],
-  api: ["配置 / API", "API 配置", "配置 LLM、PDF 解析和第三方数据服务。"],
-  notifications: ["配置 / 通知", "通知", "配置任务完成和阶段级异常通知。"],
-  advanced: ["配置 / 高级设置", "高级设置", "调整解析、并发、重试、代理和持久化行为。"],
-  accounts: ["配置 / 账户", "账户管理", "管理本地面板账户与密码。"],
-  backup_sync: ["系统 / 备份与同步", "备份与同步", "导出配置、配置 WebDAV 和管理 SQLite 本地备份。"],
-  history_tasks: ["系统 / 历史维护", "历史维护", "导入旧版本历史、补全缺失字段并扫描遗漏论文。"],
-  diagnostics: ["系统 / 运行诊断", "运行诊断", "查看每日研究、过去日报，以及所有任务的 LLM 与数据源健康记录。"],
-  analytics: ["系统 / 用量统计", "用量统计", "查看已记录的 LLM Token 使用情况。"],
-  logs: ["系统 / 日志", "运行日志", "按任务分组读取最近的本地运行日志。"],
+  daily_research: ["运行 / 每日研究", "每日研究", "扫描、筛选、分析并生成报告。"],
+  past_daily: ["运行 / 过去日报", "过去日报", "按日期补跑日报。"],
+  trend_tasks: ["运行 / 趋势任务", "趋势任务", "按关键词和时间段生成趋势报告。"],
+  reports: ["内容 / 报告查看", "报告查看", "查看日报与趋势报告。"],
+  favorites: ["内容 / 收藏", "收藏", "管理收藏论文与偏好。"],
+  paper_search: ["内容 / 论文检索", "论文检索", "检索已处理论文。"],
+  keywords: ["配置 / 关键词", "关键词", "设置研究背景、关键词与参考文献提取。"],
+  data_sources: ["配置 / 数据源", "数据源", "管理 arXiv 和其他数据源。"],
+  scoring: ["配置 / 评分", "评分", "设置资格判定、排序和作者偏好。"],
+  api: ["配置 / API", "API 配置", "配置 LLM、PDF 解析和第三方服务。"],
+  notifications: ["配置 / 通知", "通知", "配置任务通知。"],
+  advanced: ["配置 / 高级设置", "高级设置", "配置解析、并发、重试、代理和持久化。"],
+  accounts: ["配置 / 账户", "账户管理", "管理面板账户。"],
+  backup_sync: ["系统 / 备份与同步", "备份与同步", "配置备份和 WebDAV 同步。"],
+  history_tasks: ["系统 / 历史维护", "历史维护", "导入、补全和扫描历史数据。"],
+  diagnostics: ["系统 / 运行诊断", "运行诊断", "查看任务、LLM 与数据源健康状态。"],
+  analytics: ["系统 / 用量统计", "用量统计", "查看 LLM Token 用量。"],
+  logs: ["系统 / 日志", "运行日志", "查看本地运行日志。"],
 };
 
 // Most wording comes from the compatibility panel's shared i18n catalogue.
@@ -63,7 +63,6 @@ const MODERN_EN_TRANSLATIONS = Object.freeze({
   "深色模式": "Dark mode",
   "浅色模式": "Light mode",
   "有未保存修改": "Unsaved changes",
-  "有未保存的修改，保存后生效。": "You have unsaved changes. Save to apply them.",
   "关键词": "Keyword",
   "权重（0–1）": "Weight (0–1)",
   "添加关键词": "Add keyword",
@@ -166,15 +165,11 @@ const MODERN_EN_TRANSLATIONS = Object.freeze({
   "本次最多处理论文数（0 不限）": "Maximum papers this run (0 = unlimited)",
   "每日运行时间": "Daily run time",
   "历史维护每次最多处理论文数（0 不限）": "Maximum papers per history-maintenance task (0 = unlimited)",
-  "适用于历史数据补全、历史遗漏补充和完整旧历史导入中的补充报告；不会影响每日研究。": "Applies to historical data repair, omission supplements, and supplements in a full legacy import. It does not affect daily research.",
   "历史维护运行方式": "History maintenance schedule",
   "闲时运行": "Run when idle",
   "指定时间段运行": "Run in a time window",
-  "闲时运行会等待普通任务和已排队的普通请求完成，再自动开始历史维护。": "Idle mode waits for normal work and queued normal requests to finish before starting history maintenance.",
   "指定时段开始": "Window start",
   "指定时段结束": "Window end",
-  "指定时间段内仍会等待后端空闲，避免与正常任务争抢资源。": "The worker still waits until idle within this window, avoiding contention with normal work.",
-  "运行方式修改后，请使用顶部“保存所有更改”使后续历史任务按新规则调度。": "After changing the schedule, use Save All Changes at the top so subsequent history tasks follow the new rule.",
   "选择过去日期范围后开始运行。系统会按天把任务写入持久化队列，并与其他研究任务安全互斥。": "Choose a past date range and start the run. Jobs are stored in a durable per-day queue and safely interlocked with other research tasks.",
   "开始日期": "Start date",
   "结束日期": "End date",
@@ -230,10 +225,6 @@ const MODERN_EN_TRANSLATIONS = Object.freeze({
   "收藏画像": "Preference Profile",
   "收藏设置": "Favorite Settings",
   "自动收藏及格论文": "Automatically favorite qualifying papers",
-  "之后完成评分且及格的论文会自动加入收藏；不会覆盖你手动设置的不喜欢或已清除的标记。": "Papers that qualify in future scoring runs are added to Favorites automatically. Your manual dislike and cleared marks are never overwritten.",
-  "自动收藏会在论文通过当前评分规则时将其加入收藏；默认开启。": "Adds a paper to Favorites when it passes the current scoring policy. Enabled by default.",
-  "保存收藏设置": "Save Favorite Settings",
-  "收藏设置已保存。": "Favorite settings saved.",
   "正向偏好": "Positive preference",
   "负向偏好": "Negative preference",
   "按标记时间倒序展示；点击标题可打开论文页面。": "Newest marks first; select a title to open the paper page.",
@@ -275,7 +266,6 @@ const MODERN_EN_TRANSLATIONS = Object.freeze({
   "自定义趋势视图天数": "Custom trend view days",
   "关闭后不会请求 OpenAlex。开启后，还需在“数据源 → 额外数据源”中选择期刊来源。": "When disabled, OpenAlex is never requested. When enabled, choose journal sources under Data Sources → Additional Data Sources.",
   "通知设置": "Notification Settings",
-  "配置任务完成、失败和阶段异常通知。可先准备渠道并测试连接，再启用全局通知。": "Configure completion, failure, and stage-level issue notifications. Prepare and test channels before enabling global notifications.",
   "任务成功通知": "Task success notifications",
   "任务失败通知": "Task failure notifications",
   "通知中展示论文数量": "Papers shown in notifications",
@@ -286,7 +276,6 @@ const MODERN_EN_TRANSLATIONS = Object.freeze({
   "端口": "Port",
   "发件人": "Sender",
   "收件人（逗号分隔）": "Recipients (comma-separated)",
-  "测试 SMTP 连接": "Test SMTP Connection",
   "当前已跳过登录，仅建议在可信内网使用。可在 .env 设置 WEBUI_AUTH_ENABLED=true 后重新启用账户验证。": "Login is currently skipped. Use this mode only on a trusted LAN; set WEBUI_AUTH_ENABLED=true in .env to enable account protection again.",
   "配置导出": "Configuration Export",
   "导出当前 config.json 与 .env。导出文件含凭据，请妥善保存。": "Export the current config.json and .env. The exported file contains credentials; store it securely.",
@@ -312,7 +301,6 @@ const MODERN_EN_TRANSLATIONS = Object.freeze({
   "上传并恢复": "Upload and Restore",
   "暂无本地备份": "No local backups",
   "旧版本历史导入": "Legacy History Import",
-  "导入旧版本 HTML 报告中的论文。SQLite 是历史论文数据的唯一索引；HTML 解析与新报告生成都会同步写入。": "Import papers from legacy HTML reports. SQLite is the single historical paper index; both HTML imports and new reports write to it.",
   "启用完整补全流程": "Enable Full Repair Flow",
   "关闭后仅导入 HTML 已包含的论文，避免新的每日研究重复处理。": "When disabled, import only papers already present in HTML to prevent future daily research from reprocessing them.",
   "读取旧历史": "Import Legacy History",
@@ -356,6 +344,45 @@ const MODERN_EN_TRANSLATIONS = Object.freeze({
   "输入": "Input",
   "输出": "Output",
   "合计": "Total",
+  "扫描、筛选、分析并生成报告。": "Scan, filter, analyse, and generate reports.",
+  "按日期补跑日报。": "Run daily reports for selected past dates.",
+  "按关键词和时间段生成趋势报告。": "Generate trend reports for selected keywords and dates.",
+  "查看日报与趋势报告。": "View daily and trend reports.",
+  "管理收藏论文与偏好。": "Manage favorite papers and preferences.",
+  "检索已处理论文。": "Search processed papers.",
+  "设置研究背景、关键词与参考文献提取。": "Set research context, keywords, and reference extraction.",
+  "管理 arXiv 和其他数据源。": "Manage arXiv and other sources.",
+  "设置资格判定、排序和作者偏好。": "Set qualification, ranking, and author preferences.",
+  "配置 LLM、PDF 解析和第三方服务。": "Configure LLMs, PDF parsing, and third-party services.",
+  "配置任务通知。": "Configure task notifications.",
+  "配置解析、并发、重试、代理和持久化。": "Configure parsing, concurrency, retries, proxy, and persistence.",
+  "管理面板账户。": "Manage dashboard accounts.",
+  "配置备份和 WebDAV 同步。": "Configure backups and WebDAV sync.",
+  "导入、补全和扫描历史数据。": "Import, repair, and scan historical data.",
+  "查看任务、LLM 与数据源健康状态。": "View task, LLM, and data-source health.",
+  "查看 LLM Token 用量。": "View LLM token usage.",
+  "查看本地运行日志。": "View local run logs.",
+  "收藏所有通过论文": "Favorite All Qualifying Papers",
+  "正在扫描…": "Scanning…",
+  "发送测试通知": "Send Test Notification",
+  "正在发送…": "Sending…",
+  "测试通知已发送。": "Test notification sent.",
+  "历史维护任务已加入队列。": "History maintenance task queued.",
+  "历史维护任务已重新加入队列。": "History maintenance task queued again.",
+  "请先保存历史维护设置。": "Save history maintenance settings first.",
+  "导入后补全缺失数据并扫描遗漏。": "Repair missing data and scan omissions after import.",
+  "仅导入 HTML 中已有的论文。": "Import only papers already in HTML.",
+  "运行设置": "Run Settings",
+  "任务完成后显示最近导入结果。": "The latest import result appears when the task finishes.",
+  "运行中每 5 秒更新。": "Updates every 5 seconds while running.",
+  "代理范围": "Proxy Scope",
+  "支持 HTTP 和 SOCKS5 代理。": "Supports HTTP and SOCKS5 proxies.",
+  "期刊论文数据源": "Journal paper source",
+  "可选补充论文流": "Optional supplementary paper feed",
+  "TL;DR 增强": "TL;DR enrichment",
+  "评分和分析": "Scoring and analysis",
+  "通知推送": "Notification delivery",
+  "备份和恢复": "Backup and restore",
 });
 
 const FALLBACK_ARXIV_CATEGORIES = [
@@ -770,7 +797,7 @@ function section(title, body, options = {}) {
   const icon = options.icon ? `${escapeHtml(options.icon)} ` : "";
   const configurationHint = options.saveHint === false || pageGroup(state.page)?.id !== "configuration"
     ? ""
-    : `<p class="save-hint" data-save-hint ${hasUnsavedConfiguration() ? "" : "hidden"}>有未保存的修改，保存后生效。</p>`;
+    : `<p class="save-hint" data-save-hint ${hasUnsavedConfiguration() ? "" : "hidden"}>有未保存修改</p>`;
   return `<section class="section-card ${options.className || ""}"><div class="section-heading"><h2>${icon}${escapeHtml(title)}</h2>${options.hint ? `<p>${escapeHtml(options.hint)}</p>` : ""}</div>${body}${configurationHint}</section>`;
 }
 
@@ -1626,37 +1653,42 @@ async function renderFavorites(token) {
     }
   }
   bindCommon(root);
-  bindFavoriteSettings(root);
+  bindFavoriteActions(root);
 }
 
 function favoritesSettingsCard() {
-  return section("收藏设置", `<p class="hint-text">之后完成评分且及格的论文会自动加入收藏；不会覆盖你手动设置的不喜欢或已清除的标记。</p>${field({ label: "自动收藏及格论文", key: "auto_favorite_qualified_papers", type: "checkbox", fallback: true, help: "自动收藏会在论文通过当前评分规则时将其加入收藏；默认开启。" })}<div class="action-row"><button id="favorite-settings-save" type="button" class="primary-button">保存收藏设置</button></div>`, { icon: "⚙️", saveHint: false });
+  return section("收藏设置", `${field({ label: "自动收藏及格论文", key: "auto_favorite_qualified_papers", type: "checkbox", fallback: true })}<div class="action-row"><button id="favorite-collect-qualified" type="button" class="primary-button">收藏所有通过论文</button></div>`, { icon: "⚙️", saveHint: false });
 }
 
-async function saveFavoriteSettings() {
-  const autoFavorite = booleanValue(configValue("auto_favorite_qualified_papers", true), true);
+function qualifiedFavoritesMessage(result) {
+  const scanned = formatNumber(result.scanned);
+  const added = formatNumber(result.added);
+  return state.language === "en"
+    ? `Scanned ${scanned} scored papers; added ${added} favorites.`
+    : `已扫描 ${scanned} 篇评分论文，新增收藏 ${added} 篇。`;
+}
+
+async function collectQualifiedFavorites(button) {
+  const originalLabel = button.textContent;
+  button.disabled = true;
+  button.textContent = localeText("正在扫描…", "Scanning…");
   try {
-    const result = await api("/api/settings", {
-      method: "PUT",
-      body: { config: { auto_favorite_qualified_papers: autoFavorite }, env: {}, clear_env: [] },
-    });
-    state.settings = result;
-    delete state.draft.config.auto_favorite_qualified_papers;
-    state.configurationDirty = Boolean(
-      Object.keys(state.draft.config).length
-      || Object.keys(state.draft.env).length
-      || state.draft.clearEnv.size
-    );
-    updateConfigurationDirtyIndicator();
-    toast("收藏设置已保存。", "success");
+    const result = await api("/api/favorites/collect", { method: "POST", body: {} });
+    toast(qualifiedFavoritesMessage(result), "success");
+    if (state.page === "favorites") await renderFavorites(state.renderToken);
   } catch (error) {
     toast(error.message, "error");
+  } finally {
+    if (document.body.contains(button)) {
+      button.disabled = false;
+      button.textContent = originalLabel;
+    }
   }
 }
 
-function bindFavoriteSettings(root) {
-  $("#favorite-settings-save", root)?.addEventListener("click", () => {
-    void saveFavoriteSettings();
+function bindFavoriteActions(root) {
+  $("#favorite-collect-qualified", root)?.addEventListener("click", (event) => {
+    void collectQualifiedFavorites(event.currentTarget);
   });
 }
 
@@ -2276,22 +2308,52 @@ async function testConnection(kind, payload, resultId) {
 }
 
 function renderNotifications() {
-  // Keep the complete notification form available even while the global
-  // delivery switch is off.  This is the compatibility-panel workflow: an
-  // operator can prepare and test a channel first, then enable notifications
-  // only when every credential is ready.
-  const channel = (key, label, fields) => `<details class="channel-card" ${configValue(key, false) ? "open" : ""}><summary>${escapeHtml(label)}</summary>${field({ label: `启用${label}`, key, type: "checkbox", fallback: false })}${fields}</details>`;
-  const emailFields = `<div class="form-grid three">${field({ label: "SMTP 主机", key: "SMTP_HOST", scope: "env" })}${field({ label: "端口", key: "SMTP_PORT", scope: "env", type: "number", min: 1, max: 65535, fallback: 587 })}${field({ label: "使用 TLS", key: "SMTP_USE_TLS", scope: "env", type: "checkbox", fallback: true })}${field({ label: "用户名", key: "SMTP_USER", scope: "env" })}${field({ label: "密码", key: "SMTP_PASSWORD", scope: "env", type: "secret" })}${field({ label: "发件人", key: "SMTP_FROM", scope: "env" })}${field({ label: "收件人（逗号分隔）", key: "SMTP_TO", scope: "env" })}</div><div class="action-row"><button id="smtp-test" class="secondary-button">测试 SMTP 连接</button><span id="smtp-test-result" class="inline-result"></span></div>`;
-  const mainBody = `<p class="hint-text">配置任务完成、失败和阶段异常通知。可先准备渠道并测试连接，再启用全局通知。</p>${field({ label: "启用通知", key: "notifications_enabled", type: "checkbox", fallback: false })}<div class="form-grid three">${field({ label: "任务成功通知", key: "notify_on_success", type: "checkbox", fallback: true })}${field({ label: "任务失败通知", key: "notify_on_failure", type: "checkbox", fallback: true })}${field({ label: "通知中展示论文数量", key: "notification_top_n", type: "number", min: 1, max: 50, fallback: 5 })}</div>${field({ label: "附加报告文件", key: "notify_attach_reports", type: "checkbox", fallback: false })}`;
-  const channels = section("通知渠道", `${channel("notify_email_enabled", "邮件", emailFields)}${channel("notify_wechat_enabled", "企业微信", field({ label: "Webhook URL", key: "WECHAT_WEBHOOK_URL", scope: "env", type: "secret" }))}${channel("notify_dingtalk_enabled", "钉钉", `${field({ label: "Webhook URL", key: "DINGTALK_WEBHOOK_URL", scope: "env", type: "secret" })}${field({ label: "签名密钥（可选）", key: "DINGTALK_SECRET", scope: "env", type: "secret" })}`)}${channel("notify_telegram_enabled", "Telegram", `<div class="form-grid two">${field({ label: "Bot Token", key: "TELEGRAM_BOT_TOKEN", scope: "env", type: "secret" })}${field({ label: "Chat ID", key: "TELEGRAM_CHAT_ID", scope: "env" })}</div>`)}${channel("notify_slack_enabled", "Slack", field({ label: "Webhook URL", key: "SLACK_WEBHOOK_URL", scope: "env", type: "secret" }))}${channel("notify_generic_webhook_enabled", "通用 Webhook", field({ label: "Webhook URL", key: "GENERIC_WEBHOOK_URL", scope: "env", type: "secret" }))}`, { icon: "📣" });
+  const testAction = (channel) => `<div class="action-row notification-test-action"><button type="button" class="secondary-button" data-test-notification="${escapeAttribute(channel)}">发送测试通知</button><span id="notification-test-${escapeAttribute(channel)}" class="inline-result"></span></div>`;
+  const channel = (key, label, channelId, fields) => `<details class="channel-card" ${configValue(key, false) ? "open" : ""}><summary>${escapeHtml(label)}</summary>${field({ label: `启用${label}`, key, type: "checkbox", fallback: false })}${fields}${testAction(channelId)}</details>`;
+  const emailFields = `<div class="form-grid three">${field({ label: "SMTP 主机", key: "SMTP_HOST", scope: "env" })}${field({ label: "端口", key: "SMTP_PORT", scope: "env", type: "number", min: 1, max: 65535, fallback: 587 })}${field({ label: "使用 TLS", key: "SMTP_USE_TLS", scope: "env", type: "checkbox", fallback: true })}${field({ label: "用户名", key: "SMTP_USER", scope: "env" })}${field({ label: "密码", key: "SMTP_PASSWORD", scope: "env", type: "secret" })}${field({ label: "发件人", key: "SMTP_FROM", scope: "env" })}${field({ label: "收件人（逗号分隔）", key: "SMTP_TO", scope: "env" })}</div>`;
+  const mainBody = `${field({ label: "启用通知", key: "notifications_enabled", type: "checkbox", fallback: false })}<div class="form-grid three">${field({ label: "任务成功通知", key: "notify_on_success", type: "checkbox", fallback: true })}${field({ label: "任务失败通知", key: "notify_on_failure", type: "checkbox", fallback: true })}${field({ label: "通知中展示论文数量", key: "notification_top_n", type: "number", min: 1, max: 50, fallback: 5 })}</div>${field({ label: "附加报告文件", key: "notify_attach_reports", type: "checkbox", fallback: false })}`;
+  const channels = section("通知渠道", `${channel("notify_email_enabled", "邮件", "email", emailFields)}${channel("notify_wechat_enabled", "企业微信", "wechat_work", field({ label: "Webhook URL", key: "WECHAT_WEBHOOK_URL", scope: "env", type: "secret" }))}${channel("notify_dingtalk_enabled", "钉钉", "dingtalk", `${field({ label: "Webhook URL", key: "DINGTALK_WEBHOOK_URL", scope: "env", type: "secret" })}${field({ label: "签名密钥（可选）", key: "DINGTALK_SECRET", scope: "env", type: "secret" })}`)}${channel("notify_telegram_enabled", "Telegram", "telegram", `<div class="form-grid two">${field({ label: "Bot Token", key: "TELEGRAM_BOT_TOKEN", scope: "env", type: "secret" })}${field({ label: "Chat ID", key: "TELEGRAM_CHAT_ID", scope: "env" })}</div>`)}${channel("notify_slack_enabled", "Slack", "slack", field({ label: "Webhook URL", key: "SLACK_WEBHOOK_URL", scope: "env", type: "secret" }))}${channel("notify_generic_webhook_enabled", "通用 Webhook", "generic", field({ label: "Webhook URL", key: "GENERIC_WEBHOOK_URL", scope: "env", type: "secret" }))}`, { icon: "📣" });
   return `${section("通知设置", mainBody, { icon: "🔔" })}${divider()}${channels}`;
+}
+
+function notificationTestPayload(channel) {
+  const fields = {
+    email: ["SMTP_HOST", "SMTP_PORT", "SMTP_USE_TLS", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM", "SMTP_TO"],
+    wechat_work: ["WECHAT_WEBHOOK_URL"],
+    dingtalk: ["DINGTALK_WEBHOOK_URL", "DINGTALK_SECRET"],
+    telegram: ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"],
+    slack: ["SLACK_WEBHOOK_URL"],
+    generic: ["GENERIC_WEBHOOK_URL"],
+  };
+  return Object.fromEntries((fields[channel] || []).map((key) => [key, envValue(key)]));
+}
+
+async function sendNotificationTest(button) {
+  const channel = button.dataset.testNotification;
+  const result = $(`#notification-test-${channel}`);
+  const originalLabel = button.textContent;
+  button.disabled = true;
+  if (result) { result.textContent = localeText("正在发送…", "Sending…"); result.className = "inline-result"; }
+  try {
+    const response = await api(`/api/notifications/${encodeURIComponent(channel)}/test`, {
+      method: "POST",
+      body: notificationTestPayload(channel),
+    });
+    if (result) { result.textContent = response.ok ? localeText("测试通知已发送。", "Test notification sent.") : (response.message || ""); result.className = `inline-result ${response.ok ? "success" : "error"}`; }
+  } catch (error) {
+    if (result) { result.textContent = error.message; result.className = "inline-result error"; }
+    else toast(error.message, "error");
+  } finally {
+    button.disabled = false;
+    button.textContent = originalLabel;
+  }
 }
 
 async function renderNotificationsPage(_token) {
   const root = $("#page-root");
   root.innerHTML = `${pageHeader()}${renderNotifications()}`;
   bindCommon(root);
-  $("#smtp-test", root)?.addEventListener("click", () => testConnection("smtp", { host: envValue("SMTP_HOST"), port: envValue("SMTP_PORT", "587"), user: envValue("SMTP_USER"), password: state.draft.env.SMTP_PASSWORD, use_tls: booleanValue(envValue("SMTP_USE_TLS"), true) }, "smtp-test-result"));
+  $$('[data-test-notification]', root).forEach((button) => button.addEventListener("click", () => void sendNotificationTest(button)));
 }
 
 function proxyNoProxyEditor() {
@@ -2302,7 +2364,7 @@ function proxyNoProxyEditor() {
 
 function renderProxySettings() {
   const enabled = Boolean(configValue("proxy_enabled", false));
-  const dependent = `${field({ label: "代理地址", key: "proxy_url", fallback: "", placeholder: "http://127.0.0.1:7890", help: "支持 HTTP 代理（http://host:port）和 SOCKS5 代理（socks5://host:port）。" })}${proxyNoProxyEditor()}${divider()}<h3>🎯 代理范围控制</h3><p class="hint-text">选择哪些服务使用代理。可以按需为不同服务分别启用或禁用代理。</p><div class="form-grid two">${field({ label: "ArXiv API", key: "proxy_arxiv", type: "checkbox", fallback: true, help: "ArXiv 论文抓取 API（export.arxiv.org）。" })}${field({ label: "OpenAlex API", key: "proxy_openalex", type: "checkbox", fallback: false, help: "OpenAlex 期刊论文数据源。" })}${field({ label: "Hugging Face Papers API", key: "proxy_huggingface_papers", type: "checkbox", fallback: false, help: "Hugging Face Papers 可选补充论文流。" })}${field({ label: "Semantic Scholar API", key: "proxy_semantic_scholar", type: "checkbox", fallback: false, help: "Semantic Scholar TL;DR 增强功能。" })}${field({ label: "LLM API", key: "proxy_llm_api", type: "checkbox", fallback: false, help: "LLM 大模型 API（评分、分析等）。" })}${field({ label: "通知 Webhook", key: "proxy_notifications", type: "checkbox", fallback: false, help: "企业微信、钉钉、Telegram 等通知推送。" })}${field({ label: "WebDAV 同步", key: "proxy_webdav", type: "checkbox", fallback: true, help: "WebDAV 配置和数据备份/恢复请求。" })}${field({ label: "检查更新", key: "proxy_update_check", type: "checkbox", fallback: false, help: "GitHub 版本更新检查（需访问 api.github.com）。" })}</div>`;
+  const dependent = `${field({ label: "代理地址", key: "proxy_url", fallback: "", placeholder: "http://127.0.0.1:7890", help: "支持 HTTP 和 SOCKS5 代理。" })}${proxyNoProxyEditor()}${divider()}<h3>🎯 代理范围</h3><div class="proxy-scope-list">${field({ label: "ArXiv API", key: "proxy_arxiv", type: "checkbox", fallback: true, help: "export.arxiv.org" })}${field({ label: "OpenAlex API", key: "proxy_openalex", type: "checkbox", fallback: false, help: "期刊论文数据源" })}${field({ label: "Hugging Face Papers API", key: "proxy_huggingface_papers", type: "checkbox", fallback: false, help: "可选补充论文流" })}${field({ label: "Semantic Scholar API", key: "proxy_semantic_scholar", type: "checkbox", fallback: false, help: "TL;DR 增强" })}${field({ label: "LLM API", key: "proxy_llm_api", type: "checkbox", fallback: false, help: "评分和分析" })}${field({ label: "通知 Webhook", key: "proxy_notifications", type: "checkbox", fallback: false, help: "通知推送" })}${field({ label: "WebDAV 同步", key: "proxy_webdav", type: "checkbox", fallback: true, help: "备份和恢复" })}${field({ label: "检查更新", key: "proxy_update_check", type: "checkbox", fallback: false, help: "GitHub Release" })}</div>`;
   return section("网络代理设置", `${field({ label: "启用网络代理", key: "proxy_enabled", type: "checkbox", fallback: false })}<div id="proxy-dependent" ${enabled ? "" : "hidden"}>${dependent}</div>`, { icon: "🌐" });
 }
 
@@ -2513,7 +2575,7 @@ function importSummary(summary) {
     ? Object.entries(summary.source_breakdown).filter(([name, value]) => name && Number.isFinite(Number(value))).map(([name, value]) => `${escapeHtml(name)}${localeText("：", ": ")}${formatNumber(value)}`).join(" · ")
     : "";
   const missing = missingParts.length
-    ? `<p class="issue-box">${localeText("待补全：", "Missing data: ")}${missingParts.map(([label, value]) => `${escapeHtml(label)} ${formatNumber(value)}`).join(" · ")}${localeText("。可运行“补全历史数据”。", ". Run “Repair historical data” to fill it.")}</p>`
+    ? `<p class="issue-box">${localeText("待补全：", "Missing data: ")}${missingParts.map(([label, value]) => `${escapeHtml(label)} ${formatNumber(value)}`).join(" · ")}</p>`
     : "";
   return `<p class="hint-text">${localeText("完成时间：", "Completed: ")}${escapeHtml(formatTime(summary.finished_at))} · ${summary.full_repair_enabled ? localeText("完整导入流程", "Full import workflow") : localeText("仅导入已有 HTML 论文", "Imported existing HTML papers only")}</p>${metrics([metric("扫描报告", "reports_scanned"), metric("导入论文卡", "cards_selected", summary.cards_found), metric("写入投递记录", "delivered_ledger_rows"), metric("补充任务", "backlog_queued")])}${missing}${sources ? `<p class="hint-text">${localeText("来源分布：", "Source breakdown: ")}${sources}</p>` : ""}`;
 }
@@ -2535,11 +2597,12 @@ function historyIsLive(data) {
 
 function historyFullRepairHint(enabled) {
   return enabled
-    ? "开启后会在导入后安排缺失字段补全、遗漏扫描和补充报告。"
-    : "关闭后仅导入 HTML 已包含的论文，避免新的每日研究重复处理。";
+    ? "导入后补全缺失数据并扫描遗漏。"
+    : "仅导入 HTML 中已有的论文。";
 }
 
 const HISTORY_SCHEDULE_FIELDS = [
+  "history_maintenance_max_papers_per_run",
   "history_maintenance_run_mode",
   "history_maintenance_time_window_start",
   "history_maintenance_time_window_end",
@@ -2550,15 +2613,12 @@ function historyScheduleHasUnsavedChanges() {
 }
 
 function historyQueueMessage() {
-  const mode = String(state.settings?.config?.history_maintenance_run_mode || "idle");
-  return mode === "time_window"
-    ? "历史维护任务已加入队列，将在指定时段且后端空闲时自动运行。"
-    : "历史维护任务已加入队列，将在后端空闲时自动运行。";
+  return localeText("历史维护任务已加入队列。", "History maintenance task queued.");
 }
 
 function requireSavedHistorySchedule() {
   if (!historyScheduleHasUnsavedChanges()) return true;
-  toast("历史维护运行方式有未保存修改，请先保存配置后再提交任务。", "error");
+  toast(localeText("请先保存历史维护设置。", "Save history maintenance settings first."), "error");
   return false;
 }
 
@@ -2568,15 +2628,15 @@ function historyActions(data) {
     .map((task) => task.mode));
   const fullRepair = Boolean(configValue("legacy_import_full_repair_enabled", false));
   const runMode = String(configValue("history_maintenance_run_mode", "idle")) === "time_window" ? "time_window" : "idle";
-  const scheduleFields = `<div class="form-grid two">${field({ label: "历史维护每次最多处理论文数（0 不限）", key: "history_maintenance_max_papers_per_run", type: "number", min: 0, max: 100000, step: 1, fallback: 200, help: "适用于历史数据补全、历史遗漏补充和完整旧历史导入中的补充报告；不会影响每日研究。" })}${field({ label: "历史维护运行方式", key: "history_maintenance_run_mode", type: "select", fallback: "idle", choices: [{ value: "idle", label: "闲时运行" }, { value: "time_window", label: "指定时间段运行" }], help: "闲时运行会等待普通任务和已排队的普通请求完成，再自动开始历史维护。" })}</div><div id="history-time-window" class="form-grid two" ${runMode === "time_window" ? "" : "hidden"}>${field({ label: "指定时段开始", key: "history_maintenance_time_window_start", type: "time", fallback: "00:00" })}${field({ label: "指定时段结束", key: "history_maintenance_time_window_end", type: "time", fallback: "06:00" })}</div><p id="history-schedule-mode-hint" class="hint-text">${runMode === "time_window" ? "指定时间段内仍会等待后端空闲，避免与正常任务争抢资源。" : "闲时运行会等待普通任务和已排队的普通请求完成，再自动开始历史维护。"}</p><p class="hint-text">运行方式修改后，请使用顶部“保存所有更改”使后续历史任务按新规则调度。</p>`;
-  return `<p class="hint-text">导入旧版本 HTML 报告中的论文。SQLite 是历史论文数据的唯一索引；HTML 解析与新报告生成都会同步写入。</p>${field({ label: "启用完整补全流程", key: "legacy_import_full_repair_enabled", type: "checkbox", fallback: false })}<p id="history-full-repair-hint" class="hint-text">${historyFullRepairHint(fullRepair)}</p><div class="action-row history-maintenance-actions"><button id="history-import" class="primary-button" ${pendingModes.has("legacy_import") ? "disabled" : ""}>读取旧历史</button><button id="history-repair" class="secondary-button compact-button" ${pendingModes.has("history_data_repair") ? "disabled" : ""}>补全历史数据</button><button id="history-omission" class="secondary-button compact-button" ${pendingModes.has("history_omission_scan") ? "disabled" : ""}>扫描历史遗漏</button></div><h3>历史维护</h3>${scheduleFields}`;
+  const scheduleFields = `<div class="history-schedule-settings">${field({ label: "历史维护每次最多处理论文数（0 不限）", key: "history_maintenance_max_papers_per_run", type: "number", min: 0, max: 100000, step: 1, fallback: 200 })}${field({ label: "历史维护运行方式", key: "history_maintenance_run_mode", type: "select", fallback: "idle", choices: [{ value: "idle", label: "闲时运行" }, { value: "time_window", label: "指定时间段运行" }] })}<div id="history-time-window" class="form-grid two" ${runMode === "time_window" ? "" : "hidden"}>${field({ label: "指定时段开始", key: "history_maintenance_time_window_start", type: "time", fallback: "00:00" })}${field({ label: "指定时段结束", key: "history_maintenance_time_window_end", type: "time", fallback: "06:00" })}</div></div>`;
+  return `${field({ label: "启用完整补全流程", key: "legacy_import_full_repair_enabled", type: "checkbox", fallback: false })}<p id="history-full-repair-hint" class="hint-text">${historyFullRepairHint(fullRepair)}</p><div class="action-row history-maintenance-actions"><button id="history-import" class="primary-button" ${pendingModes.has("legacy_import") ? "disabled" : ""}>读取旧历史</button><button id="history-repair" class="secondary-button compact-button" ${pendingModes.has("history_data_repair") ? "disabled" : ""}>补全历史数据</button><button id="history-omission" class="secondary-button compact-button" ${pendingModes.has("history_omission_scan") ? "disabled" : ""}>扫描历史遗漏</button></div><h3>运行设置</h3>${scheduleFields}`;
 }
 
 function historyStatusPanel(data) {
   const status = data?.status || {};
   const tasks = historyTasks(data);
   const latestResult = historyIsLive(data)
-    ? '<p class="hint-text">任务进行中时会在完成后显示最新导入结果。</p>'
+    ? '<p class="hint-text">任务完成后显示最近导入结果。</p>'
     : importSummary(data?.last_import);
   return `${statusCard(status, { kind: "history", refresh: false, allowStop: false })}${divider()}<h3>最近一次导入结果</h3>${latestResult}${divider()}<h3>未完成任务</h3>${pagedTable("history-tasks", [{ label: "任务", value: (row) => row.label || row.mode || "—" }, { label: "状态", value: (row) => historyTaskStateLabel(row.state) }, { label: "进度", value: (row) => row.progress || "—" }, { label: "开始时间", value: (row) => formatTime(row.started_at || row.created_at) }, { label: "完成时间", value: (row) => formatTime(row.completed_at) }, { label: "问题摘要", value: (row) => row.issue || "—" }, { label: "操作", html: (row) => row.retryable ? `<button class="secondary-button compact-button" data-history-retry="${escapeAttribute(row.request_id)}">重试</button>` : "—" }], tasks, { empty: "没有未完成的历史维护任务。" })}`;
 }
@@ -2604,7 +2664,7 @@ function bindHistoryLaunchers(root) {
 
 function bindHistoryRetries(root) {
   $$('[data-history-retry]', root).forEach((button) => button.addEventListener("click", async () => {
-    try { await api(`/api/history/${encodeURIComponent(button.dataset.historyRetry)}/retry`, { method: "POST", body: {} }); toast("历史维护任务已重新加入队列。 "); await refreshHistoryStatus(root); } catch (error) { toast(error.message, "error"); }
+    try { await api(`/api/history/${encodeURIComponent(button.dataset.historyRetry)}/retry`, { method: "POST", body: {} }); toast(localeText("历史维护任务已重新加入队列。", "History maintenance task queued again.")); await refreshHistoryStatus(root); } catch (error) { toast(error.message, "error"); }
   }));
 }
 
@@ -2657,7 +2717,7 @@ async function renderHistory(token) {
   const data = await api("/api/history");
   if (token !== state.renderToken) return;
   const autoRefresh = state.pageData.historyAutoRefresh !== false;
-  root.innerHTML = `${pageHeader()}${section("旧版本历史导入", `<div id="history-actions">${historyActions(data)}</div>`, { icon: "📜" })}${divider()}${section("状态面板", `<label class="toggle-field refresh-row"><span><strong>状态自动刷新</strong><small>开启后，在历史任务运行或等待工作进程接手时每 5 秒刷新状态、进度和日志尾部。</small></span><input id="history-auto-refresh" type="checkbox" ${autoRefresh ? "checked" : ""}/><i></i></label><div id="history-status-content" class="task-status-region">${historyStatusPanel(data)}</div>`, { icon: "📊" })}`;
+  root.innerHTML = `${pageHeader()}${section("旧版本历史导入", `<div id="history-actions">${historyActions(data)}</div>`, { icon: "📜" })}${divider()}${section("状态面板", `<label class="toggle-field refresh-row"><span><strong>状态自动刷新</strong><small>运行中每 5 秒更新。</small></span><input id="history-auto-refresh" type="checkbox" ${autoRefresh ? "checked" : ""}/><i></i></label><div id="history-status-content" class="task-status-region">${historyStatusPanel(data)}</div>`, { icon: "📊" })}`;
   bindCommon(root);
   bindHistoryLaunchers(root);
   bindHistoryRetries(root);
@@ -2671,12 +2731,7 @@ async function renderHistory(token) {
     const timeWindow = $("#history-time-window", root);
     if (!timeWindow) return;
     timeWindow.hidden = event.target.value !== "time_window";
-    const hint = $("#history-schedule-mode-hint", root);
-    if (hint) hint.textContent = event.target.value === "time_window"
-      ? "指定时间段内仍会等待后端空闲，避免与正常任务争抢资源。"
-      : "闲时运行会等待普通任务和已排队的普通请求完成，再自动开始历史维护。";
     applyLocale(timeWindow);
-    if (hint) applyLocale(hint);
   });
   $("#history-auto-refresh", root)?.addEventListener("change", (event) => {
     state.pageData.historyAutoRefresh = event.target.checked;
