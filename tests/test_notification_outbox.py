@@ -10,10 +10,12 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from notifications.notifier import (  # noqa: E402
+    EmailNotifier,
     NotifierAgent,
     RunResult,
     WorkflowResult,
     WebhookNotifier,
+    send_test_notification,
 )
 from utils.daily_research_store import DailyResearchStore  # noqa: E402
 
@@ -195,6 +197,45 @@ class NotificationOutboxTests(unittest.TestCase):
         self.assertIn("注意事项", telegram)
         self.assertIn("bad &lt;response&gt;", telegram)
         self.assertIn("bad &lt;response&gt;", email)
+        self.assertIn("运行摘要", email)
+        self.assertIn("后台任务汇总", email)
+        self.assertIn("ArXiv Daily Researcher", email)
+
+    def test_email_notification_test_sends_the_standard_card(self):
+        values = {
+            "SMTP_HOST": "smtp.example.test",
+            "SMTP_PORT": "587",
+            "SMTP_USE_TLS": "true",
+            "SMTP_USER": "sender@example.test",
+            "SMTP_PASSWORD": "password",
+            "SMTP_FROM": "sender@example.test",
+            "SMTP_TO": "reader@example.test",
+        }
+        with patch.object(EmailNotifier, "send", return_value=True) as send:
+            send_test_notification("email", values)
+
+        subject, body = send.call_args.args
+        self.assertEqual(subject, "ArXiv Daily Researcher · 通知测试")
+        self.assertIn("通知测试", body)
+        self.assertIn("该渠道可正常接收通知", send.call_args.kwargs["html_body"])
+
+    def test_telegram_notification_test_uses_the_configured_proxy(self):
+        values = {"TELEGRAM_BOT_TOKEN": "123456:token", "TELEGRAM_CHAT_ID": "42"}
+        proxy = {"https": "http://proxy.example.test:7890"}
+        with patch("notifications.notifier.WebhookNotifier") as notifier:
+            send_test_notification(
+                "telegram", values, proxies=proxy
+            )
+
+        notifier.assert_called_once_with(
+            "telegram",
+            "https://api.telegram.org/bot123456:token/sendMessage",
+            proxies=proxy,
+            chat_id="42",
+        )
+        subject, body = notifier.return_value.send.call_args.args
+        self.assertEqual(subject, "ArXiv Daily Researcher · 通知测试")
+        self.assertIn("<b>通知测试</b>", body)
 
     def test_webhook_application_errors_are_not_accepted_as_success(self):
         with self.assertRaisesRegex(RuntimeError, "errcode=93000"):

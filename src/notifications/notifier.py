@@ -420,6 +420,143 @@ class WebhookNotifier(BaseNotifier):
         return self.webhook_url, payload, {"Content-Type": "application/json"}
 
 
+def _test_notification_content(platform: Optional[str] = None) -> tuple[str, str, str]:
+    """Return one small, recognizable notification used by channel tests."""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    subject = "ArXiv Daily Researcher · 通知测试"
+    if platform == "telegram":
+        body = "\n".join(
+            [
+                "<b>ArXiv Daily Researcher</b>",
+                "<b>通知测试</b>",
+                f"<blockquote>时间：{html.escape(timestamp)}\n该渠道可正常接收通知。</blockquote>",
+            ]
+        )
+    else:
+        status = (
+            '<font color="info">**通知测试**</font>'
+            if platform in {"wechat_work", "dingtalk"}
+            else "**通知测试**"
+        )
+        body = "\n".join(
+            [
+                "## ArXiv Daily Researcher",
+                "",
+                status,
+                f"> 时间：{timestamp}",
+                "> 该渠道可正常接收通知。",
+            ]
+        )
+    html_body = (
+        '<!doctype html><html lang="zh-CN"><body style="margin:0;padding:0;'
+        'background:#f0f4f8;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Arial,sans-serif;">'
+        '<table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#f0f4f8;">'
+        '<tr><td align="center" style="padding:32px 16px;"><table width="600" cellpadding="0" cellspacing="0" '
+        'role="presentation" style="max-width:600px;width:100%;overflow:hidden;background:#fff;border-radius:12px;">'
+        '<tr><td style="padding:28px 32px;background:linear-gradient(135deg,#1a1f36,#2d3561);">'
+        '<p style="margin:0 0 6px;color:#a8b2d8;font-size:12px;letter-spacing:1.2px;text-transform:uppercase;">'
+        "ArXiv Daily Researcher</p>"
+        '<h1 style="margin:0;color:#fff;font-size:23px;line-height:1.3;">通知测试</h1></td></tr>'
+        '<tr><td style="padding:28px 32px 32px;"><table width="100%" cellpadding="0" cellspacing="0" '
+        'role="presentation" style="border:1px solid #d9e0ff;border-radius:9px;background:#f7f8ff;"><tr><td '
+        'style="padding:16px 18px;color:#344160;font-size:14px;line-height:1.65;">'
+        f'<strong style="color:#465fd5;">该渠道可正常接收通知。</strong><br>时间：{html.escape(timestamp)}'
+        '</td></tr></table></td></tr>'
+        '<tr><td style="padding:0 32px 26px;color:#98a3b5;font-size:12px;text-align:center;">'
+        "ArXiv Daily Researcher</td></tr></table></td></tr></table></body></html>"
+    )
+    return subject, body, html_body
+
+
+def send_test_notification(
+    channel: str,
+    values: Dict[str, str],
+    *,
+    proxies: Optional[Dict[str, str]] = None,
+) -> None:
+    """Send a real test message without depending on enabled-channel switches.
+
+    The WebUI can therefore validate credentials before the operator saves or
+    enables a channel.  ``values`` is deliberately supplied by the caller so
+    no secret needs to be returned to the browser or written to disk first.
+    """
+    channel = str(channel or "").strip().lower()
+
+    def value(key: str, *, required: bool = False) -> str:
+        text = str(values.get(key) or "").strip()
+        if required and not text:
+            raise ValueError(f"请填写 {key}。")
+        return text
+
+    if channel == "email":
+        host = value("SMTP_HOST", required=True)
+        raw_port = value("SMTP_PORT") or "587"
+        try:
+            port = int(raw_port)
+        except ValueError as exc:
+            raise ValueError("SMTP_PORT 必须是 1 到 65535 的整数。") from exc
+        if not 1 <= port <= 65535:
+            raise ValueError("SMTP_PORT 必须是 1 到 65535 的整数。")
+        user = value("SMTP_USER")
+        from_addr = value("SMTP_FROM") or user
+        if not from_addr:
+            raise ValueError("请填写 SMTP_FROM 或 SMTP_USER。")
+        recipients = [item.strip() for item in value("SMTP_TO", required=True).split(",") if item.strip()]
+        if not recipients:
+            raise ValueError("请至少填写一个收件人。")
+        subject, body, html_body = _test_notification_content()
+        tls_value = values.get("SMTP_USE_TLS")
+        if tls_value in (None, ""):
+            tls_value = "true"
+        EmailNotifier(
+            host=host,
+            port=port,
+            user=user,
+            password=value("SMTP_PASSWORD"),
+            from_addr=from_addr,
+            to_addrs=recipients,
+            use_tls=str(tls_value).strip().lower() in {"1", "true", "yes", "on"},
+        ).send(subject, body, html_body=html_body)
+        return
+
+    platform = {
+        "wechat_work": "wechat_work",
+        "dingtalk": "dingtalk",
+        "telegram": "telegram",
+        "slack": "slack",
+        "generic": "generic",
+    }.get(channel)
+    if platform is None:
+        raise ValueError("不支持的通知渠道。")
+
+    if channel == "wechat_work":
+        notifier = WebhookNotifier(platform, value("WECHAT_WEBHOOK_URL", required=True), proxies=proxies)
+    elif channel == "dingtalk":
+        notifier = WebhookNotifier(
+            platform,
+            value("DINGTALK_WEBHOOK_URL", required=True),
+            proxies=proxies,
+            secret=value("DINGTALK_SECRET"),
+        )
+    elif channel == "telegram":
+        token = value("TELEGRAM_BOT_TOKEN", required=True)
+        if any(character.isspace() for character in token):
+            raise ValueError("TELEGRAM_BOT_TOKEN 格式无效。")
+        notifier = WebhookNotifier(
+            platform,
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            proxies=proxies,
+            chat_id=value("TELEGRAM_CHAT_ID", required=True),
+        )
+    elif channel == "slack":
+        notifier = WebhookNotifier(platform, value("SLACK_WEBHOOK_URL", required=True), proxies=proxies)
+    else:
+        notifier = WebhookNotifier(platform, value("GENERIC_WEBHOOK_URL", required=True), proxies=proxies)
+
+    subject, body, _html_body = _test_notification_content(platform)
+    notifier.send(subject, body)
+
+
 class NotifierAgent:
     """通知编排代理，管理所有已配置的通知渠道"""
 
@@ -952,20 +1089,39 @@ class NotifierAgent:
         timestamp = markdown_text(result.run_timestamp, multiline=False)
         return f"ArXiv Daily Researcher - {workflow} {status} ({timestamp})"
 
+    @staticmethod
+    def _workflow_status_label(result: WorkflowResult) -> str:
+        if result.interrupted:
+            return "已中断"
+        return "已完成" if result.success else "失败"
+
+    @staticmethod
+    def _workflow_status_theme(result: WorkflowResult) -> tuple[str, str, str, str, str]:
+        """Return the shared status label and email palette for one workflow."""
+        if result.interrupted:
+            return "已中断", "⏸ 已中断", "#5a3811", "#d97706", "#fff7ed"
+        if result.success:
+            return "已完成", "✓ 已完成", "#1a1f36", "#27ae60", "#eaf6f0"
+        return "失败", "✕ 失败", "#4a1f1f", "#e53e3e", "#fff5f5"
+
     def _format_workflow_body_for_platform(
         self, result: WorkflowResult, platform: Optional[str]
     ) -> str:
-        """Use Telegram-safe HTML there and compact Markdown everywhere else."""
+        """Render the same compact workflow notice for every chat platform."""
+        status = self._workflow_status_label(result)
         if platform == "telegram":
-            status = "已中断" if result.interrupted else ("完成" if result.success else "失败")
+            summary = self._workflow_summary_items(result)
             lines = [
+                "<b>ArXiv Daily Researcher</b>",
                 f"<b>{self._html_escape(result.workflow)}：{status}</b>",
-                f"时间：<code>{self._html_escape(result.run_timestamp)}</code>",
+                f"<blockquote>时间：<code>{self._html_escape(result.run_timestamp)}</code></blockquote>",
             ]
-            for label, value in self._workflow_summary_items(result):
-                lines.append(
-                    f"<code>{self._html_escape(label)}</code>：{self._html_escape(value)}"
+            if summary:
+                summary_lines = "\n".join(
+                    f"<b>{self._html_escape(label)}</b>：{self._html_escape(value)}"
+                    for label, value in summary
                 )
+                lines.extend(["<b>运行摘要</b>", f"<blockquote>{summary_lines}</blockquote>"])
             issues = self._workflow_issues(result)
             if issues:
                 lines.extend(
@@ -983,14 +1139,24 @@ class NotifierAgent:
                 )
             return "\n".join(lines)
 
-        status = "已中断" if result.interrupted else ("完成" if result.success else "失败")
+        color = "info" if result.success and not result.interrupted else "warning"
+        colored_status = (
+            f'<font color="{color}">**{markdown_text(result.workflow, multiline=False)}：{status}**</font>'
+            if platform in {"wechat_work", "dingtalk"}
+            else f"**{markdown_text(result.workflow, multiline=False)}：{status}**"
+        )
         lines = [
-            f"## {markdown_text(result.workflow, multiline=False)}：{status}",
-            f"时间：{markdown_text(result.run_timestamp, multiline=False)}",
+            "## ArXiv Daily Researcher",
+            "",
+            colored_status,
+            f"> 时间：{markdown_text(result.run_timestamp, multiline=False)}",
         ]
-        for label, value in self._workflow_summary_items(result):
+        summary = self._workflow_summary_items(result)
+        if summary:
+            lines.extend(["", "**运行摘要**"])
+        for label, value in summary:
             lines.append(
-                f"- **{markdown_text(label, multiline=False)}**："
+                f"> **{markdown_text(label, multiline=False)}**："
                 f"{markdown_text(value, multiline=False)}"
             )
         issues = self._workflow_issues(result)
@@ -1008,41 +1174,67 @@ class NotifierAgent:
         return "\n".join(lines)
 
     def _format_workflow_html_body(self, result: WorkflowResult) -> str:
-        """Build an email-safe HTML body without requiring one template per workflow."""
-        status = "已中断" if result.interrupted else ("完成" if result.success else "失败")
+        """Build a status-card email matching the daily-report visual language."""
+        status, badge, header_color, accent_color, surface_color = self._workflow_status_theme(result)
         row_html = "".join(
-            f'<tr><th style="text-align:left;padding:8px 12px;background:#f8fafc;color:#334155;white-space:nowrap;">'
-            f"{self._html_escape(label)}</th>"
-            f'<td style="padding:8px 12px;color:#1f2937;word-break:break-word;">'
-            f"{self._html_escape(value)}</td></tr>"
-            for label, value in self._workflow_summary_items(result)
-        ) or (
-            '<tr><td style="padding:10px 12px;color:#64748b;">暂无额外统计</td></tr>'
+            f'<tr style="background:{"#ffffff" if index % 2 == 0 else "#fafbfe"};">'
+            f'<th style="width:38%;padding:11px 14px;text-align:left;color:#526078;font-size:12px;'
+            f'font-weight:650;border-bottom:1px solid #e8ebf0;vertical-align:top;">{self._html_escape(label)}</th>'
+            f'<td style="padding:11px 14px;color:#1f2937;font-size:13px;line-height:1.55;'
+            f'word-break:break-word;border-bottom:1px solid #e8ebf0;">{self._html_escape(value)}</td></tr>'
+            for index, (label, value) in enumerate(self._workflow_summary_items(result))
         )
+        summary_html = ""
+        if row_html:
+            summary_html = (
+                '<tr><td style="padding:26px 32px 0;">'
+                '<h2 style="margin:0 0 12px;font-size:14px;font-weight:700;color:#1a1f36;'
+                f'text-transform:uppercase;letter-spacing:1px;border-left:3px solid {accent_color};padding-left:10px;">运行摘要</h2>'
+                '<table width="100%" cellpadding="0" cellspacing="0" role="presentation" '
+                'style="border-collapse:collapse;border:1px solid #e8ebf0;border-radius:8px;overflow:hidden;">'
+                f"{row_html}</table></td></tr>"
+            )
         error_html = ""
         if result.error_message:
             error_html = (
-                '<div style="margin-top:16px;padding:12px;border-left:4px solid #dc2626;'
-                'background:#fef2f2;color:#991b1b;white-space:pre-wrap;word-break:break-word;">'
-                f"<strong>错误摘要</strong><br>{self._html_escape(self._workflow_value_text(result.error_message))}"
-                "</div>"
+                '<tr><td style="padding:20px 32px 0;"><table width="100%" cellpadding="0" cellspacing="0" '
+                'role="presentation" style="background:#fff5f5;border:1px solid #fed7d7;border-left:4px solid #e53e3e;border-radius:7px;">'
+                '<tr><td style="padding:15px 17px;color:#742a2a;font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-word;">'
+                '<p style="margin:0 0 5px;font-weight:700;color:#c53030;">错误摘要</p>'
+                f"{self._html_escape(self._workflow_value_text(result.error_message))}"
+                "</td></tr></table></td></tr>"
             )
         issues = self._workflow_issues(result)
         issues_html = ""
         if issues:
             issues_html = (
-                '<div style="margin-top:16px;padding:12px;border-left:4px solid #d97706;'
-                'background:#fffbeb;color:#92400e;word-break:break-word;">'
-                "<strong>注意事项</strong><ul style=\"margin:8px 0 0;padding-left:20px;\">"
+                '<tr><td style="padding:20px 32px 0;"><table width="100%" cellpadding="0" cellspacing="0" '
+                'role="presentation" style="background:#fffbeb;border:1px solid #fde68a;border-left:4px solid #d97706;border-radius:7px;">'
+                '<tr><td style="padding:15px 17px;color:#92400e;font-size:13px;line-height:1.6;word-break:break-word;">'
+                '<p style="margin:0 0 5px;font-weight:700;">注意事项</p><ul style="margin:0;padding-left:18px;">'
                 + "".join(f"<li>{self._html_escape(issue)}</li>" for issue in issues)
-                + "</ul></div>"
+                + "</ul></td></tr></table></td></tr>"
             )
         return (
-            '<!doctype html><html><body style="font-family:Arial,sans-serif;color:#1f2937;">'
-            f"<h2 style=\"margin-bottom:6px;\">{self._html_escape(result.workflow)}：{status}</h2>"
-            f'<p style="color:#64748b;margin-top:0;">时间：{self._html_escape(result.run_timestamp)}</p>'
-            '<table cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e2e8f0;width:100%;max-width:680px;">'
-            f"{row_html}</table>{issues_html}{error_html}</body></html>"
+            '<!doctype html><html lang="zh-CN"><body style="margin:0;padding:0;background:#f0f4f8;'
+            'font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Arial,sans-serif;">'
+            '<table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#f0f4f8;">'
+            '<tr><td align="center" style="padding:32px 16px;"><table width="600" cellpadding="0" cellspacing="0" '
+            'role="presentation" style="max-width:600px;width:100%;overflow:hidden;background:#fff;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.08);">'
+            f'<tr><td style="padding:28px 32px;background:linear-gradient(135deg,{header_color},#2d3561);">'
+            '<table width="100%" cellpadding="0" cellspacing="0" role="presentation"><tr><td>'
+            '<p style="margin:0 0 6px;color:#a8b2d8;font-size:12px;letter-spacing:1.2px;text-transform:uppercase;">ArXiv Daily Researcher</p>'
+            f'<h1 style="margin:0;color:#fff;font-size:24px;line-height:1.3;">{self._html_escape(result.workflow)}</h1>'
+            '</td><td align="right" valign="top">'
+            f'<span style="display:inline-block;padding:6px 13px;border-radius:16px;background:{accent_color};color:#fff;font-size:12px;font-weight:700;white-space:nowrap;">{badge}</span>'
+            '</td></tr><tr><td colspan="2" style="padding-top:15px;color:#a8b2d8;font-size:13px;">'
+            f'⏱ {self._html_escape(result.run_timestamp)}</td></tr></table></td></tr>'
+            f'<tr><td style="padding:17px 32px;background:{surface_color};border-bottom:1px solid #e8ebf0;color:#475569;font-size:13px;">'
+            f'<strong style="color:{accent_color};">{status}</strong> · 后台任务汇总</td></tr>'
+            f"{summary_html}{issues_html}{error_html}"
+            '<tr><td style="padding:26px 32px 30px;"><p style="margin:0;border-top:1px solid #e8ebf0;padding-top:18px;color:#98a3b5;font-size:12px;text-align:center;">'
+            'ArXiv Daily Researcher</p></td></tr>'
+            '</table></td></tr></table></body></html>'
         )
 
     def _run_issues(self, result: RunResult) -> list[str]:

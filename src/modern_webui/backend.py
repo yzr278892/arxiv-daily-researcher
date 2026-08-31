@@ -11,6 +11,7 @@ import base64
 from copy import deepcopy
 import inspect
 import json
+import logging
 import mimetypes
 import os
 import re
@@ -64,6 +65,7 @@ from utils.webui_trigger import (
     trigger_directory,
     trigger_status_directory,
 )
+from notifications.notifier import send_test_notification
 from utils.history_maintenance import (
     DEFAULT_HISTORY_MAINTENANCE_RUN_MODE,
     DEFAULT_HISTORY_MAINTENANCE_TIME_WINDOW_END,
@@ -74,6 +76,7 @@ from modern_webui.arxiv_categories import ARXIV_CATEGORIES, format_arxiv_categor
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+logger = logging.getLogger(__name__)
 DEFAULT_DATA_DIR = PROJECT_ROOT / "data"
 DEFAULT_REPORTS_DIR = DEFAULT_DATA_DIR / "reports"
 DEFAULT_DB_RELATIVE_PATH = Path("daily_research") / "daily_research.db"
@@ -234,6 +237,22 @@ PUBLIC_ENV_FIELDS = frozenset(
 WRITABLE_ENV_FIELDS = SECRET_ENV_FIELDS | PUBLIC_ENV_FIELDS
 _CONFIG_FIELDS = frozenset(inspect.signature(build_config_dict).parameters)
 _PID_RE = re.compile(r"(?:^|\b)PID=(\d+)(?:\b|,)")
+_NOTIFICATION_TEST_FIELDS = {
+    "email": (
+        "SMTP_HOST",
+        "SMTP_PORT",
+        "SMTP_USE_TLS",
+        "SMTP_USER",
+        "SMTP_PASSWORD",
+        "SMTP_FROM",
+        "SMTP_TO",
+    ),
+    "wechat_work": ("WECHAT_WEBHOOK_URL",),
+    "dingtalk": ("DINGTALK_WEBHOOK_URL", "DINGTALK_SECRET"),
+    "telegram": ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"),
+    "slack": ("SLACK_WEBHOOK_URL",),
+    "generic": ("GENERIC_WEBHOOK_URL",),
+}
 
 # The panel handles many short, read-only requests in one long-lived process.
 # Parsing the commented JSON5 runtime config and recreating ``DailyResearchStore``
@@ -2176,6 +2195,57 @@ def connection_test(kind: str, payload: Mapping[str, Any]) -> dict[str, Any]:
     except (TypeError, ValueError) as exc:
         raise ModernWebUIError(f"连接测试参数无效：{exc}") from exc
     return {"ok": bool(ok), "message": sanitize_task_error_summary(message, max_chars=600)}
+
+
+def _notification_test_proxy() -> dict[str, str] | None:
+    """Return the saved notification proxy without exposing it to the browser."""
+    config = flat_config()
+    if not (
+        _coerce_bool(config.get("proxy_enabled"))
+        and _coerce_bool(config.get("proxy_notifications"))
+    ):
+        return None
+    proxy_url = str(config.get("proxy_url") or "").strip()
+    if not proxy_url:
+        return None
+    return {"http": proxy_url, "https": proxy_url}
+
+
+def test_notification(channel: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Send one real test notification using submitted or saved channel values.
+
+    Empty secret inputs intentionally fall back to the saved environment value,
+    so operators can test an already configured channel without re-entering a
+    credential.  The request is never persisted.
+    """
+    channel = str(channel or "").strip().lower()
+    fields = _NOTIFICATION_TEST_FIELDS.get(channel)
+    if fields is None:
+        raise ModernWebUIError("不支持的通知渠道。")
+    if not isinstance(payload, Mapping):
+        raise ModernWebUIError("测试通知参数必须是对象。")
+
+    saved = read_env()
+    values: dict[str, str] = {}
+    for key in fields:
+        submitted = payload.get(key)
+        if submitted is not None and not isinstance(submitted, (str, int, float, bool)):
+            raise ModernWebUIError("测试通知参数格式无效。")
+        candidate = submitted if submitted not in (None, "") else saved.get(key, "")
+        text = str(candidate or "")
+        if len(text) > 12_000 or "\x00" in text:
+            raise ModernWebUIError("测试通知参数长度无效。")
+        values[key] = text
+
+    try:
+        send_test_notification(channel, values, proxies=_notification_test_proxy())
+    except (TypeError, ValueError) as exc:
+        raise ModernWebUIError(f"测试通知未发送：{sanitize_task_error_summary(str(exc), max_chars=300)}") from exc
+    except Exception as exc:
+        logger.exception("测试通知发送失败（channel=%s）", channel)
+        summary = sanitize_task_error_summary(str(exc), max_chars=300)
+        raise ModernWebUIError(f"测试通知未发送：{summary or '请检查渠道配置和网络。'}") from exc
+    return {"ok": True, "message": "测试通知已发送。"}
 
 
 def _log_category(name: str) -> str:

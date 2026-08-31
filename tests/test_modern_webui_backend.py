@@ -809,6 +809,50 @@ class ModernBackendTests(unittest.TestCase):
         self.assertEqual(status["task"]["label"], "过去日报")
         self.assertEqual(status["task"]["current"], 2)
 
+    def test_collect_qualified_favorites_uses_the_shared_store(self) -> None:
+        store = MagicMock()
+        store.collect_qualified_favorites.return_value = {
+            "scanned": 8,
+            "qualified": 3,
+            "added": 2,
+            "preserved": 1,
+        }
+        with patch.object(backend, "open_store", return_value=store):
+            result = backend.collect_qualified_favorites()
+
+        self.assertEqual(result["added"], 2)
+        self.assertTrue(result["ok"])
+        store.collect_qualified_favorites.assert_called_once_with()
+
+    def test_notification_test_uses_draft_values_and_saved_secret_fallback(self) -> None:
+        with patch.object(
+            backend,
+            "read_env",
+            return_value={
+                "TELEGRAM_BOT_TOKEN": "saved-token",
+                "TELEGRAM_CHAT_ID": "saved-chat",
+            },
+        ), patch.object(
+            backend,
+            "flat_config",
+            return_value={
+                "proxy_enabled": True,
+                "proxy_notifications": True,
+                "proxy_url": "http://127.0.0.1:7890",
+            },
+        ), patch.object(backend, "send_test_notification") as send:
+            result = backend.test_notification("telegram", {"TELEGRAM_CHAT_ID": "draft-chat"})
+
+        self.assertEqual(result, {"ok": True, "message": "测试通知已发送。"})
+        send.assert_called_once_with(
+            "telegram",
+            {
+                "TELEGRAM_BOT_TOKEN": "saved-token",
+                "TELEGRAM_CHAT_ID": "draft-chat",
+            },
+            proxies={"http": "http://127.0.0.1:7890", "https": "http://127.0.0.1:7890"},
+        )
+
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

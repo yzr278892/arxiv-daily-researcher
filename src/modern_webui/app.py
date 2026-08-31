@@ -596,6 +596,21 @@ async def connection_test(request: Request) -> JSONResponse:
         raise _safe_error(exc) from exc
 
 
+async def notification_test(request: Request) -> JSONResponse:
+    _require_session(request)
+    payload = await _payload(request)
+    try:
+        return JSONResponse(
+            await _blocking_call(
+                backend.test_notification,
+                request.path_params.get("channel", ""),
+                payload,
+            )
+        )
+    except Exception as exc:
+        raise _safe_error(exc) from exc
+
+
 async def logs_get(request: Request) -> JSONResponse:
     _require_session(request)
     return JSONResponse({"items": await _blocking_call(backend.list_logs)})
@@ -795,6 +810,7 @@ app = Starlette(
         Route("/api/backups/restore", backup_restore, methods=["POST"]),
         Route("/api/configuration/export", configuration_export, methods=["GET"]),
         Route("/api/webdav", webdav_post, methods=["POST"]),
+        Route("/api/notifications/{channel:str}/test", notification_test, methods=["POST"]),
         Route("/api/connections/{kind:str}", connection_test, methods=["POST"]),
         Route("/api/logs", logs_get, methods=["GET"]),
         Route("/api/logs/{token:str}", log_get, methods=["GET"]),

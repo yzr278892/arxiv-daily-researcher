@@ -113,11 +113,13 @@ COPY src/utils/daily_research_store.py ./src/utils/
 COPY src/utils/legacy_history.py ./src/utils/
 COPY src/utils/run_lock.py ./src/utils/
 COPY src/utils/safe_url.py ./src/utils/
+COPY src/utils/safe_markdown.py ./src/utils/
 COPY src/utils/source_registry.py ./src/utils/
 COPY src/utils/webdav_sync.py ./src/utils/
 COPY src/utils/webui_trigger.py ./src/utils/
 COPY src/utils/container_health.py ./src/utils/
 COPY src/modern_webui/ ./src/modern_webui/
+COPY src/notifications/ ./src/notifications/
 COPY VERSION* ./
 COPY .env.example ./
 COPY configs/ ./configs/
