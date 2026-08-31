@@ -56,6 +56,56 @@ class ModernBackendTests(unittest.TestCase):
         self.assertGreater(len(categories), 100)
         self.assertEqual(categories["quant-ph"], "quant-ph · Quantum Physics")
 
+    def test_flat_config_cache_reuses_parse_and_detects_file_change(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            config_path = Path(directory) / "config.json"
+            config_path.write_text("{}", encoding="utf-8")
+            first_document = {"daily_research": {"max_papers_per_run": 7}}
+            changed_document = {"daily_research": {"max_papers_per_run": 9}}
+            backend._invalidate_runtime_caches()
+            try:
+                with patch.object(
+                    backend, "ensure_runtime_config_path", return_value=config_path
+                ), patch.object(
+                    backend,
+                    "read_config_json",
+                    side_effect=[first_document, changed_document],
+                ) as read:
+                    first = backend.flat_config()
+                    first["daily_max_papers_per_run"] = 0
+                    second = backend.flat_config()
+
+                    self.assertEqual(read.call_count, 1)
+                    self.assertEqual(second["daily_max_papers_per_run"], 7)
+
+                    # Size changes as well as mtime, avoiding filesystem
+                    # timestamp-resolution assumptions in this contract test.
+                    config_path.write_text("{changed: true}", encoding="utf-8")
+                    changed = backend.flat_config()
+
+                self.assertEqual(read.call_count, 2)
+                self.assertEqual(changed["daily_max_papers_per_run"], 9)
+            finally:
+                backend._invalidate_runtime_caches()
+
+    def test_open_store_reuses_the_wrapper_until_cache_invalidation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database = Path(directory) / "daily_research.db"
+            backend._invalidate_runtime_caches()
+            try:
+                with patch.object(backend, "configured_db_path", return_value=database):
+                    first = backend.open_store(create=True)
+                    second = backend.open_store()
+                    self.assertIsNotNone(first)
+                    self.assertIs(first, second)
+
+                    backend._invalidate_runtime_caches(clear_config=False)
+                    third = backend.open_store()
+
+                self.assertIsNot(first, third)
+            finally:
+                backend._invalidate_runtime_caches()
+
     def test_save_settings_rejects_unknown_fields_before_writing(self) -> None:
         with self.assertRaisesRegex(backend.ModernWebUIError, "不支持"):
             backend.save_settings({"not_a_real_config_option": True}, {})

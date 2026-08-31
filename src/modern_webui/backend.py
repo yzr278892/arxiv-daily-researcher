@@ -8,6 +8,7 @@ second settings store or background process.
 from __future__ import annotations
 
 import base64
+from copy import deepcopy
 import inspect
 import json
 import mimetypes
@@ -17,6 +18,7 @@ import tempfile
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from threading import RLock
 from typing import Any, Iterable, Mapping
 
 from utils.backup import (
@@ -32,6 +34,7 @@ from utils.config_io import (
     DEFAULT_ENV_PATH,
     _resolve_project_relative_config_path,
     build_config_dict,
+    ensure_runtime_config_path,
     flatten_config_dict,
     read_config_json,
     read_env,
@@ -226,6 +229,17 @@ WRITABLE_ENV_FIELDS = SECRET_ENV_FIELDS | PUBLIC_ENV_FIELDS
 _CONFIG_FIELDS = frozenset(inspect.signature(build_config_dict).parameters)
 _PID_RE = re.compile(r"(?:^|\b)PID=(\d+)(?:\b|,)")
 
+# The panel handles many short, read-only requests in one long-lived process.
+# Parsing the commented JSON5 runtime config and recreating ``DailyResearchStore``
+# for each one dominated page-load time on a populated SQLite database.  Keep
+# only in-process, file-backed caches here: external edits are noticed through
+# the runtime config file signature, while explicit UI writes/restores clear
+# their relevant entries immediately.
+_RUNTIME_CACHE_LOCK = RLock()
+_FLAT_CONFIG_CACHE: dict[str, Any] | None = None
+_FLAT_CONFIG_CACHE_SIGNATURE: tuple[Path, int | None, int | None, int | None] | None = None
+_STORE_CACHE: dict[Path, DailyResearchStore] = {}
+
 
 class ModernWebUIError(ValueError):
     """An expected, safe error to expose to an authenticated operator."""
@@ -266,9 +280,48 @@ def _ensure_json_value(value: Any, *, depth: int = 0) -> None:
     raise ModernWebUIError("配置包含不支持的数据类型。")
 
 
+def _runtime_config_signature() -> tuple[Path, int | None, int | None, int | None]:
+    """Return a cheap change token for the live portable configuration."""
+    path = ensure_runtime_config_path()
+    try:
+        stat = path.stat()
+    except FileNotFoundError:
+        return path, None, None, None
+    return path, stat.st_ino, stat.st_size, stat.st_mtime_ns
+
+
+def _invalidate_runtime_caches(*, clear_config: bool = True, clear_store: bool = True) -> None:
+    """Drop process-local read caches after an operation changes their source."""
+    global _FLAT_CONFIG_CACHE, _FLAT_CONFIG_CACHE_SIGNATURE
+    with _RUNTIME_CACHE_LOCK:
+        if clear_config:
+            _FLAT_CONFIG_CACHE = None
+            _FLAT_CONFIG_CACHE_SIGNATURE = None
+        if clear_store:
+            _STORE_CACHE.clear()
+
+
 def flat_config() -> dict[str, Any]:
-    raw = read_config_json()
-    return flatten_config_dict(raw) if isinstance(raw, dict) else {}
+    """Read the flattened runtime config, reusing it until the file changes.
+
+    A copy is returned so a caller cannot accidentally mutate the shared cache
+    and affect another authenticated browser request.
+    """
+    global _FLAT_CONFIG_CACHE, _FLAT_CONFIG_CACHE_SIGNATURE
+    signature = _runtime_config_signature()
+    with _RUNTIME_CACHE_LOCK:
+        if (
+            _FLAT_CONFIG_CACHE is not None
+            and _FLAT_CONFIG_CACHE_SIGNATURE == signature
+        ):
+            return deepcopy(_FLAT_CONFIG_CACHE)
+
+    raw = read_config_json(signature[0])
+    flattened = flatten_config_dict(raw) if isinstance(raw, dict) else {}
+    with _RUNTIME_CACHE_LOCK:
+        _FLAT_CONFIG_CACHE = flattened
+        _FLAT_CONFIG_CACHE_SIGNATURE = signature
+    return deepcopy(flattened)
 
 
 def configured_data_dir(flat: Mapping[str, Any] | None = None) -> Path:
@@ -319,11 +372,22 @@ def open_store(
     """
     path = configured_db_path(flat)
     if not create and not path.is_file():
+        with _RUNTIME_CACHE_LOCK:
+            _STORE_CACHE.pop(path, None)
         return None
+    with _RUNTIME_CACHE_LOCK:
+        cached = _STORE_CACHE.get(path)
+    if cached is not None:
+        return cached
     try:
-        return DailyResearchStore(path)
+        store = DailyResearchStore(path)
     except Exception:
         return None
+    with _RUNTIME_CACHE_LOCK:
+        # Concurrent first requests can race through the short constructor.
+        # Keep one shared instance; its actual SQLite connections remain
+        # per-operation, so this does not share a connection between threads.
+        return _STORE_CACHE.setdefault(path, store)
 
 
 def public_settings() -> dict[str, Any]:
@@ -378,6 +442,10 @@ def save_settings(
     config_args = {key: current_flat[key] for key in _CONFIG_FIELDS if key in current_flat}
     try:
         write_config_json(build_config_dict(**config_args))
+        # The next response must reflect a just-saved value (including a
+        # changed data/database path), rather than waiting for a filesystem
+        # signature check on a stale in-process object.
+        _invalidate_runtime_caches()
     except (TypeError, ValueError) as exc:
         raise ModernWebUIError(str(exc)) from exc
 
@@ -1890,12 +1958,17 @@ def restore_database_backup(content: bytes, filename: str) -> dict[str, Any]:
             nonblocking=True,
             data_dir=data_dir,
         ):
-            return restore_backup_archive(
+            result = restore_backup_archive(
                 data_dir,
                 content,
                 safe_name,
                 database=configured_db_path(settings),
             )
+        # A restore can replace the SQLite file beneath the WebUI. Recreate
+        # the lightweight store wrapper so any necessary schema upgrade runs
+        # before the next read.
+        _invalidate_runtime_caches(clear_config=False)
+        return result
     except DatabaseRestoreBusyError as exc:
         raise ModernWebUIError("有运行中的任务正在使用数据库，请等待任务完成后再恢复备份。") from exc
     except (OSError, ValueError) as exc:
