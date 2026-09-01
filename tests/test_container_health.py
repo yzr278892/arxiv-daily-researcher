@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from utils.container_health import (  # noqa: E402
     ContainerHealthError,
+    _check_worker_processes,
     _check_sqlite,
     _check_trigger_consumer,
     _check_writable_directory,
@@ -20,6 +21,13 @@ from utils.container_health import (  # noqa: E402
 
 
 class ContainerHealthTests(unittest.TestCase):
+    def test_manual_worker_mode_does_not_require_a_cron_daemon(self):
+        with patch.dict(os.environ, {"MODE": "manual"}, clear=False), patch(
+            "utils.container_health._process_named",
+            side_effect=AssertionError("manual mode must not probe cron"),
+        ):
+            _check_worker_processes("adr")
+
     def test_writable_directory_uses_and_removes_probe(self):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)

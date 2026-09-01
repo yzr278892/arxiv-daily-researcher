@@ -1,24 +1,15 @@
+name: arxiv-daily-researcher
+
 services:
   arxiv-daily-researcher:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile
-      target: worker
-      # 与运行期一致使用宿主机网络，避免 NAS 的 bridge DNS/路由导致依赖构建极慢。
-      network: host
-      args:
-        PIP_INDEX_URL: ${ADR_PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}
-        PIP_TRUSTED_HOST: ${ADR_PIP_TRUSTED_HOST:-mirrors.aliyun.com}
-    # 默认使用本地构建镜像；部署者可通过 ADR_WORKER_IMAGE 覆盖为固定的
-    # GHCR 版本标签。保留 build 以支持源码部署和本地开发。
-    image: ${ADR_WORKER_IMAGE:-arxiv-daily-researcher:latest}
+    image: ghcr.io/yzr278892/arxiv-daily-researcher:4.2
     container_name: arxiv-daily-researcher
     restart: unless-stopped
 
     stdin_open: true
     tty: true
 
-    # 使用宿主机网络，使容器可直接访问 localhost 上的本地 LLM API 等服务
+    # The worker must reach a host-local LLM or proxy through localhost.
     network_mode: host
 
     env_file:
@@ -42,49 +33,37 @@ services:
     deploy:
       resources:
         limits:
-          memory: 512M
+          cpus: "1.00"
+          memory: 768M
         reservations:
-          memory: 256M
+          memory: 384M
+
+    memswap_limit: 1024M
 
     healthcheck:
-      test: [ "CMD", "python", "/app/src/utils/container_health.py", "worker" ]
+      test: ["CMD", "python", "/app/src/utils/container_health.py", "worker"]
       interval: 1m
       timeout: 20s
       retries: 3
       start_period: 30s
 
     logging:
-      driver: "json-file"
+      driver: json-file
       options:
-        max-size: "10m"
+        max-size: 10m
         max-file: "3"
 
-  # ==================== Modern WebUI ====================
   config-panel:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile
-      target: webui
-      # WebUI 构建同样需要稳定访问 Python 软件源。
-      network: host
-      args:
-        PIP_INDEX_URL: ${ADR_PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}
-        PIP_TRUSTED_HOST: ${ADR_PIP_TRUSTED_HOST:-mirrors.aliyun.com}
-    # 与 worker 保持相同的版本来源，避免 WebUI 与后端协议错配。
-    image: ${ADR_WEBUI_IMAGE:-arxiv-daily-researcher-config-panel:latest}
+    image: ghcr.io/yzr278892/arxiv-daily-researcher-config-panel:4.2
     container_name: arxiv-daily-researcher-config-panel
     restart: unless-stopped
 
-    # Publish the browser service explicitly. This keeps remote development
-    # simple (LAN/Tailscale clients use <host>:8501) without hard-coding one
-    # particular host address in the listener.
     ports:
-      - "${ADR_WEBUI_PORT:-8501}:8501"
-    # The Worker deliberately remains on host networking for local LLM and
-    # proxy semantics. The WebUI itself only needs this stable host alias for
-    # an optional connection test against a host-side service.
+      - "8501:8501"
+    # The WebUI uses a bridge network for its explicit browser port. Use this
+    # alias when testing a host-local service from the panel.
     extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - host.docker.internal:host-gateway
     command:
       - uvicorn
       - src.modern_webui.app:app
@@ -109,19 +88,22 @@ services:
     deploy:
       resources:
         limits:
-          memory: 192M
+          cpus: "0.50"
+          memory: 256M
         reservations:
-          memory: 64M
+          memory: 96M
+
+    memswap_limit: 384M
 
     healthcheck:
-      test: [ "CMD", "python", "/app/src/utils/container_health.py", "webui", "--url", "http://127.0.0.1:8501/api/health" ]
+      test: ["CMD", "python", "/app/src/utils/container_health.py", "webui", "--url", "http://127.0.0.1:8501/api/health"]
       interval: 30s
       timeout: 15s
       retries: 3
       start_period: 20s
 
     logging:
-      driver: "json-file"
+      driver: json-file
       options:
-        max-size: "5m"
+        max-size: 5m
         max-file: "2"
