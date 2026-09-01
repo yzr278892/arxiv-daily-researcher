@@ -242,6 +242,20 @@ class BackfillPipelineTests(unittest.TestCase):
             self.assertTrue(
                 store.is_paper_delivered_strict("prl", "10.1103/physrevlett.1")
             )
+            # Delivery rows keep the same batch timestamp used for the report
+            # filename/rendering, rather than the later SQLite commit time.
+            with store._connect() as conn:
+                report_times = conn.execute(
+                    "SELECT report_at FROM paper_deliveries ORDER BY delivery_id"
+                ).fetchall()
+            self.assertEqual(len(report_times), 3)
+            self.assertTrue(all(row["report_at"] for row in report_times))
+            self.assertTrue(
+                all(
+                    datetime.fromisoformat(row["report_at"]).date() == target
+                    for row in report_times
+                )
+            )
             # Backfill rows stay isolated from the ordinary daily queue during
             # the automatic continuation, so today's report cannot consume
             # old papers between batches.

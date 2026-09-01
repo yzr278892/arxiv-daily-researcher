@@ -342,7 +342,7 @@ Daily research scans sources completely before it writes candidates to SQLite. T
 | :--- | :--- | :--- |
 | Legacy import | Index papers already present in legacy HTML; full repair can read compatible JSON | Idle worker or time window |
 | Historical data repair | Fill missing score, TLDR, translation, or deep analysis from SQLite and patch the original report | Idle worker or time window |
-| Historical omission scan | Scan SQLite-covered ranges and create calendar-week backlog | Idle worker or time window |
+| Historical omission scan | Scan the imported report-batch time range and create calendar-week backlog | Idle worker or time window |
 | Supplement report | Process backlog and write independent supplement reports | Maintenance hand-off or manual request |
 | Past daily reports | Re-run the full daily pipeline for a date range | Durable queue, one date at a time |
 

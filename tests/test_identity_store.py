@@ -733,6 +733,44 @@ class IdentityStoreTests(unittest.TestCase):
             self.assertEqual(rows[0]["run_id"], run_one)
             self.assertEqual(rows[0]["report_path"], str(Path(temp_dir) / "one.md"))
 
+    def test_normal_delivery_records_report_time_without_expanding_legacy_scan(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = DailyResearchStore(Path(temp_dir) / "daily.db")
+            run_id = store.start_run(1)
+            paper = _paper("2501.12345v1")
+            score = WeightedScoreResponse(
+                total_score=4,
+                keyword_scores={"quantum": 4},
+                author_bonus=0,
+                expert_authors_found=[],
+                passing_score=3,
+                is_qualified=True,
+                reasoning="relevant",
+                tldr="A concise TLDR",
+                extracted_keywords=["quantum"],
+            )
+            store.upsert_paper_seen(run_id, "arxiv", paper)
+            store.update_score(
+                run_id,
+                "arxiv",
+                {"paper_metadata": paper, "paper_id": paper.paper_id, "score_response": score},
+            )
+            store.update_translation(run_id, "arxiv", paper.paper_id, "中文摘要")
+            report_at = datetime(2026, 8, 30, 12, 0, tzinfo=timezone.utc)
+            store.finalize_report_delivery(
+                run_id,
+                {"arxiv": Path(temp_dir) / "report.md"},
+                {"arxiv": [{"paper_metadata": paper, "paper_id": paper.paper_id, "requires_analysis": False}]},
+                report_at=report_at,
+            )
+
+            with store._connect() as conn:
+                delivery = conn.execute(
+                    "SELECT report_at FROM paper_deliveries WHERE source = 'arxiv'"
+                ).fetchone()
+            self.assertEqual(delivery["report_at"], report_at.isoformat())
+            self.assertIsNone(store.historical_delivery_date_range("arxiv"))
+
     def test_retry_preserves_optional_semantic_scholar_enrichment(self):
         """A transient S2 failure must not erase a TLDR from a retried paper."""
         with tempfile.TemporaryDirectory() as temp_dir:

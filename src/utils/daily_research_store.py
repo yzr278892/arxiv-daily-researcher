@@ -2306,12 +2306,33 @@ class DailyResearchStore:
                     continue
         return None
 
-    def historical_delivery_date_range(self, source: str = "arxiv") -> Optional[Tuple[date, date]]:
-        """Return the source-date coverage of delivered SQLite history.
+    @staticmethod
+    def _report_date_from_value(value: Any) -> Optional[date]:
+        """Parse a persisted report-batch timestamp without using paper metadata."""
+        if not isinstance(value, str) or not value.strip():
+            return None
+        text = value.strip()
+        try:
+            return datetime.fromisoformat(text.replace("Z", "+00:00")).date()
+        except ValueError:
+            try:
+                return date.fromisoformat(text[:10])
+            except ValueError:
+                return None
 
-        This is intentionally independent from v3.2 JSON files and report
-        directories.  Once a report has been imported/generated, its SQLite
-        delivery row plus paper metadata is the durable historical record.
+    def historical_delivery_date_range(self, source: str = "arxiv") -> Optional[Tuple[date, date]]:
+        """Return the imported report-batch coverage for one historical source.
+
+        Historical omission scans repair imported archive coverage, so their
+        range must follow the archived report batches rather than a paper's
+        original publication day.  In particular, a newly revised old paper
+        must never extend a 2026 archive scan back to its original year.
+
+        The imported-card timestamp is durable SQLite state; report directories
+        and legacy JSON files are deliberately not read here.  Ordinary daily
+        deliveries are excluded because their normal incremental scan and
+        watermarks already cover them.  The range is therefore stable when
+        new daily reports are delivered after an archive import.
         """
         normalized_source = str(source or "").strip().lower()
         if not normalized_source:
@@ -2319,20 +2340,24 @@ class DailyResearchStore:
         with self._connect() as conn:
             rows = conn.execute(
                 """
-                SELECT papers.paper_json
+                SELECT COALESCE(
+                    NULLIF(TRIM(deliveries.report_at), ''),
+                    NULLIF(TRIM(papers.legacy_report_at), '')
+                ) AS report_at
                 FROM paper_deliveries AS deliveries
                 JOIN daily_papers AS papers
                   ON papers.source = deliveries.source
                  AND papers.paper_id = deliveries.paper_id
                 WHERE deliveries.source = ?
+                  AND NULLIF(TRIM(papers.legacy_report_at), '') IS NOT NULL
                 """,
                 (normalized_source,),
             ).fetchall()
         days = [
-            value
+            report_day
             for row in rows
-            for value in [self._published_date_from_payload(self._paper_payload_from_row(row))]
-            if value is not None
+            for report_day in [self._report_date_from_value(row["report_at"])]
+            if report_day is not None
         ]
         return (min(days), max(days)) if days else None
 
@@ -4598,6 +4623,7 @@ class DailyResearchStore:
         delivered_papers_by_source: Dict[str, list[Dict[str, Any]]],
         notification_entries: Optional[list[Dict[str, Any]]] = None,
         maintenance_entries: Optional[list[Dict[str, Any]]] = None,
+        report_at: Optional[datetime] = None,
     ) -> None:
         """Atomically record report delivery and all follow-up outbox rows.
 
@@ -4609,6 +4635,7 @@ class DailyResearchStore:
         required follow-up task had not yet been persisted.
         """
         now = datetime.now().isoformat()
+        report_timestamp = (report_at or datetime.now()).isoformat()
         entries = notification_entries or []
         maintenance = maintenance_entries or []
         normalized_paths = {key: str(value) for key, value in report_paths.items()}
@@ -4696,9 +4723,9 @@ class DailyResearchStore:
                         """
                         INSERT INTO paper_deliveries(
                             run_id, source, paper_id, canonical_id, version,
-                            report_path, delivered_at
+                            report_path, report_at, delivered_at
                         )
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT(source, canonical_id, version) DO NOTHING
                         """,
                         (
@@ -4708,6 +4735,7 @@ class DailyResearchStore:
                             paper.canonical_id or paper.paper_id,
                             paper.version or 0,
                             report_path,
+                            report_timestamp,
                             now,
                         ),
                     )
