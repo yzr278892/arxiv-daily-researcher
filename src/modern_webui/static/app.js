@@ -342,8 +342,8 @@ const MODERN_EN_TRANSLATIONS = Object.freeze({
   "报告元数据": "Report Metadata",
   "时间范围": "Date Range",
   "论文数量": "Paper Count",
-  "前一天": "Previous Day",
-  "后一天": "Next Day",
+  "上一份报告": "Previous Report",
+  "下一份报告": "Next Report",
   "输入": "Input",
   "输出": "Output",
   "合计": "Total",
@@ -576,7 +576,7 @@ const MODERN_EN_TRANSLATIONS = Object.freeze({
   "LLM 请求池": "LLM Request Pool",
   "MinerU PDF 解析 API": "MinerU PDF Parsing API",
   "PDF 解析器": "PDF Parser",
-  "← 前一天": "← Previous Day",
+  "← 上一份报告": "← Previous Report",
   "仅导入已有 HTML 论文": "Import existing HTML papers only",
   "保存所有更改": "Save All Changes",
   "保存论文级评分与分析进度，用于断点续跑和失败恢复。": "Persist per-paper scoring and analysis progress for resumable runs and failure recovery.",
@@ -2066,16 +2066,17 @@ function formatReportSize(bytes) {
   return Number.isFinite(size) ? `${(size / 1024).toFixed(1)} KB` : "—";
 }
 
-function findAdjacentDailyReport(report, rows, direction) {
-  if (!report?.date) return null;
-  const sameSource = rows.filter((item) => item.source === report.source && item.date);
-  const dates = [...new Set(sameSource.map((item) => item.date))].sort();
-  const current = dates.indexOf(report.date);
-  const targetDate = dates[current + direction];
-  if (!targetDate) return null;
-  // ``list_reports`` returns the newest report first, including when a
-  // supplement and a normal run share the same logical calendar date.
-  return sameSource.find((item) => item.date === targetDate) || null;
+function findAdjacentDailyReport(report, rows, relation) {
+  if (!report?.id) return null;
+  // ``list_reports`` returns each source newest first. A calendar day is
+  // not a report identity: historical runs and supplement runs can create
+  // several independent batches on the same day. Move through the actual
+  // ordered report rows so every batch remains reachable.
+  const sameSource = rows.filter((item) => item.source === report.source);
+  const current = sameSource.findIndex((item) => item.id === report.id);
+  if (current < 0) return null;
+  const offset = relation === "previous" ? 1 : -1;
+  return sameSource[current + offset] || null;
 }
 
 function reportInfoHtml(report) {
@@ -2248,9 +2249,9 @@ async function loadReportPreview(report, reports, token, chooseReport) {
     ]);
     if (token !== state.renderToken || state.pageData.selectedReport !== report.id || !isCurrentLocalRequest("report-preview", requestVersion)) return;
     const marked = buildMarkedReportHtml(html, paperResponse.items || []);
-    const previous = report.type === "daily" ? findAdjacentDailyReport(report, reports.daily, -1) : null;
-    const next = report.type === "daily" ? findAdjacentDailyReport(report, reports.daily, 1) : null;
-    const navigation = report.type === "daily" ? `<div class="report-navigation"><button class="secondary-button compact-button" data-report-nav="${previous ? escapeAttribute(previous.id) : ""}" ${previous ? "" : "disabled"}>← 前一天</button><button class="secondary-button compact-button" data-report-nav="${next ? escapeAttribute(next.id) : ""}" ${next ? "" : "disabled"}>后一天</button></div>` : "";
+    const previous = report.type === "daily" ? findAdjacentDailyReport(report, reports.daily, "previous") : null;
+    const next = report.type === "daily" ? findAdjacentDailyReport(report, reports.daily, "next") : null;
+    const navigation = report.type === "daily" ? `<div class="report-navigation"><button class="secondary-button compact-button" data-report-nav="${previous ? escapeAttribute(previous.id) : ""}" ${previous ? "" : "disabled"}>← 上一份报告</button><button class="secondary-button compact-button" data-report-nav="${next ? escapeAttribute(next.id) : ""}" ${next ? "" : "disabled"}>下一份报告</button></div>` : "";
     // ``#report-preview`` starts as a loading placeholder.  Drop that class
     // once real content arrives; retaining it wraps the full preview card in
     // a second, oversized dashed border.
