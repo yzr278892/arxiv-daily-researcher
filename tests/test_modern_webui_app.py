@@ -163,6 +163,72 @@ class ModernWebUIAppTests(unittest.TestCase):
         self.assertIn('<thead><tr>${metrics.map(([label])', summary)
         self.assertIn('<tbody><tr>${metrics.map(([, value])', summary)
 
+    def test_usage_range_refresh_keeps_the_rendered_statistics_in_place(self) -> None:
+        script = self.client.get("/assets/app.js").text
+        stylesheet = self.client.get("/assets/app.css").text
+        start = script.index("async function refreshAnalyticsContent")
+        end = script.index("async function renderAnalytics", start)
+        refresh = script[start:end]
+
+        self.assertIn(
+            'const hasRenderedContent = Boolean($(".analytics-statistics-card", host));',
+            refresh,
+        )
+        self.assertIn('host.classList.add("is-refreshing");', refresh)
+        self.assertIn('host.setAttribute("aria-busy", "true");', refresh)
+        self.assertIn("button.disabled = false", refresh)
+        self.assertIn("if (hasRenderedContent) {", refresh)
+        self.assertIn("#analytics-content.is-refreshing .analytics-statistics-card", stylesheet)
+        self.assertIn("#analytics-content.is-refreshing::after", stylesheet)
+
+    def test_proxy_exclusions_use_chip_editor_and_save_a_compatible_value(self) -> None:
+        script = self.client.get("/assets/app.js").text
+        stylesheet = self.client.get("/assets/app.css").text
+        start = script.index("function normalizeProxyNoProxyEntries")
+        end = script.index("function renderProxySettings", start)
+        editor = script[start:end]
+        save_start = script.index("function normalizeForSave")
+        save_end = script.index("async function saveAll", save_start)
+        normalize_for_save = script[save_start:save_end]
+
+        self.assertIn("function proxyNoProxyEditor", editor)
+        self.assertIn("weighted-entry-box", editor)
+        self.assertIn("proxy_no_proxy_entries", editor)
+        self.assertIn("data-proxy-no-proxy-add", editor)
+        self.assertNotIn("不使用代理的地址（每行一项）", script)
+        self.assertIn('config.proxy_no_proxy = normalizeProxyNoProxyEntries(', normalize_for_save)
+        self.assertIn(".proxy-scope-list .toggle-field { padding: 0; border: 0; }", stylesheet)
+        self.assertIn(".proxy-scope-list { display: grid; row-gap: 28px;", stylesheet)
+
+    def test_dynamic_forms_reapply_localization_and_cover_input_hints(self) -> None:
+        script = self.client.get("/assets/app.js").text
+        expected_translations = {
+            "自定义 OpenAlex 期刊来源": "Custom OpenAlex journal sources",
+            "例如 Alice Smith": "e.g. Alice Smith",
+            "描述你的研究问题、方法与关注方向": "Describe your research question, methods, and focus areas",
+            "标题、摘要、TL;DR 或关键词": "Title, abstract, TL;DR, or keyword",
+            "已配置；留空则保持不变": "Configured; leave blank to keep unchanged",
+            "正在读取偏好词库…": "Loading preference data…",
+        }
+        for chinese, english in expected_translations.items():
+            self.assertIn(f'"{chinese}": "{english}"', script)
+
+        weighted_start = script.index("function replaceWeightedEntryEditor")
+        weighted_end = script.index("function bindWeightedEntryEditor", weighted_start)
+        self.assertIn("applyLocale", script[weighted_start:weighted_end])
+
+        search_start = script.index("async function loadSearchResults")
+        search_end = script.index("function weightedEntries", search_start)
+        self.assertGreaterEqual(script[search_start:search_end].count("applyLocale(target)"), 3)
+
+        scoring_start = script.index("async function renderScoring")
+        scoring_end = script.index("function strategyDescription", scoring_start)
+        self.assertIn("applyLocale(host);", script[scoring_start:scoring_end])
+
+        preview_start = script.index("async function loadReportPreview")
+        preview_end = script.index("async function renderFavorites", preview_start)
+        self.assertIn("applyLocale(preview);", script[preview_start:preview_end])
+
     def test_extracted_keywords_use_a_paged_table_with_group_spacing(self) -> None:
         script = self.client.get("/assets/app.js").text
         stylesheet = self.client.get("/assets/app.css").text

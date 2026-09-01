@@ -383,6 +383,185 @@ const MODERN_EN_TRANSLATIONS = Object.freeze({
   "评分和分析": "Scoring and analysis",
   "通知推送": "Notification delivery",
   "备份和恢复": "Backup and restore",
+  "登录管理面板": "Sign in to dashboard",
+  "正在读取账户设置…": "Loading account settings…",
+  "管理员用户名": "Administrator username",
+  "密码（至少 6 个字符）": "Password (at least 6 characters)",
+  "内网模式": "Private-network mode",
+  "登录验证已关闭，正在进入面板。": "Sign-in is disabled; opening the dashboard.",
+  "初始化管理员账户": "Set up administrator account",
+  "创建本地管理员账户，或在可信内网中跳过登录。": "Create a local administrator account, or skip sign-in on a trusted private network.",
+  "使用本机配置的管理员账户登录。": "Sign in with the local administrator account.",
+  "已配置；留空则保持不变": "Configured; leave blank to keep unchanged",
+  "例如：实验进展综述": "e.g. Experimental Progress Review",
+  "例如 quantum error correction": "e.g. quantum error correction",
+  "例如 quantum sensing": "e.g. quantum sensing",
+  "例如 Alice Smith": "e.g. Alice Smith",
+  "标题、摘要、TL;DR 或关键词": "Title, abstract, TL;DR, or keyword",
+  "描述你的研究问题、方法与关注方向": "Describe your research question, methods, and focus areas",
+  "自定义 OpenAlex 期刊来源": "Custom OpenAlex journal sources",
+  "通过 ISSN 添加需要跟踪的期刊；保存后会与内置来源一起参与额外数据源任务。": "Add journals to track by ISSN. After saving, they join built-in sources in additional-source tasks.",
+  "来源代码": "Source code",
+  "展示名称": "Display name",
+  "完整名称": "Full name",
+  "添加来源": "Add source",
+  "暂无自定义额外来源。": "No custom additional sources.",
+  "按数据源分类整理报告": "Group reports by data source",
+  "内置来源": "Built-in sources",
+  "添加内置来源": "Add built-in source",
+  "尚未选择内置来源": "No built-in sources selected",
+  "arXiv 分类": "arXiv categories",
+  "Hugging Face 可用性滞后（天）": "Hugging Face availability lag (days)",
+  "回看宽限（天）": "Lookback grace (days)",
+  "请求间隔（秒）": "Request interval (seconds)",
+  "开启后可选择内置来源；启用 OpenAlex 后可在此添加 ISSN 期刊来源。": "Choose built-in sources when enabled. After enabling OpenAlex, add ISSN journal sources here.",
+  "pipeline：速度快｜vlm：更精准（消耗更多配额）。": "pipeline: faster | vlm: more accurate (uses more quota).",
+  "仅在 PDF 解析器选择 MinerU 时显示。": "Shown only when MinerU is selected as the PDF parser.",
+  "MinerU 提供高质量云端 PDF 解析，Token 每 3 个月过期。点击测试可查看额度余量和过期时间。": "MinerU provides high-quality cloud PDF parsing. Tokens expire every three months; test the connection to see the remaining quota and expiry time.",
+  "登录 mineru.net 获取 API Token。": "Sign in to mineru.net to obtain an API token.",
+  "点击测试可查看 Token 过期日期和剩余额度。": "Test the connection to view the token expiry date and remaining quota.",
+  "打开 MinerU API 控制面板 ↗": "Open MinerU API console ↗",
+  "不使用代理的地址": "Addresses excluded from proxy",
+  "添加主机名、IP 地址或内网网段。": "Add hostnames, IP addresses, or private-network ranges.",
+  "地址": "Address",
+  "添加地址": "Add address",
+  "暂无不使用代理的地址。": "No proxy exclusions added.",
+  "请填写至少一个地址。": "Enter at least one address.",
+  "同步设置": "Sync settings",
+  "同步范围": "Sync scope",
+  "每天在此时间执行同步。": "Run synchronization at this time each day.",
+  "启用后可展开连接凭据、同步设置和同步范围。": "Enable this to show connection credentials, synchronization settings, and synchronization scope.",
+  "账户列表": "Account List",
+  "账户操作": "Account Actions",
+  "当前账户": "Current account",
+  "角色": "Role",
+  "暂无账户": "No accounts",
+  "修改我的密码": "Change My Password",
+  "当前密码": "Current password",
+  "新密码": "New password",
+  "确认新密码": "Confirm new password",
+  "保存密码": "Save password",
+  "新增管理员": "Add Administrator",
+  "新增账户": "Add account",
+  "重置管理员密码": "Reset Administrator Password",
+  "账户": "Account",
+  "删除管理员": "Delete administrator",
+  "我已确认删除该管理员账户": "I confirm deletion of this administrator account",
+  "尚无其他管理员账户可重置或删除。": "No other administrator accounts are available to reset or delete.",
+  "普通管理员可以修改自己的密码；账户所有者可管理其他管理员。": "Administrators can change their own passwords; the account owner can manage other administrators.",
+  "SQLite 数据库尚未创建；运行一次每日研究或导入历史后即可查看。": "The SQLite database has not been created yet. Run daily research or import history to view it.",
+  "SQLite 数据库尚未创建；运行一次每日研究或导入历史后即可检索。": "The SQLite database has not been created yet. Run daily research or import history to search it.",
+  "尚未标记论文。可直接在每日研究报告的论文卡片中使用 👍 或 👎。": "No papers are marked yet. Use 👍 or 👎 on paper cards in a daily research report.",
+  "偏好项来自已保存的喜欢/不喜欢和历史记录；仅展示当前 SQLite 历史库中的结果。": "Preferences come from saved likes, dislikes, and history; only results in the current SQLite history are shown.",
+  "👍 收藏": "👍 Favorited",
+  "👎 不喜欢": "👎 Disliked",
+  "学习关键词": "Learned keywords",
+  "学习作者": "Learned authors",
+  "暂无学习关键词": "No learned keywords",
+  "暂无学习作者": "No learned authors",
+  "暂无收藏作者统计": "No favorite author statistics",
+  "来源变体": "Source variants",
+  "arXiv / 论文页面": "arXiv / paper page",
+  "论文页面": "Paper page",
+  "中文摘要：": "Chinese abstract:",
+  "作者：": "Authors:",
+  "关键词：": "Keywords:",
+  "合并关键词：": "Merged keywords:",
+  "尚未生成可查看的报告。": "No viewable report has been generated.",
+  "所选范围内没有 Token 使用记录。": "No token usage records in the selected range.",
+  "时间段": "Time range",
+  "24 小时内": "Past 24 hours",
+  "当天": "Today",
+  "3 天": "3 days",
+  "7 天": "7 days",
+  "14 天": "14 days",
+  "30 天": "30 days",
+  "自定义时间段": "Custom range",
+  "应用时间段": "Apply range",
+  "涉及运行": "Runs",
+  "总 Token": "Total tokens",
+  "Token 使用趋势": "Token usage trend",
+  "所选时间段内暂无用量数据。完成任一涉及 LLM 的任务后，这里会出现统计。": "No usage data in the selected range. Statistics appear after a task that uses an LLM completes.",
+  "所选时间段内没有可绘制的 Token 使用趋势。": "No token-usage trend is available for the selected range.",
+  "暂无历史 Token 使用记录。": "No historical token usage records.",
+  "所选时间段内暂无模型使用记录。": "No model usage records in the selected range.",
+  "正在读取 Token 使用记录…": "Loading token usage records…",
+  "正在读取运行诊断…": "Loading run diagnostics…",
+  "正在读取账户列表…": "Loading account list…",
+  "正在读取每日研究状态…": "Loading daily research status…",
+  "正在读取过去日报队列…": "Loading past daily report queue…",
+  "正在读取趋势任务状态…": "Loading trend task status…",
+  "正在读取报告目录…": "Loading report directory…",
+  "正在加载报告预览…": "Loading report preview…",
+  "正在读取收藏数据…": "Loading favorite data…",
+  "正在检索 SQLite 历史库…": "Searching SQLite history…",
+  "正在读取已提取关键词…": "Loading extracted keywords…",
+  "正在读取偏好词库…": "Loading preference data…",
+  "正在测试…": "Testing…",
+  "连接正常": "Connection successful",
+  "连接失败": "Connection failed",
+  "正在读取备份列表…": "Loading backup list…",
+  "正在读取历史维护状态…": "Loading history-maintenance status…",
+  "正在读取日志列表…": "Loading log list…",
+  "正在读取日志内容…": "Loading log content…",
+  "选择一个日志文件后可在这里查看内容。": "Select a log file to view its contents here.",
+  "尚无旧历史导入记录。": "No legacy-history import records yet.",
+  "已有任务运行或正在等待工作进程接手；完成后可再次启动。": "A task is running or waiting for worker hand-off. Start another after it finishes.",
+  "停止当前任务": "Stop current task",
+  "关闭后不会展示或使用此前提取的关键词；缓存会保留，重新开启后可继续复用。": "Previously extracted keywords are hidden and unused when disabled. The cache is kept and can be reused after re-enabling.",
+  "移除来源": "Remove source",
+  "地址已存在。": "Address already exists.",
+  "主导航": "Primary navigation",
+  "页面导航": "Page navigation",
+  "保存所有更改 · 有未保存修改": "Save All Changes · Unsaved",
+  "配置有未保存修改": "Configuration has unsaved changes",
+  ".env 与 config.json 已加载": ".env and config.json loaded",
+  "请求未完成。": "Request did not complete.",
+  "暂无数据": "No data",
+  "已等待超过正常接手时间": "Waiting beyond the normal hand-off time",
+  "⚠️ 工作进程未接手请求": "⚠️ Worker has not claimed the request",
+  "清除过期请求": "Clear stale requests",
+  "（已截断）": " (truncated)",
+  "正在读取状态": "Loading status",
+  "上次任务未完成": "The previous task did not finish",
+  "请填写有效的开始和结束日期。": "Enter a valid start and end date.",
+  "过去日报已加入队列。": "Past daily reports queued.",
+  "（默认内置）": " (built-in default)",
+  "（内置）": " (built-in)",
+  "添加分类": "Add category",
+  "不限制 arXiv 分类": "No arXiv category limit",
+  "关键词中的引号或转义符不完整。": "A quote or escape sequence in the keywords is incomplete.",
+  "模板已保存。": "Template saved.",
+  "提示词模板已保存。": "Prompt template saved.",
+  "提示词模板已删除。": "Prompt template deleted.",
+  "请填写至少一个研究关键词。": "Enter at least one research keyword.",
+  "请填写有效的日期范围。": "Enter a valid date range.",
+  "趋势任务已加入队列。": "Trend task queued.",
+  "读取报告失败。": "Failed to read report.",
+  "论文偏好已保存。": "Paper preference saved.",
+  "未完成": "Incomplete",
+  "已全部选择": "All selected",
+  "尚未选择分类": "No categories selected",
+  "来源代码无效；只能使用小写字母、数字和下划线。": "Source code must use lowercase letters, numbers, and underscores only.",
+  "来源代码已经存在。": "Source code already exists.",
+  "ISSN 至少需要填写一项。": "Enter at least one ISSN.",
+  "合计 Token": "Total Tokens",
+  "📌 系统日志": "📌 System Logs",
+  "📀 运行日志": "📀 Run Logs",
+  "📄 其他日志": "📄 Other Logs",
+  "仅显示最后 300 行": "Last 300 lines only",
+  "密码已修改，请使用新密码重新登录。": "Password changed. Sign in again with the new password.",
+  "管理员账户已创建。": "Administrator account created.",
+  "管理员密码已重置。": "Administrator password reset.",
+  "管理员已删除。": "Administrator deleted.",
+  "配置已保存。": "Configuration saved.",
+  "任务已加入队列。": "Task queued.",
+  "确认停止当前任务？已完成的阶段会保留，未完成论文将留队等待重试。": "Stop the current task? Completed stages are kept and unfinished papers remain queued for retry.",
+  "已发送停止请求。": "Stop request sent.",
+  "确认清除所有本地过期任务请求？未被工作进程接手的任务需要重新提交。": "Clear all stale local task requests? Requests not claimed by the worker must be submitted again.",
+  "确认跳过登录？仅建议在可信内网使用。": "Skip sign-in? Use this only on a trusted private network.",
+  "配置已重新加载。": "Configuration reloaded.",
+  "确认请求重启研究容器？正在运行的任务会由容器重启策略处理。": "Request a research-container restart? Running tasks are handled by the container restart policy.",
 });
 
 const FALLBACK_ARXIV_CATEGORIES = [
@@ -983,26 +1162,28 @@ function statusCard(status, options = {}) {
   const task = status.task || {};
   const total = Number(task.total);
   const current = Number(task.current);
-  const progress = Number.isFinite(total) && total > 0 && Number.isFinite(current) ? `<div class="progress"><div><i style="width:${Math.max(3, Math.min(100, current / total * 100))}%"></i></div><span>当前进度 ${current} / ${total}</span></div>` : "";
+  const progress = Number.isFinite(total) && total > 0 && Number.isFinite(current)
+    ? `<div class="progress"><div><i style="width:${Math.max(3, Math.min(100, current / total * 100))}%"></i></div><span>${escapeHtml(localeText(`当前进度 ${current} / ${total}`, `Progress ${current} / ${total}`))}</span></div>`
+    : "";
   const counters = task.counters && typeof task.counters === "object" ? task.counters : null;
   const counterText = counters ? [
-    `登记 ${formatNumber(counters.registered)}`,
-    `评分 ${formatNumber(counters.scored)}`,
-    `分析 ${formatNumber(counters.analyzed)}`,
-    `完成 ${formatNumber(counters.completed)}`,
-    `失败 ${formatNumber(counters.failed)}`,
+    localeText(`登记 ${formatNumber(counters.registered)}`, `Registered ${formatNumber(counters.registered)}`),
+    localeText(`评分 ${formatNumber(counters.scored)}`, `Scored ${formatNumber(counters.scored)}`),
+    localeText(`分析 ${formatNumber(counters.analyzed)}`, `Analysed ${formatNumber(counters.analyzed)}`),
+    localeText(`完成 ${formatNumber(counters.completed)}`, `Completed ${formatNumber(counters.completed)}`),
+    localeText(`失败 ${formatNumber(counters.failed)}`, `Failed ${formatNumber(counters.failed)}`),
   ].join(" · ") : "";
   const relevantLocks = Array.isArray(status.relevant_locks) ? status.relevant_locks : [];
   const relevantNames = new Set(relevantLocks.map((lock) => String(lock.name || "")));
-  const lockLine = relevantLocks.length ? `<p class="status-locks">运行锁：${relevantLocks.map((lock) => `${escapeHtml(lock.name || "—")}${lock.pid ? ` (PID ${escapeHtml(lock.pid)})` : ""}`).join(" · ")}</p>` : "";
+  const lockLine = relevantLocks.length ? `<p class="status-locks">${escapeHtml(localeText("运行锁：", "Run locks: "))}${relevantLocks.map((lock) => `${escapeHtml(lock.name || "—")}${lock.pid ? ` (PID ${escapeHtml(lock.pid)})` : ""}`).join(" · ")}</p>` : "";
   const relatedLocks = (Array.isArray(status.active_locks) ? status.active_locks : []).filter((lock) => !relevantNames.has(String(lock.name || "")));
-  const relatedLine = relatedLocks.length ? `<p class="status-locks">同时运行：${relatedLocks.map((lock) => escapeHtml(lock.name || "—")).join(" · ")}</p>` : "";
-  const liveLog = status.live_log && typeof status.live_log === "object" && status.live_log.content ? `<details class="live-log" open><summary>📜 ${escapeHtml(status.live_log.name || "运行日志")} · 日志尾部 15 行${status.live_log.truncated ? "（已截断）" : ""}</summary><pre>${escapeHtml(status.live_log.content)}</pre></details>` : "";
+  const relatedLine = relatedLocks.length ? `<p class="status-locks">${escapeHtml(localeText("同时运行：", "Also running: "))}${relatedLocks.map((lock) => escapeHtml(lock.name || "—")).join(" · ")}</p>` : "";
+  const liveLog = status.live_log && typeof status.live_log === "object" && status.live_log.content ? `<details class="live-log" open><summary>📜 ${escapeHtml(status.live_log.name || localeText("运行日志", "Run log"))} · ${escapeHtml(localeText("日志尾部 15 行", "Last 15 log lines"))}${status.live_log.truncated ? localeText("（已截断）", " (truncated)") : ""}</summary><pre>${escapeHtml(status.live_log.content)}</pre></details>` : "";
   const stop = status.can_stop && options.allowStop !== false
     ? `<button class="danger-button" data-stop-task="${escapeAttribute(status.stop_kind || options.kind || "")}">停止当前任务</button>`
     : "";
   const refresh = options.refresh === false ? "" : `<button class="secondary-button" data-refresh-status="${escapeAttribute(options.kind || "daily")}">刷新状态</button>`;
-  return `<div class="status-card"><div class="status-line"><i class="status-dot ${escapeAttribute(task.state || "idle")}"></i><div><p class="eyebrow">当前任务</p><h3>${escapeHtml(task.label || "正在读取状态")}</h3><p class="muted">${escapeHtml(task.phase || "")}</p></div><span class="timestamp">${task.started_at ? `开始于 ${escapeHtml(formatTime(task.started_at))}` : ""}</span></div>${counterText ? `<p class="status-counters">${escapeHtml(counterText)}</p>` : ""}${progress}${lockLine}${relatedLine}${triggerNotice(status)}${task.detail ? `<p class="issue-box">${escapeHtml(task.detail)}</p>` : ""}${liveLog}<div class="action-row">${options.startLabel ? `<button class="primary-button" data-start-task="${escapeAttribute(options.mode)}" ${status.can_start ? "" : "disabled"}>${escapeHtml(options.startLabel)}</button>` : ""}${stop}${refresh}</div></div>`;
+  return `<div class="status-card"><div class="status-line"><i class="status-dot ${escapeAttribute(task.state || "idle")}"></i><div><p class="eyebrow">${escapeHtml(localeText("当前任务", "Current task"))}</p><h3>${escapeHtml(localizedString(task.label || localeText("正在读取状态", "Loading status")))}</h3><p class="muted">${escapeHtml(localizedString(task.phase || ""))}</p></div><span class="timestamp">${task.started_at ? `${escapeHtml(localeText("开始于 ", "Started "))}${escapeHtml(formatTime(task.started_at))}` : ""}</span></div>${counterText ? `<p class="status-counters">${escapeHtml(counterText)}</p>` : ""}${progress}${lockLine}${relatedLine}${triggerNotice(status)}${task.detail ? `<p class="issue-box">${escapeHtml(localizedString(task.detail))}</p>` : ""}${liveLog}<div class="action-row">${options.startLabel ? `<button class="primary-button" data-start-task="${escapeAttribute(options.mode)}" ${status.can_start ? "" : "disabled"}>${escapeHtml(options.startLabel)}</button>` : ""}${stop}${refresh}</div></div>`;
 }
 
 function metrics(items) {
@@ -1037,6 +1218,7 @@ function updateDailyStatus(root, status) {
   bindCommon(statusHost);
   applyLocale(launch);
   applyLocale(statusHost);
+  applyLocale(queue);
   return true;
 }
 
@@ -1052,7 +1234,7 @@ async function refreshDailyStatus() {
   } catch (error) {
     // Preserve the usable page and settings form if a transient status read
     // fails; the next manual refresh or task update can retry it.
-    toast(`状态刷新失败：${error.message}`, "error");
+    toast(localeText(`状态刷新失败：${error.message}`, `Status refresh failed: ${error.message}`), "error");
   }
 }
 
@@ -1088,8 +1270,8 @@ function pastDailyMarkup(status, values) {
   const queue = status.backfill || {};
   const hasQueue = ["pending", "running", "completed", "failed"].some((key) => Number(queue[key] || 0) > 0);
   return `${section("过去日报", `<p class="hint-text">选择过去日期范围后开始运行。系统会按天把任务写入持久化队列，并与其他研究任务安全互斥。</p><div class="form-grid two"><label class="form-field"><span>开始日期</span><input id="backfill-from" type="date" min="1991-01-01" max="${yesterday}" value="${escapeAttribute(values.from)}" /></label><label class="form-field"><span>结束日期</span><input id="backfill-to" type="date" min="1991-01-01" max="${yesterday}" value="${escapeAttribute(values.to)}" /></label></div><div class="action-row"><button id="backfill-start" class="primary-button" ${status.can_start ? "" : "disabled"}>开始运行</button><button id="past-status-refresh" class="secondary-button">刷新状态</button></div>${triggerNotice(status)}${compactTaskNotice(status)}`, { icon: "🗓" })}${divider()}${section("过去日报队列", hasQueue ? metrics([
-    { label: "等待中", value: formatNumber(queue.pending), help: queue.next_date ? `下一日期：${queue.next_date}` : "暂无待处理日期" },
-    { label: "运行中", value: formatNumber(queue.running), help: queue.active_date ? `当前日期：${queue.active_date}` : "" },
+    { label: "等待中", value: formatNumber(queue.pending), help: queue.next_date ? localeText(`下一日期：${queue.next_date}`, `Next date: ${queue.next_date}`) : "暂无待处理日期" },
+    { label: "运行中", value: formatNumber(queue.running), help: queue.active_date ? localeText(`当前日期：${queue.active_date}`, `Current date: ${queue.active_date}`) : "" },
     { label: "已完成", value: formatNumber(queue.completed), help: "已生成历史日期报告" },
     { label: "失败", value: formatNumber(queue.failed), help: queue.first_error || "失败任务可在日志中查看" },
   ]) : '<p class="empty-state">当前没有过去日报任务。</p>', { icon: "📋" })}`;
@@ -1234,7 +1416,9 @@ async function renderTrend(token) {
     const button = $("#trend-template-delete");
     if (!button) return;
     button.disabled = !item || Boolean(item.builtin && !item.overridden);
-    button.textContent = item?.builtin ? "恢复内置模板" : "删除当前模板";
+    button.textContent = item?.builtin
+      ? localeText("恢复内置模板", "Restore built-in template")
+      : localeText("删除当前模板", "Delete current template");
   };
   const selectTemplate = (name) => {
     const item = templates.find((candidate) => candidate.name === name) || null;
@@ -1255,6 +1439,7 @@ async function renderTrend(token) {
     if (!selector) return;
     selector.innerHTML = templateOptions(selected);
     selector.value = selected || "";
+    applyLocale(selector);
   };
   const trendCategoryChoices = () => arxivCategories().map((item) => ({ value: item.code, label: item.label }));
   const renderTrendCategories = () => {
@@ -1310,7 +1495,7 @@ async function renderTrend(token) {
       refreshTemplateOptions(name);
       selectTemplate(name);
       markConfigurationDirty();
-      $("#trend-template-result", root).textContent = "模板已保存。";
+      $("#trend-template-result", root).textContent = localeText("模板已保存。", "Template saved.");
       $("#trend-template-result", root).className = "inline-result success";
       toast("提示词模板已保存。", "success");
     } catch (error) { toast(error.message, "error"); }
@@ -1319,8 +1504,10 @@ async function renderTrend(token) {
     const name = $("#trend-template").value;
     const item = selectedTemplate();
     if (!name || !item) return;
-    const action = item.builtin ? "恢复" : "删除";
-    if (!window.confirm(`确认${action}提示词模板“${name}”？`)) return;
+    const confirmation = item.builtin
+      ? localeText(`确认恢复提示词模板“${name}”？`, `Restore the built-in prompt template “${name}”?`)
+      : localeText(`确认删除提示词模板“${name}”？`, `Delete prompt template “${name}”?`);
+    if (!window.confirm(confirmation)) return;
     try {
       const result = await api("/api/trend/templates/delete", { method: "POST", body: { name } });
       templates = Array.isArray(result.items) ? result.items : templates;
@@ -1373,7 +1560,7 @@ async function refreshTrendStatus(root = $("#page-root"), token = state.renderTo
     // the analysis form or discarding its in-progress values.
     const start = root._trendStartHandler;
     if (typeof start === "function") $("#trend-start", root)?.addEventListener("click", start);
-  } catch (error) { toast(`状态刷新失败：${error.message}`, "error"); }
+  } catch (error) { toast(localeText(`状态刷新失败：${error.message}`, `Status refresh failed: ${error.message}`), "error"); }
 }
 
 function reportTypeLabel(type) {
@@ -1596,6 +1783,7 @@ async function loadReportPreview(report, reports, token, chooseReport) {
     $$('[data-report-nav]', preview).forEach((button) => button.addEventListener("click", () => {
       if (button.dataset.reportNav) chooseReport(button.dataset.reportNav);
     }));
+    applyLocale(preview);
     if (report.type === "daily" && marked.injected) {
       const markAbortController = new AbortController();
       state.reportMarkAbortController = markAbortController;
@@ -1619,6 +1807,7 @@ async function loadReportPreview(report, reports, token, chooseReport) {
   } catch (error) {
     preview.className = "report-preview-host";
     preview.innerHTML = section("报告预览", `<p class="error-message">${escapeHtml(error.message)}</p>`);
+    applyLocale(preview);
   }
 }
 
@@ -1727,17 +1916,17 @@ function searchParamsFromState() {
 
 function sourceVariantCard(variant) {
   const statuses = [
-    variant.strategy_id ? `策略：${variant.strategy_id}` : "",
-    variant.score_status ? `评分：${variant.score_status}` : "",
-    variant.translation_status ? `翻译：${variant.translation_status}` : "",
-    variant.analysis_status ? `分析：${variant.analysis_status}` : "",
+    variant.strategy_id ? localeText(`策略：${variant.strategy_id}`, `Strategy: ${variant.strategy_id}`) : "",
+    variant.score_status ? localeText(`评分：${variant.score_status}`, `Scoring: ${variant.score_status}`) : "",
+    variant.translation_status ? localeText(`翻译：${variant.translation_status}`, `Translation: ${variant.translation_status}`) : "",
+    variant.analysis_status ? localeText(`分析：${variant.analysis_status}`, `Analysis: ${variant.analysis_status}`) : "",
   ].filter(Boolean).join(" · ");
   const url = safeExternalUrl(variant.url);
   const pdfUrl = safeExternalUrl(variant.pdf_url);
   const analysis = variant.analysis && typeof variant.analysis === "object" && Object.keys(variant.analysis).length
     ? `<details class="paper-analysis"><summary>深度分析</summary><pre>${escapeHtml(JSON.stringify(variant.analysis, null, 2))}</pre></details>`
     : "";
-  return `<article class="paper-variant"><h4>${escapeHtml(variant.source || "—")} · ${escapeHtml(formatTime(variant.completed_at) || "未完成")}</h4>${statuses ? `<p class="muted">${escapeHtml(statuses)}</p>` : ""}${variant.tldr ? `<p><strong>TL;DR：</strong>${escapeHtml(variant.tldr)}</p>` : ""}${variant.abstract_cn ? `<p><strong>中文摘要：</strong>${escapeHtml(variant.abstract_cn)}</p>` : ""}${variant.extracted_keywords?.length ? `<p><strong>关键词：</strong>${escapeHtml(variant.extracted_keywords.join(" · "))}</p>` : ""}${analysis}${variant.last_error ? `<p class="error-message">问题：${escapeHtml(variant.last_error)}</p>` : ""}${url || pdfUrl ? `<p>${url ? `<a href="${escapeAttribute(url)}" target="_blank" rel="noopener noreferrer">论文页面</a>` : ""}${url && pdfUrl ? " · " : ""}${pdfUrl ? `<a href="${escapeAttribute(pdfUrl)}" target="_blank" rel="noopener noreferrer">PDF</a>` : ""}</p>` : ""}${variant.report_path ? `<p class="muted">报告路径：${escapeHtml(variant.report_path)}</p>` : ""}</article>`;
+  return `<article class="paper-variant"><h4>${escapeHtml(variant.source || "—")} · ${escapeHtml(formatTime(variant.completed_at) || localeText("未完成", "Incomplete"))}</h4>${statuses ? `<p class="muted">${escapeHtml(statuses)}</p>` : ""}${variant.tldr ? `<p><strong>TL;DR：</strong>${escapeHtml(variant.tldr)}</p>` : ""}${variant.abstract_cn ? `<p><strong>中文摘要：</strong>${escapeHtml(variant.abstract_cn)}</p>` : ""}${variant.extracted_keywords?.length ? `<p><strong>关键词：</strong>${escapeHtml(variant.extracted_keywords.join(" · "))}</p>` : ""}${analysis}${variant.last_error ? `<p class="error-message">${escapeHtml(localeText("问题：", "Issue: "))}${escapeHtml(variant.last_error)}</p>` : ""}${url || pdfUrl ? `<p>${url ? `<a href="${escapeAttribute(url)}" target="_blank" rel="noopener noreferrer">论文页面</a>` : ""}${url && pdfUrl ? " · " : ""}${pdfUrl ? `<a href="${escapeAttribute(pdfUrl)}" target="_blank" rel="noopener noreferrer">PDF</a>` : ""}</p>` : ""}${variant.report_path ? `<p class="muted">${escapeHtml(localeText("报告路径：", "Report path: "))}${escapeHtml(variant.report_path)}</p>` : ""}</article>`;
 }
 
 function paperCard(item) {
@@ -1748,13 +1937,13 @@ function paperCard(item) {
   const url = safeExternalUrl(item.url);
   const pdfUrl = safeExternalUrl(item.pdf_url);
   const metadata = [
-    `来源：${sources || "—"}`,
-    `完成：${formatTime(item.completed_at) || "—"}`,
-    item.published_date ? `发布：${item.published_date}` : "",
-    item.strategy_id ? `策略：${item.strategy_id}` : "",
+    localeText(`来源：${sources || "—"}`, `Source: ${sources || "—"}`),
+    localeText(`完成：${formatTime(item.completed_at) || "—"}`, `Completed: ${formatTime(item.completed_at) || "—"}`),
+    item.published_date ? localeText(`发布：${item.published_date}`, `Published: ${item.published_date}`) : "",
+    item.strategy_id ? localeText(`策略：${item.strategy_id}`, `Strategy: ${item.strategy_id}`) : "",
   ].filter(Boolean).join(" ｜ ");
   const variants = (item.variants || []).map(sourceVariantCard).join("");
-  return `<details class="paper-card"><summary><span class="score-pill">${score}</span><strong>${badge} ${escapeHtml(item.title)}${preference}</strong><small>${escapeHtml(metadata)}</small></summary><div class="paper-content">${item.authors?.length ? `<p><strong>作者：</strong>${escapeHtml(item.authors.slice(0, 12).join(", "))}</p>` : ""}${item.tldr ? `<p><strong>TL;DR：</strong>${escapeHtml(item.tldr)}</p>` : ""}${(item.merged_keywords || item.extracted_keywords)?.length ? `<p><strong>合并关键词：</strong>${escapeHtml((item.merged_keywords || item.extracted_keywords).join(" · "))}</p>` : ""}${item.categories?.length ? `<p class="muted">分类：${escapeHtml(item.categories.join(" "))}</p>` : ""}${url || pdfUrl ? `<p>${url ? `<a href="${escapeAttribute(url)}" target="_blank" rel="noopener noreferrer">arXiv / 论文页面</a>` : ""}${url && pdfUrl ? " ｜ " : ""}${pdfUrl ? `<a href="${escapeAttribute(pdfUrl)}" target="_blank" rel="noopener noreferrer">PDF</a>` : ""}</p>` : ""}${variants ? `<div class="paper-variants"><h3>来源变体</h3>${variants}</div>` : ""}</div></details>`;
+  return `<details class="paper-card"><summary><span class="score-pill">${score}</span><strong>${badge} ${escapeHtml(item.title)}${preference}</strong><small>${escapeHtml(metadata)}</small></summary><div class="paper-content">${item.authors?.length ? `<p><strong>作者：</strong>${escapeHtml(item.authors.slice(0, 12).join(", "))}</p>` : ""}${item.tldr ? `<p><strong>TL;DR：</strong>${escapeHtml(item.tldr)}</p>` : ""}${(item.merged_keywords || item.extracted_keywords)?.length ? `<p><strong>合并关键词：</strong>${escapeHtml((item.merged_keywords || item.extracted_keywords).join(" · "))}</p>` : ""}${item.categories?.length ? `<p class="muted">${escapeHtml(localeText("分类：", "Categories: "))}${escapeHtml(item.categories.join(" "))}</p>` : ""}${url || pdfUrl ? `<p>${url ? `<a href="${escapeAttribute(url)}" target="_blank" rel="noopener noreferrer">arXiv / 论文页面</a>` : ""}${url && pdfUrl ? " ｜ " : ""}${pdfUrl ? `<a href="${escapeAttribute(pdfUrl)}" target="_blank" rel="noopener noreferrer">PDF</a>` : ""}</p>` : ""}${variants ? `<div class="paper-variants"><h3>来源变体</h3>${variants}</div>` : ""}</div></details>`;
 }
 
 async function renderPaperSearch(token) {
@@ -1781,20 +1970,27 @@ async function renderPaperSearch(token) {
 async function loadSearchResults(token) {
   const target = $("#search-results"); if (!target) return;
   target.innerHTML = '<div class="loading">正在检索 SQLite 历史库…</div>';
+  applyLocale(target);
   try {
     const values = state.pageData.search;
     const result = await api(`/api/papers?${searchParamsFromState()}`);
     if (token !== state.renderToken) return;
     if (!result.available) {
       target.innerHTML = '<p class="info-box">SQLite 数据库尚未创建；运行一次每日研究或导入历史后即可检索。</p>';
+      applyLocale(target);
       return;
     }
     const pages = Math.max(1, Math.ceil(result.total / values.size));
     const pager = pages > 1 ? `<div class="pager"><span>${state.language === "en" ? `Page ${values.page + 1} / ${pages} · 20 papers per page` : `第 ${values.page + 1} / ${pages} 页 · 每页 20 篇`}</span><button id="search-prev" class="secondary-button compact-button" ${values.page === 0 ? "disabled" : ""}>${localeText("上一页", "Previous")}</button><button id="search-next" class="secondary-button compact-button" ${values.page >= pages - 1 ? "disabled" : ""}>${localeText("下一页", "Next")}</button></div>` : "";
-    target.innerHTML = section(`检索结果（共 ${result.total} 篇匹配）`, `${result.items?.length ? result.items.map(paperCard).join("") : '<p class="empty-state">没有匹配的论文。</p>'}${pager}`);
+    const resultTitle = localeText(`检索结果（共 ${result.total} 篇匹配）`, `Search results (${result.total} matches)`);
+    target.innerHTML = section(resultTitle, `${result.items?.length ? result.items.map(paperCard).join("") : '<p class="empty-state">没有匹配的论文。</p>'}${pager}`);
+    applyLocale(target);
     $("#search-prev")?.addEventListener("click", () => { values.page -= 1; loadSearchResults(token); });
     $("#search-next")?.addEventListener("click", () => { values.page += 1; loadSearchResults(token); });
-  } catch (error) { target.innerHTML = `<p class="error-message">${escapeHtml(error.message)}</p>`; }
+  } catch (error) {
+    target.innerHTML = `<p class="error-message">${escapeHtml(error.message)}</p>`;
+    applyLocale(target);
+  }
 }
 
 function weightedEntries(configKey, legacyNamesKey, legacyValueKey, nameKey, valueKey, fallbackValue) {
@@ -1812,10 +2008,15 @@ function weightedEntries(configKey, legacyNamesKey, legacyValueKey, nameKey, val
 }
 
 function weightedEntryEditor({ id, entries, nameKey, valueKey, nameLabel, valueLabel, placeholder, min = 0, max = 1, step = 0.05, addLabel = "添加" }) {
+  const localizedName = localizedString(nameLabel);
+  const listAriaLabel = localeText(`${nameLabel}列表`, `${localizedName} list`);
+  const emptyLabel = state.language === "en"
+    ? (nameLabel === "关键词" ? "No keywords added" : nameLabel === "作者" ? "No authors added" : `No ${localizedName.toLowerCase()} entries added`)
+    : `${nameLabel}尚未添加`;
   const cards = entries.length
-    ? entries.map((entry, index) => `<span class="weighted-entry-card"><span>${escapeHtml(entry[nameKey])}</span><small>${escapeHtml(Number(entry[valueKey]).toFixed(2))}</small><button type="button" data-weighted-entry-remove="${escapeAttribute(id)}" data-weighted-entry-index="${index}" aria-label="移除 ${escapeAttribute(entry[nameKey])}">×</button></span>`).join("")
-    : `<span class="tag-select-placeholder">${escapeHtml(nameLabel)}尚未添加</span>`;
-  return `<div id="${escapeAttribute(id)}" class="weighted-entry-editor"><div class="weighted-entry-box" aria-label="${escapeAttribute(nameLabel)}列表"><div class="weighted-entry-cards">${cards}</div></div><div class="weighted-entry-add"><label class="form-field"><span>${escapeHtml(nameLabel)}</span><input id="${escapeAttribute(id)}-name" maxlength="500" placeholder="${escapeAttribute(placeholder)}" /></label><label class="form-field narrow-number-field"><span>${escapeHtml(valueLabel)}</span><input id="${escapeAttribute(id)}-value" type="number" min="${min}" max="${max}" step="${step}" value="${escapeAttribute(step === 0.05 ? 1 : 5)}" /></label><button type="button" class="secondary-button" data-weighted-entry-add="${escapeAttribute(id)}">${escapeHtml(addLabel)}</button></div></div>`;
+    ? entries.map((entry, index) => `<span class="weighted-entry-card"><span>${escapeHtml(entry[nameKey])}</span><small>${escapeHtml(Number(entry[valueKey]).toFixed(2))}</small><button type="button" data-weighted-entry-remove="${escapeAttribute(id)}" data-weighted-entry-index="${index}" aria-label="${escapeAttribute(localeText(`移除 ${entry[nameKey]}`, `Remove ${entry[nameKey]}`))}">×</button></span>`).join("")
+    : `<span class="tag-select-placeholder">${escapeHtml(emptyLabel)}</span>`;
+  return `<div id="${escapeAttribute(id)}" class="weighted-entry-editor"><div class="weighted-entry-box" aria-label="${escapeAttribute(listAriaLabel)}"><div class="weighted-entry-cards">${cards}</div></div><div class="weighted-entry-add"><label class="form-field"><span>${escapeHtml(nameLabel)}</span><input id="${escapeAttribute(id)}-name" maxlength="500" placeholder="${escapeAttribute(placeholder)}" /></label><label class="form-field narrow-number-field"><span>${escapeHtml(valueLabel)}</span><input id="${escapeAttribute(id)}-value" type="number" min="${min}" max="${max}" step="${step}" value="${escapeAttribute(step === 0.05 ? 1 : 5)}" /></label><button type="button" class="secondary-button" data-weighted-entry-add="${escapeAttribute(id)}">${escapeHtml(addLabel)}</button></div></div>`;
 }
 
 function replaceWeightedEntryEditor(root, options) {
@@ -1823,6 +2024,7 @@ function replaceWeightedEntryEditor(root, options) {
   if (!host) return;
   host.outerHTML = weightedEntryEditor(options);
   bindWeightedEntryEditor(root, options);
+  applyLocale($(`#${options.id}`, root));
 }
 
 function bindWeightedEntryEditor(root, options) {
@@ -1836,13 +2038,18 @@ function bindWeightedEntryEditor(root, options) {
   $(`[data-weighted-entry-add="${id}"]`, root)?.addEventListener("click", () => {
     const name = String($(`#${id}-name`, root)?.value || "").trim();
     const numericValue = Number($(`#${id}-value`, root)?.value);
-    if (!name) return toast(`请填写${options.nameLabel}。`, "error");
+    const localizedName = localizedString(options.nameLabel).toLowerCase();
+    const localizedValue = localizedString(options.valueLabel);
+    if (!name) return toast(localeText(`请填写${options.nameLabel}。`, `Enter ${localizedName}.`), "error");
     if (!Number.isFinite(numericValue) || numericValue < min || numericValue > max) {
-      return toast(`${options.valueLabel}必须在 ${min}–${max} 之间。`, "error");
+      return toast(localeText(
+        `${options.valueLabel}必须在 ${min}–${max} 之间。`,
+        `${localizedValue} must be between ${min} and ${max}.`,
+      ), "error");
     }
     const entries = currentEntries();
     if (entries.some((entry) => entry[nameKey].localeCompare(name, undefined, { sensitivity: "accent" }) === 0)) {
-      return toast(`${options.nameLabel}已存在。`, "error");
+      return toast(localeText(`${options.nameLabel}已存在。`, `${localizedName} already exists.`), "error");
     }
     entries.push({ [nameKey]: name, [valueKey]: numericValue });
     persist(entries);
@@ -1959,7 +2166,7 @@ function tagMultiSelect({ id, label, selected, choices, addLabel, emptyLabel, he
     value: String(value), label: String(value),
   });
   const chips = selectedItems.length
-    ? selectedItems.map((item) => `<span class="source-tag"><span>${escapeHtml(item.label)}</span><button type="button" data-tag-remove="${escapeAttribute(id)}" data-tag-value="${escapeAttribute(item.value)}" aria-label="移除 ${escapeAttribute(item.label)}">×</button></span>`).join("")
+    ? selectedItems.map((item) => `<span class="source-tag"><span>${escapeHtml(item.label)}</span><button type="button" data-tag-remove="${escapeAttribute(id)}" data-tag-value="${escapeAttribute(item.value)}" aria-label="${escapeAttribute(localeText(`移除 ${item.label}`, `Remove ${item.label}`))}">×</button></span>`).join("")
     : `<span class="tag-select-placeholder">${escapeHtml(emptyLabel)}</span>`;
   const available = choices.filter((item) => !selectedSet.has(String(item.value)));
   const picker = available.length
@@ -2007,19 +2214,26 @@ function validatedCustomJournalSource(raw, data) {
   // editing unrelated settings and pressing the global Save button.
   const code = String(raw.code || "").trim().toLowerCase();
   if (!/^[a-z][a-z0-9_]{1,63}$/.test(code)) {
-    throw new Error("来源代码无效；只能使用小写字母、数字和下划线。");
+    throw new Error(localeText(
+      "来源代码无效；只能使用小写字母、数字和下划线。",
+      "Source code must use lowercase letters, numbers, and underscores only.",
+    ));
   }
   if (["arxiv", "prl"].includes(code)) {
-    throw new Error(`来源代码与内置核心来源冲突：${code}。`);
+    throw new Error(localeText(
+      `来源代码与内置核心来源冲突：${code}。`,
+      `Source code conflicts with a built-in core source: ${code}.`,
+    ));
   }
   if (data.custom.some((item) => item.code === code) || data.builtins.includes(code)) {
-    throw new Error("来源代码已经存在。");
+    throw new Error(localeText("来源代码已经存在。", "Source code already exists."));
   }
   const text = (value, label) => {
     const normalized = String(value || "").trim();
-    if (!normalized) throw new Error(`${label}不能为空。`);
+    const localizedLabel = localizedString(label);
+    if (!normalized) throw new Error(localeText(`${label}不能为空。`, `${localizedLabel} is required.`));
     if (normalized.length > 200 || /[\x00-\x1F\x7F]/.test(normalized)) {
-      throw new Error(`${label}包含无效字符或过长。`);
+      throw new Error(localeText(`${label}包含无效字符或过长。`, `${localizedLabel} is invalid or too long.`));
     }
     return normalized;
   };
@@ -2027,11 +2241,12 @@ function validatedCustomJournalSource(raw, data) {
   for (const item of raw.issn || []) {
     const normalized = String(item || "").trim().toUpperCase();
     if (!/^\d{4}-\d{3}[\dX]$/.test(normalized)) {
-      throw new Error(`ISSN 无效：${normalized || "（空）"}。`);
+      const value = normalized || localeText("（空）", "(blank)");
+      throw new Error(localeText(`ISSN 无效：${value}。`, `Invalid ISSN: ${value}.`));
     }
     if (!issn.includes(normalized)) issn.push(normalized);
   }
-  if (!issn.length) throw new Error("ISSN 至少需要填写一项。");
+  if (!issn.length) throw new Error(localeText("ISSN 至少需要填写一项。", "Enter at least one ISSN."));
   return {
     type: "openalex_journal",
     code,
@@ -2119,7 +2334,10 @@ async function renderScoring(token) {
         const value = Number(row.weight);
         return Number.isFinite(value) ? `${value >= 0 ? "+" : ""}${value.toFixed(2)}` : "—";
       };
-      if (host) host.innerHTML = `<div class="form-grid two"><div><p class="scroll-list-label">学习关键词</p>${nativeScrollTable([{ label: "关键词", key: "term" }, { label: "权重", value: signedWeight }], learned.keywords || [], { empty: "暂无学习关键词", visibleRows: 10 })}</div><div><p class="scroll-list-label">学习作者</p>${nativeScrollTable([{ label: "作者", key: "term" }, { label: "权重", value: signedWeight }], learned.authors || [], { empty: "暂无学习作者", visibleRows: 10 })}</div></div><p class="hint-text">偏好项来自已保存的喜欢/不喜欢和历史记录；仅展示当前 SQLite 历史库中的结果。</p>`;
+      if (host) {
+        host.innerHTML = `<div class="form-grid two"><div><p class="scroll-list-label">学习关键词</p>${nativeScrollTable([{ label: "关键词", key: "term" }, { label: "权重", value: signedWeight }], learned.keywords || [], { empty: "暂无学习关键词", visibleRows: 10 })}</div><div><p class="scroll-list-label">学习作者</p>${nativeScrollTable([{ label: "作者", key: "term" }, { label: "权重", value: signedWeight }], learned.authors || [], { empty: "暂无学习作者", visibleRows: 10 })}</div></div><p class="hint-text">偏好项来自已保存的喜欢/不喜欢和历史记录；仅展示当前 SQLite 历史库中的结果。</p>`;
+        applyLocale(host);
+      }
     } catch (error) { /* preference library is optional */ }
   }
 }
@@ -2305,16 +2523,25 @@ async function testLlm(role) {
 
 async function testConnection(kind, payload, resultId) {
   const result = $("#" + resultId);
-  if (result) result.textContent = "正在测试…";
+  if (result) result.textContent = localeText("正在测试…", "Testing…");
   try {
     const response = await api(`/api/connections/${encodeURIComponent(kind)}`, { method: "POST", body: payload });
-    if (result) { result.textContent = response.message || (response.ok ? "连接正常" : "连接失败"); result.className = `inline-result ${response.ok ? "success" : "error"}`; }
+    if (result) {
+      result.textContent = localizedString(response.message || (response.ok
+        ? localeText("连接正常", "Connection successful")
+        : localeText("连接失败", "Connection failed")));
+      result.className = `inline-result ${response.ok ? "success" : "error"}`;
+    }
   } catch (error) { if (result) { result.textContent = error.message; result.className = "inline-result error"; } else toast(error.message, "error"); }
 }
 
 function renderNotifications() {
   const testAction = (channel) => `<div class="action-row notification-test-action"><button type="button" class="secondary-button" data-test-notification="${escapeAttribute(channel)}">发送测试通知</button><span id="notification-test-${escapeAttribute(channel)}" class="inline-result"></span></div>`;
-  const channel = (key, label, channelId, fields) => `<details class="channel-card" ${configValue(key, false) ? "open" : ""}><summary>${escapeHtml(label)}</summary>${field({ label: `启用${label}`, key, type: "checkbox", fallback: false })}${fields}${testAction(channelId)}</details>`;
+  const channel = (key, label, channelId, fields) => {
+    const localizedLabel = state.language === "en" ? localizedString(label) : label;
+    const enabledLabel = localeText(`启用${label}`, `Enable ${localizedLabel}`);
+    return `<details class="channel-card" ${configValue(key, false) ? "open" : ""}><summary>${escapeHtml(localizedLabel)}</summary>${field({ label: enabledLabel, key, type: "checkbox", fallback: false })}${fields}${testAction(channelId)}</details>`;
+  };
   const emailFields = `<div class="form-grid three">${field({ label: "SMTP 主机", key: "SMTP_HOST", scope: "env" })}${field({ label: "端口", key: "SMTP_PORT", scope: "env", type: "number", min: 1, max: 65535, fallback: 587 })}${field({ label: "使用 TLS", key: "SMTP_USE_TLS", scope: "env", type: "checkbox", fallback: true })}${field({ label: "用户名", key: "SMTP_USER", scope: "env" })}${field({ label: "密码", key: "SMTP_PASSWORD", scope: "env", type: "secret" })}${field({ label: "发件人", key: "SMTP_FROM", scope: "env" })}${field({ label: "收件人（逗号分隔）", key: "SMTP_TO", scope: "env" })}</div>`;
   const mainBody = `${field({ label: "启用通知", key: "notifications_enabled", type: "checkbox", fallback: false })}<div class="form-grid three">${field({ label: "任务成功通知", key: "notify_on_success", type: "checkbox", fallback: true })}${field({ label: "任务失败通知", key: "notify_on_failure", type: "checkbox", fallback: true })}${field({ label: "通知中展示论文数量", key: "notification_top_n", type: "number", min: 1, max: 50, fallback: 5 })}</div>${field({ label: "附加报告文件", key: "notify_attach_reports", type: "checkbox", fallback: false })}`;
   const channels = section("通知渠道", `${channel("notify_email_enabled", "邮件", "email", emailFields)}${channel("notify_wechat_enabled", "企业微信", "wechat_work", field({ label: "Webhook URL", key: "WECHAT_WEBHOOK_URL", scope: "env", type: "secret" }))}${channel("notify_dingtalk_enabled", "钉钉", "dingtalk", `${field({ label: "Webhook URL", key: "DINGTALK_WEBHOOK_URL", scope: "env", type: "secret" })}${field({ label: "签名密钥（可选）", key: "DINGTALK_SECRET", scope: "env", type: "secret" })}`)}${channel("notify_telegram_enabled", "Telegram", "telegram", `<div class="form-grid two">${field({ label: "Bot Token", key: "TELEGRAM_BOT_TOKEN", scope: "env", type: "secret" })}${field({ label: "Chat ID", key: "TELEGRAM_CHAT_ID", scope: "env" })}</div>`)}${channel("notify_slack_enabled", "Slack", "slack", field({ label: "Webhook URL", key: "SLACK_WEBHOOK_URL", scope: "env", type: "secret" }))}${channel("notify_generic_webhook_enabled", "通用 Webhook", "generic", field({ label: "Webhook URL", key: "GENERIC_WEBHOOK_URL", scope: "env", type: "secret" }))}`, { icon: "📣" });
@@ -2361,10 +2588,75 @@ async function renderNotificationsPage(_token) {
   $$('[data-test-notification]', root).forEach((button) => button.addEventListener("click", () => void sendNotificationTest(button)));
 }
 
+function normalizeProxyNoProxyEntries(value) {
+  const supplied = Array.isArray(value) ? value : [value];
+  const seen = new Set();
+  return supplied
+    .flatMap((item) => String(item ?? "").split(/[\r\n,]+/))
+    .map((item) => item.trim())
+    .filter((item) => {
+      if (!item) return false;
+      const identity = item.toLowerCase();
+      if (seen.has(identity)) return false;
+      seen.add(identity);
+      return true;
+    });
+}
+
+function proxyNoProxyEntries() {
+  const savedEntries = configValue("proxy_no_proxy_entries", null);
+  if (Array.isArray(savedEntries)) return normalizeProxyNoProxyEntries(savedEntries);
+  const stored = configValue("proxy_no_proxy_ui", configValue("proxy_no_proxy", "localhost,127.0.0.1"));
+  return normalizeProxyNoProxyEntries(stored);
+}
+
 function proxyNoProxyEditor() {
-  const stored = String(configValue("proxy_no_proxy", "localhost,127.0.0.1") || "");
-  const display = String(configValue("proxy_no_proxy_ui", stored)).replaceAll(",", "\n");
-  return `<label class="form-field"><span>不使用代理的地址（每行一项）<span class="field-help">例如 localhost、127.0.0.1 或内网网段。</span></span><textarea data-field="proxy_no_proxy_ui" data-scope="config" rows="4" placeholder="localhost&#10;127.0.0.1&#10;192.168.1.0/24">${escapeHtml(display)}</textarea></label>`;
+  const entries = proxyNoProxyEntries();
+  const cards = entries.length
+    ? entries.map((entry, index) => `<span class="weighted-entry-card proxy-no-proxy-card"><span>${escapeHtml(entry)}</span><button type="button" data-proxy-no-proxy-remove="${index}" aria-label="${escapeAttribute(localeText(`移除 ${entry}`, `Remove ${entry}`))}">×</button></span>`).join("")
+    : '<span class="tag-select-placeholder">暂无不使用代理的地址。</span>';
+  return `<div id="proxy-no-proxy-editor" class="form-field proxy-no-proxy-field"><span>不使用代理的地址<span class="field-help">添加主机名、IP 地址或内网网段。</span></span><div class="weighted-entry-editor"><div class="weighted-entry-box"><div class="weighted-entry-cards">${cards}</div></div><div class="proxy-no-proxy-add"><label class="form-field"><span>地址</span><input id="proxy-no-proxy-input" maxlength="500" placeholder="localhost" /></label><button type="button" class="secondary-button" data-proxy-no-proxy-add>添加地址</button></div></div></div>`;
+}
+
+function replaceProxyNoProxyEditor(root) {
+  const host = $("#proxy-no-proxy-editor", root);
+  if (!host) return;
+  host.outerHTML = proxyNoProxyEditor();
+  bindProxyNoProxyEditor(root);
+  applyLocale($("#proxy-no-proxy-editor", root));
+}
+
+function bindProxyNoProxyEditor(root) {
+  const add = () => {
+    const input = $("#proxy-no-proxy-input", root);
+    const supplied = normalizeProxyNoProxyEntries(input?.value || "");
+    if (!supplied.length) return toast(localeText("请填写至少一个地址。", "Enter at least one address."), "error");
+    const entries = proxyNoProxyEntries();
+    const known = new Set(entries.map((item) => item.toLowerCase()));
+    const additions = supplied.filter((item) => !known.has(item.toLowerCase()));
+    if (!additions.length) return toast(localeText("地址已存在。", "Address already exists."), "error");
+    state.draft.config.proxy_no_proxy_entries = [...entries, ...additions];
+    delete state.draft.config.proxy_no_proxy_ui;
+    markConfigurationDirty();
+    replaceProxyNoProxyEditor(root);
+    $("#proxy-no-proxy-input", root)?.focus();
+  };
+  $("[data-proxy-no-proxy-add]", root)?.addEventListener("click", add);
+  $("#proxy-no-proxy-input", root)?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    add();
+  });
+  $$('[data-proxy-no-proxy-remove]', root).forEach((button) => button.addEventListener("click", () => {
+    const index = Number(button.dataset.proxyNoProxyRemove);
+    const entries = proxyNoProxyEntries();
+    if (!Number.isInteger(index) || index < 0 || index >= entries.length) return;
+    entries.splice(index, 1);
+    state.draft.config.proxy_no_proxy_entries = entries;
+    delete state.draft.config.proxy_no_proxy_ui;
+    markConfigurationDirty();
+    replaceProxyNoProxyEditor(root);
+  }));
 }
 
 function renderProxySettings() {
@@ -2432,6 +2724,7 @@ function bindAdvancedInteractions(root) {
   toggle('[data-field="keyword_normalization_enabled"]', "#keyword-normalization-dependent", (event) => event.target.checked);
   toggle('[data-field="keyword_report_enabled"]', "#keyword-report-frequency", (event) => event.target.checked);
   toggle('[data-field="keyword_trend_default_days_ui"]', "#keyword-trend-custom-days", (event) => event.target.value === "custom");
+  bindProxyNoProxyEditor(root);
 }
 
 async function renderAdvancedPage(_token) {
@@ -2450,33 +2743,57 @@ function webdavScheduleTime(cron) {
 }
 
 function webdavOperationMessage(operation, payload) {
-  if (operation === "test") return payload.ok ? "连接与目录权限正常。" : "连接或目录权限验证失败。";
+  if (operation === "test") return payload.ok
+    ? localeText("连接与目录权限正常。", "Connection and directory permissions are valid.")
+    : localeText("连接或目录权限验证失败。", "Connection or directory-permission validation failed.");
   const summary = payload.result || {};
   const success = Number(summary.success || 0);
   const total = Number(summary.total || 0);
   const failed = Object.entries(summary.results || {}).filter(([, ok]) => !ok).map(([path]) => path);
-  const verb = operation === "upload" ? "上传" : "下载";
-  const detail = failed.length ? `；失败项目：${failed.join("、")}` : "";
-  return `${verb}完成：${success}/${total}${summary.elapsed_seconds !== undefined ? `，耗时 ${summary.elapsed_seconds} 秒` : ""}${detail}`;
+  const english = state.language === "en";
+  const verb = operation === "upload" ? (english ? "Upload" : "上传") : (english ? "Download" : "下载");
+  const detail = failed.length
+    ? (english ? `; failed: ${failed.join(", ")}` : `；失败项目：${failed.join("、")}`)
+    : "";
+  const elapsed = summary.elapsed_seconds !== undefined
+    ? (english ? ` in ${summary.elapsed_seconds} seconds` : `，耗时 ${summary.elapsed_seconds} 秒`)
+    : "";
+  return english ? `${verb} complete: ${success}/${total}${elapsed}${detail}` : `${verb}完成：${success}/${total}${elapsed}${detail}`;
 }
 
 function localBackupMessage(result) {
-  if (!result?.created) return `未创建备份：${result?.reason || "未知原因"}`;
-  if (result.upload_error) return `本地备份已创建；WebDAV 上传失败：${result.upload_error}`;
-  if (result.uploaded) return `本地备份已创建并已增量上传：${result.name}`;
-  if (result.skipped_reason === "content_unchanged") return `本地备份已创建；WebDAV 数据未变化，已跳过上传：${result.name}`;
-  if (result.webdav_skipped === "credentials_incomplete") return `本地备份已创建；WebDAV 凭据尚未配置完整：${result.name}`;
-  return `已创建本地备份：${result.name}`;
+  const english = state.language === "en";
+  if (!result?.created) {
+    const reason = localizedString(result?.reason || localeText("未知原因", "Unknown reason"));
+    return english ? `Backup was not created: ${reason}` : `未创建备份：${reason}`;
+  }
+  if (result.upload_error) return english
+    ? `Local backup created; WebDAV upload failed: ${result.upload_error}`
+    : `本地备份已创建；WebDAV 上传失败：${result.upload_error}`;
+  if (result.uploaded) return english
+    ? `Local backup created and uploaded incrementally: ${result.name}`
+    : `本地备份已创建并已增量上传：${result.name}`;
+  if (result.skipped_reason === "content_unchanged") return english
+    ? `Local backup created; WebDAV data was unchanged, so upload was skipped: ${result.name}`
+    : `本地备份已创建；WebDAV 数据未变化，已跳过上传：${result.name}`;
+  if (result.webdav_skipped === "credentials_incomplete") return english
+    ? `Local backup created; WebDAV credentials are incomplete: ${result.name}`
+    : `本地备份已创建；WebDAV 凭据尚未配置完整：${result.name}`;
+  return english ? `Local backup created: ${result.name}` : `已创建本地备份：${result.name}`;
 }
 
 function restoreBackupMessage(result) {
-  const source = String(result?.source_member || "备份文件");
+  const source = String(result?.source_member || localeText("备份文件", "backup file"));
   const archived = String(result?.archived_previous || "").trim();
-  if (!archived) return `已恢复：${source}。当前没有需要归档的旧数据库。`;
+  if (!archived) return state.language === "en"
+    ? `Restored: ${source}. No previous database needed archiving.`
+    : `已恢复：${source}。当前没有需要归档的旧数据库。`;
   // The archive has already been placed in the local backup directory. Show
   // its filename rather than leaking an absolute host/container path.
   const name = archived.split(/[\\/]/).filter(Boolean).pop() || archived;
-  return `已恢复：${source}。此前数据库已归档为：${name}`;
+  return state.language === "en"
+    ? `Restored: ${source}. Previous database archived as: ${name}`
+    : `已恢复：${source}。此前数据库已归档为：${name}`;
 }
 
 function webdavOperationDraft() {
@@ -2549,7 +2866,10 @@ async function renderBackupSync(token) {
   $("#backup-file", root).addEventListener("change", (event) => { $("#backup-restore").disabled = !event.target.files?.[0]; });
   $("#backup-restore", root).addEventListener("click", async () => {
     const file = $("#backup-file").files?.[0]; if (!file) return;
-    if (!window.confirm("确认恢复该 SQLite 备份？当前数据库会被归档后替换。")) return;
+    if (!window.confirm(localeText(
+      "确认恢复该 SQLite 备份？当前数据库会被归档后替换。",
+      "Restore this SQLite backup? The current database will be archived and replaced.",
+    ))) return;
     try { const result = await api("/api/backups/restore", { method: "POST", body: file, headers: { "X-File-Name": file.name } }); toast(restoreBackupMessage(result), "success"); await refreshBackupList(root); } catch (error) { $("#backup-result").textContent = error.message; $("#backup-result").className = "inline-result error"; }
   });
   await refreshBackupList(root, token);
@@ -2587,10 +2907,17 @@ function importSummary(summary) {
 }
 
 function historyTaskStateLabel(value) {
-  return ({
-    queued: "等待中", starting: "正在接手", running: "运行中", succeeded: "已完成",
-    failed: "失败", rejected: "已拒绝", interrupted: "已中断", skipped_busy: "因互斥跳过",
-  })[String(value || "")] || String(value || "—");
+  const labels = {
+    queued: localeText("等待中", "Pending"),
+    starting: localeText("正在接手", "Being claimed"),
+    running: localeText("运行中", "Running"),
+    succeeded: localeText("已完成", "Completed"),
+    failed: localeText("失败", "Failed"),
+    rejected: localeText("已拒绝", "Rejected"),
+    interrupted: localeText("已中断", "Interrupted"),
+    skipped_busy: localeText("因互斥跳过", "Skipped due to mutual exclusion"),
+  };
+  return labels[String(value || "")] || String(value || "—");
 }
 
 function historyTasks(data) {
@@ -2713,7 +3040,7 @@ async function refreshHistoryStatus() {
       scheduleRefresh("history", refreshHistoryStatus, 5000);
     }
   } catch (error) {
-    toast(`历史状态刷新失败：${error.message}`, "error");
+    toast(localeText(`历史状态刷新失败：${error.message}`, `History status refresh failed: ${error.message}`), "error");
   }
 }
 
@@ -2748,21 +3075,34 @@ async function renderHistory(token) {
 }
 
 function healthStatusLabel(status) {
-  return String(status || "").toLowerCase() === "succeeded" ? "成功" : "失败";
+  return String(status || "").toLowerCase() === "succeeded"
+    ? localeText("成功", "Succeeded")
+    : localeText("失败", "Failed");
 }
 
 function diagnosticRunStatusLabel(status) {
-  return ({ completed: "已完成", failed: "失败", running: "运行中" })[String(status || "").toLowerCase()] || "未知";
+  const labels = {
+    completed: localeText("已完成", "Completed"),
+    failed: localeText("失败", "Failed"),
+    running: localeText("运行中", "Running"),
+  };
+  return labels[String(status || "").toLowerCase()] || localeText("未知", "Unknown");
 }
 
 function diagnosticTaskKindLabel(kind) {
-  return ({
-    daily: "每日研究", daily_research: "每日研究",
-    backfill: "过去日报", backfill_run: "过去日报",
-    history_import: "旧历史导入", legacy_history_import: "旧历史导入",
-    history_data_repair: "历史数据补全", history_omission_scan: "历史遗漏扫描",
-    supplement: "补充报告", trend_research: "趋势研究",
-  })[String(kind || "").toLowerCase()] || String(kind || "—");
+  const labels = {
+    daily: localeText("每日研究", "Daily Research"),
+    daily_research: localeText("每日研究", "Daily Research"),
+    backfill: localeText("过去日报", "Past Daily Reports"),
+    backfill_run: localeText("过去日报", "Past Daily Reports"),
+    history_import: localeText("旧历史导入", "Legacy History Import"),
+    legacy_history_import: localeText("旧历史导入", "Legacy History Import"),
+    history_data_repair: localeText("历史数据补全", "Historical Data Repair"),
+    history_omission_scan: localeText("历史遗漏扫描", "Historical Omission Scan"),
+    supplement: localeText("补充报告", "Supplement Report"),
+    trend_research: localeText("趋势研究", "Trend Research"),
+  };
+  return labels[String(kind || "").toLowerCase()] || String(kind || "—");
 }
 
 function healthFailureDetail(row) {
@@ -2955,7 +3295,16 @@ function tokenTrendChart(rows, window) {
   const x = (index) => sampled.length === 1 ? left + plotWidth / 2 : left + index * plotWidth / (sampled.length - 1);
   const y = (value) => top + plotHeight * (1 - value / maximum);
   const linePoints = (key) => sampled.map((row, index) => `${x(index).toFixed(1)},${y(row[key]).toFixed(1)}`).join(" ");
-  const points = (key) => sampled.map((row, index) => `<circle class="trend-point ${key}" cx="${x(index).toFixed(1)}" cy="${y(row[key]).toFixed(1)}" r="${sampled.length > 90 ? "1.5" : "2.25"}"><title>${escapeHtml(`${analyticsBucketLabel(row.bucket, window?.bucket)} · ${key === "prompt" ? "输入" : key === "completion" ? "输出" : "合计"} ${formatNumber(row[key])} ${state.language === "en" ? "tokens" : "Token"}`)}</title></circle>`).join("");
+  const points = (key) => sampled.map((row, index) => {
+    const label = key === "prompt"
+      ? localeText("输入", "Input")
+      : key === "completion"
+        ? localeText("输出", "Output")
+        : localeText("合计", "Total");
+    const unit = state.language === "en" ? "tokens" : "Token";
+    const title = `${analyticsBucketLabel(row.bucket, window?.bucket)} · ${label} ${formatNumber(row[key])} ${unit}`;
+    return `<circle class="trend-point ${key}" cx="${x(index).toFixed(1)}" cy="${y(row[key]).toFixed(1)}" r="${sampled.length > 90 ? "1.5" : "2.25"}"><title>${escapeHtml(title)}</title></circle>`;
+  }).join("");
   const grid = Array.from({ length: 5 }, (_, index) => {
     const value = maximum * index / 4;
     return `<line x1="${left}" x2="${width - right}" y1="${y(value).toFixed(1)}" y2="${y(value).toFixed(1)}"/><text x="${left - 8}" y="${(y(value) + 4).toFixed(1)}" text-anchor="end">${escapeHtml(formatCompactNumber(value))}</text>`;
@@ -2996,6 +3345,7 @@ async function refreshAnalyticsContent(root = $("#page-root"), token = state.ren
   const host = $("#analytics-content", root);
   if (!host) return;
   const requestVersion = beginLocalRequest("analytics-content");
+  const hasRenderedContent = Boolean($(".analytics-statistics-card", host));
   const fallback = { range: "7d", date_from: relativeLocalDateKey(-6), date_to: relativeLocalDateKey(0) };
   const values = { ...fallback, ...(state.pageData.analytics || {}) };
   const params = new URLSearchParams({ range: values.range });
@@ -3003,44 +3353,59 @@ async function refreshAnalyticsContent(root = $("#page-root"), token = state.ren
     params.set("date_from", values.date_from);
     params.set("date_to", values.date_to);
   }
-  host.innerHTML = '<div class="loading">正在读取 Token 使用记录…</div>';
-  const data = await api(`/api/analytics?${params.toString()}`);
-  if (token !== state.renderToken || state.page !== "analytics" || !isCurrentLocalRequest("analytics-content", requestVersion)) return;
-  const control = analyticsRangeControl(values);
-  const summary = data.summary || { prompt: 0, completion: 0, total: 0, runs: 0 };
-  const hasUsage = Boolean(data.available && ((data.series || []).length || Number(summary.runs) > 0));
-  const usage = hasUsage
-    ? usageSummaryTable(summary)
-    : '<p class="empty-state">所选时间段内暂无用量数据。完成任一涉及 LLM 的任务后，这里会出现统计。</p>';
-  const trend = hasUsage
-    ? tokenTrendChart(data.series || [], data.window || {})
-    : '<p class="empty-state">所选时间段内没有可绘制的 Token 使用趋势。</p>';
-  const heatmap = (data.heatmap_daily || []).length
-    ? tokenHeatmap(data.heatmap_daily || [])
-    : '<p class="report-empty-state">暂无历史 Token 使用记录。</p>';
-  const modelTable = pagedTable("analytics-models", [
-    { label: "模型", key: "model" },
-    { label: "输入 Token", value: (row) => formatNumber(row.prompt) },
-    { label: "输出 Token", value: (row) => formatNumber(row.completion) },
-    { label: "总 Token", value: (row) => formatNumber(row.total) },
-  ], data.models || [], { empty: "所选时间段内暂无模型使用记录。" });
-  host.innerHTML = `<section class="section-card analytics-statistics-card">${heatmap}<div class="analytics-statistics-block">${control}${usage}</div><div class="analytics-statistics-block trend-chart-block">${trend}</div><div class="analytics-statistics-block">${modelTable}</div></section>`;
-  bindCommon(host);
-  $$('[data-analytics-range]', host).forEach((button) => button.addEventListener("click", () => {
-    state.pageData.analytics = { ...values, range: button.dataset.analyticsRange };
-    runLocalRefresh(refreshAnalyticsContent(root, token));
-  }));
-  $("#analytics-custom-apply", host)?.addEventListener("click", () => {
-    const dateFrom = $("#analytics-from", host).value;
-    const dateTo = $("#analytics-to", host).value;
-    if (!dateFrom || !dateTo || dateFrom > dateTo) {
-      toast("请填写有效的开始和结束日期。", "error");
-      return;
+  if (hasRenderedContent) {
+    host.classList.add("is-refreshing");
+    host.setAttribute("aria-busy", "true");
+    $$('[data-analytics-range], #analytics-custom-apply', host).forEach((button) => { button.disabled = true; });
+  } else {
+    host.innerHTML = '<div class="loading">正在读取 Token 使用记录…</div>';
+    applyLocale(host);
+  }
+  try {
+    const data = await api(`/api/analytics?${params.toString()}`);
+    if (token !== state.renderToken || state.page !== "analytics" || !isCurrentLocalRequest("analytics-content", requestVersion)) return;
+    const control = analyticsRangeControl(values);
+    const summary = data.summary || { prompt: 0, completion: 0, total: 0, runs: 0 };
+    const hasUsage = Boolean(data.available && ((data.series || []).length || Number(summary.runs) > 0));
+    const usage = hasUsage
+      ? usageSummaryTable(summary)
+      : '<p class="empty-state">所选时间段内暂无用量数据。完成任一涉及 LLM 的任务后，这里会出现统计。</p>';
+    const trend = hasUsage
+      ? tokenTrendChart(data.series || [], data.window || {})
+      : '<p class="empty-state">所选时间段内没有可绘制的 Token 使用趋势。</p>';
+    const heatmap = (data.heatmap_daily || []).length
+      ? tokenHeatmap(data.heatmap_daily || [])
+      : '<p class="report-empty-state">暂无历史 Token 使用记录。</p>';
+    const modelTable = pagedTable("analytics-models", [
+      { label: "模型", key: "model" },
+      { label: "输入 Token", value: (row) => formatNumber(row.prompt) },
+      { label: "输出 Token", value: (row) => formatNumber(row.completion) },
+      { label: "总 Token", value: (row) => formatNumber(row.total) },
+    ], data.models || [], { empty: "所选时间段内暂无模型使用记录。" });
+    host.innerHTML = `<section class="section-card analytics-statistics-card">${heatmap}<div class="analytics-statistics-block">${control}${usage}</div><div class="analytics-statistics-block trend-chart-block">${trend}</div><div class="analytics-statistics-block">${modelTable}</div></section>`;
+    bindCommon(host);
+    $$('[data-analytics-range]', host).forEach((button) => button.addEventListener("click", () => {
+      state.pageData.analytics = { ...values, range: button.dataset.analyticsRange };
+      runLocalRefresh(refreshAnalyticsContent(root, token));
+    }));
+    $("#analytics-custom-apply", host)?.addEventListener("click", () => {
+      const dateFrom = $("#analytics-from", host).value;
+      const dateTo = $("#analytics-to", host).value;
+      if (!dateFrom || !dateTo || dateFrom > dateTo) {
+        toast("请填写有效的开始和结束日期。", "error");
+        return;
+      }
+      state.pageData.analytics = { ...values, date_from: dateFrom, date_to: dateTo };
+      runLocalRefresh(refreshAnalyticsContent(root, token));
+    });
+    applyLocale(host);
+  } finally {
+    if (token === state.renderToken && state.page === "analytics" && isCurrentLocalRequest("analytics-content", requestVersion)) {
+      host.classList.remove("is-refreshing");
+      host.removeAttribute("aria-busy");
+      $$('[data-analytics-range], #analytics-custom-apply', host).forEach((button) => { button.disabled = false; });
     }
-    state.pageData.analytics = { ...values, date_from: dateFrom, date_to: dateTo };
-    runLocalRefresh(refreshAnalyticsContent(root, token));
-  });
-  applyLocale(host);
+  }
 }
 
 async function renderAnalytics(token) {
@@ -3080,9 +3445,11 @@ async function loadSelectedLog(root, items, selected, token) {
   const requestVersion = beginLocalRequest("log-content");
   if (!selected || state.pageData.logClosed) {
     host.innerHTML = '<p class="report-empty-state">选择一个日志文件后可在这里查看内容。</p>';
+    applyLocale(host);
     return;
   }
   host.innerHTML = '<div class="loading">正在读取日志内容…</div>';
+  applyLocale(host);
   try {
     const log = await api(`/api/logs/${encodeURIComponent(selected)}`);
     if (token !== state.renderToken || state.page !== "logs" || state.pageData.selectedLog !== selected || !isCurrentLocalRequest("log-content", requestVersion)) return;
@@ -3096,6 +3463,7 @@ async function loadSelectedLog(root, items, selected, token) {
     applyLocale(host);
   } catch (error) {
     host.innerHTML = `<p class="error-message">${escapeHtml(error.message)}</p>`;
+    applyLocale(host);
   }
 }
 
@@ -3115,6 +3483,7 @@ async function refreshLogsWorkspace(root = $("#page-root"), token = state.render
   if (!host) return;
   const requestVersion = beginLocalRequest("logs-workspace");
   host.innerHTML = '<div class="loading">正在读取日志列表…</div>';
+  applyLocale(host);
   const data = await api("/api/logs");
   if (token !== state.renderToken || state.page !== "logs" || !isCurrentLocalRequest("logs-workspace", requestVersion)) return;
   const items = data.items || [];
@@ -3189,12 +3558,12 @@ function bindAccountForm(selector, endpoint, onSuccess) {
 
 function normalizeForSave() {
   const config = { ...(state.settings?.config || {}), ...state.draft.config };
-  if (Object.prototype.hasOwnProperty.call(config, "proxy_no_proxy_ui")) {
-    config.proxy_no_proxy = String(config.proxy_no_proxy_ui || "")
-      .split(/[\r\n,]+/)
-      .map((item) => item.trim())
-      .filter(Boolean)
-      .join(",");
+  if (Object.prototype.hasOwnProperty.call(config, "proxy_no_proxy_entries")) {
+    config.proxy_no_proxy = normalizeProxyNoProxyEntries(config.proxy_no_proxy_entries).join(",");
+    delete config.proxy_no_proxy_entries;
+    delete config.proxy_no_proxy_ui;
+  } else if (Object.prototype.hasOwnProperty.call(config, "proxy_no_proxy_ui")) {
+    config.proxy_no_proxy = normalizeProxyNoProxyEntries(config.proxy_no_proxy_ui).join(",");
     delete config.proxy_no_proxy_ui;
   }
   // UI-only helpers map back to the stable config.json contract.
@@ -3321,7 +3690,8 @@ function bindCommon(root = document) {
     if (!window.confirm("确认清除所有本地过期任务请求？未被工作进程接手的任务需要重新提交。")) return;
     try {
       const result = await api("/api/triggers/stale", { method: "POST", body: {} });
-      toast(`已清除 ${Number(result.removed || 0)} 个过期请求。`, "success");
+      const removed = Number(result.removed || 0);
+      toast(localeText(`已清除 ${removed} 个过期请求。`, `Cleared ${removed} stale requests.`), "success");
       await refreshActiveTaskPanels();
     } catch (error) { toast(error.message, "error"); }
   }));
