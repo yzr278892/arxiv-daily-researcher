@@ -53,6 +53,41 @@ from utils.config_io import read_env, write_env  # noqa: E402
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 _MAX_JSON_BYTES = 1_000_000
+_ASSET_VERSION_TOKEN = "__ASSET_VERSION__"
+
+
+class VersionedStaticFiles(StaticFiles):
+    """Cache fingerprinted assets aggressively without pinning direct links."""
+
+    async def get_response(self, path: str, scope: Any) -> Response:
+        response = await super().get_response(path, scope)
+        if response.status_code == status.HTTP_200_OK:
+            # The SPA document injects a file fingerprint into every CSS/JS
+            # URL.  A direct asset URL remains revalidatable for operators and
+            # tests, while a fingerprinted URL avoids repeat transfers over a
+            # LAN or Tailscale connection.
+            query = scope.get("query_string", b"")
+            response.headers["Cache-Control"] = (
+                "public, max-age=31536000, immutable"
+                if b"v=" in query
+                else "no-cache"
+            )
+        return response
+
+
+def _frontend_asset_version() -> str:
+    """Return a cheap content-change token for the two SPA entry assets."""
+
+    parts: list[str] = []
+    for name in ("app.css", "app.js"):
+        try:
+            stat = (STATIC_DIR / name).stat()
+            parts.append(f"{stat.st_mtime_ns:x}-{stat.st_size:x}")
+        except OSError:
+            # A development edit can briefly race with a request.  The HTML
+            # still loads normally and the next refresh gets the new token.
+            parts.append("missing")
+    return ".".join(parts)
 
 
 async def _blocking_call(function: Any, /, *args: Any, **kwargs: Any) -> Any:
@@ -762,8 +797,22 @@ async def account_delete(request: Request) -> JSONResponse:
     return JSONResponse({"ok": True})
 
 
-async def frontend(_request: Request) -> FileResponse:
-    return FileResponse(STATIC_DIR / "index.html")
+async def frontend(_request: Request) -> Response:
+    """Serve a non-cacheable shell with fingerprinted CSS and JavaScript."""
+
+    try:
+        html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    except OSError as exc:  # pragma: no cover - packaging failure safeguard
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="无法读取 WebUI 页面。",
+        ) from exc
+    body = html.replace(_ASSET_VERSION_TOKEN, _frontend_asset_version())
+    return Response(
+        body,
+        media_type="text/html",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
 
 
 async def http_exception_handler(_request: Request, exc: HTTPException) -> JSONResponse:
@@ -819,7 +868,7 @@ app = Starlette(
         Route("/api/accounts/add", account_add, methods=["POST"]),
         Route("/api/accounts/reset", account_reset, methods=["POST"]),
         Route("/api/accounts/delete", account_delete, methods=["POST"]),
-        Mount("/assets", app=StaticFiles(directory=STATIC_DIR), name="assets"),
+        Mount("/assets", app=VersionedStaticFiles(directory=STATIC_DIR), name="assets"),
         Route("/{path:path}", frontend, methods=["GET"]),
     ],
     exception_handlers={HTTPException: http_exception_handler},
