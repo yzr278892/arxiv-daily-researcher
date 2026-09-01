@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import base64
 from copy import deepcopy
+import hashlib
+from html import unescape
 import inspect
 import json
 import logging
@@ -1702,6 +1704,285 @@ _SUPPLEMENT_HTML_MARKER_RE = re.compile(
 _SUPPLEMENT_MARKDOWN_MARKER_RE = re.compile(
     r"(?m)^#\s+.*(?:Supplement\s+Report|补充报告)", re.IGNORECASE
 )
+_HISTORY_TOKEN_SUMMARY_RE = re.compile(
+    r"(?:"
+    r"(?:\*\*\s*)?(?:总计|total)(?:\s*\*\*)?\s*[:：]"
+    r"|Token\s*(?:消耗(?:统计)?|usage(?:\s+statistics)?)\s*[:：]"
+    r")\s*(?P<total>[\d,，\s]+)\s*tokens?\s*[（(]\s*"
+    r"(?:输入|input)\s*(?P<prompt>[\d,，\s]+)\s*/\s*"
+    r"(?:输出|output)\s*(?P<completion>[\d,，\s]+)\s*[）)]",
+    re.IGNORECASE,
+)
+_HISTORY_TOKEN_USAGE_MARKER_RE = re.compile(
+    r"(?:"
+    r"(?:\*\*\s*)?(?:总计|total)(?:\s*\*\*)?\s*[:：].{0,64}?\btokens?\b"
+    r"|Token\s*(?:消耗(?:统计)?|usage(?:\s+statistics)?)\s*[:：]"
+    r")",
+    re.IGNORECASE,
+)
+_HISTORY_TOKEN_MODEL_HEADER_RE = re.compile(
+    r"(?im)^\|\s*(?:模型|model)\s*\|\s*(?:输入|input)\s*\|\s*"
+    r"(?:输出|output)\s*\|\s*(?:合计|total)\s*\|\s*$"
+)
+_HISTORY_TOKEN_GENERATED_AT_RE = re.compile(
+    r"(?:生成(?:时间)?|generated(?:\s+(?:at|on))?)\s*(?:[:：|]\s*)?"
+    r"(\d{4}-\d{2}-\d{2})[ _](\d{2})[:-](\d{2})[:-](\d{2})(?:_(\d{1,6}))?",
+    re.IGNORECASE,
+)
+_HISTORY_TOKEN_REPORT_TAIL_BYTES = 262_144
+
+
+def _read_report_tail(path: Path, *, limit: int = _HISTORY_TOKEN_REPORT_TAIL_BYTES) -> str:
+    """Read the report footer without loading a large archive into memory."""
+    try:
+        with path.open("rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            size = handle.tell()
+            handle.seek(max(0, size - max(1, limit)))
+            return handle.read().decode("utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
+def _token_number(value: object) -> int | None:
+    text = re.sub(r"[\s,，]", "", str(value or ""))
+    if not text or not text.isdigit():
+        return None
+    return int(text)
+
+
+def _historical_token_models(markdown: str) -> dict[str, dict[str, int]]:
+    """Parse the optional per-model Markdown table emitted by report writers."""
+    header = _HISTORY_TOKEN_MODEL_HEADER_RE.search(markdown)
+    if header is None:
+        return {}
+    rows: dict[str, dict[str, int]] = {}
+    for line in markdown[header.end() :].lstrip("\r\n").splitlines():
+        stripped = line.strip()
+        if not stripped:
+            break
+        if not stripped.startswith("|"):
+            break
+        cells = [cell.strip() for cell in stripped.strip("|").split("|")]
+        if len(cells) != 4:
+            continue
+        # The Markdown divider is intentionally not a model row.
+        if all(re.fullmatch(r":?-{3,}:?", cell.replace(" ", "")) for cell in cells):
+            continue
+        prompt = _token_number(cells[1])
+        completion = _token_number(cells[2])
+        total = _token_number(cells[3])
+        model = cells[0].replace("\\|", "|").strip(" `")
+        if not model or prompt is None or completion is None or total is None:
+            continue
+        if total != prompt + completion:
+            continue
+        values = rows.setdefault(model, {"prompt": 0, "completion": 0})
+        values["prompt"] += prompt
+        values["completion"] += completion
+    return rows
+
+
+def _parse_historical_token_usage(path: Path, text: str) -> dict[str, Any] | None:
+    """Extract one report's aggregate and, when available, per-model tokens."""
+    if not text:
+        return None
+    plain = unescape(re.sub(r"<[^>]+>", " ", text)) if path.suffix.lower() == ".html" else text
+    summary = _HISTORY_TOKEN_SUMMARY_RE.search(plain)
+    if summary is None:
+        return None
+    total = _token_number(summary.group("total"))
+    prompt = _token_number(summary.group("prompt"))
+    completion = _token_number(summary.group("completion"))
+    if total is None or prompt is None or completion is None or total != prompt + completion:
+        return None
+
+    by_model = _historical_token_models(text) if path.suffix.lower() == ".md" else {}
+    if by_model:
+        model_prompt = sum(values["prompt"] for values in by_model.values())
+        model_completion = sum(values["completion"] for values in by_model.values())
+        if model_prompt != prompt or model_completion != completion:
+            by_model = {}
+    if not by_model:
+        # Old HTML reports contain the aggregate only.  Keep that value
+        # visible without inventing an LLM name that was never recorded.
+        by_model = {"historical_report": {"prompt": prompt, "completion": completion}}
+    return {"prompt": prompt, "completion": completion, "total": total, "by_model": by_model}
+
+
+def _historical_token_report_kind(path: Path, root: Path) -> str:
+    relative = path.relative_to(root)
+    parts = relative.parts
+    if parts and parts[0] == "trend_research":
+        return "trend_research"
+    if len(parts) >= 2 and parts[:2] == ("other_reports", "supplement"):
+        return "supplement_run"
+    if parts and parts[0] == "daily_research" and _legacy_supplement_content(path):
+        return "supplement_run"
+    if parts and parts[0] == "daily_research":
+        return "daily_research"
+    return "historical_report"
+
+
+def _historical_token_group_key(path: Path, root: Path, mode: str) -> str:
+    """Group HTML/Markdown and cross-source copies of one report batch."""
+    stamp = _REPORT_TIMESTAMP_RE.search(path.stem)
+    if stamp and mode in {"daily_research", "supplement_run"}:
+        return f"{mode}:{stamp.group(1)}".casefold()
+    relative = path.relative_to(root)
+    parts = ["{format}" if part in {"html", "markdown"} else part for part in relative.parts]
+    normalized = Path(*parts).with_suffix("").as_posix()
+    return f"{mode}:{normalized}".casefold()
+
+
+def _historical_token_recorded_at(path: Path, text: str) -> datetime | None:
+    """Prefer a batch timestamp, then the report footer, then file mtime."""
+    stamp = _REPORT_TIMESTAMP_RE.search(path.stem)
+    if stamp:
+        value = stamp.group(1)
+        try:
+            return datetime.strptime(
+                value,
+                "%Y-%m-%d_%H-%M-%S_%f" if "_" in value[11:] else "%Y-%m-%d_%H-%M-%S",
+            )
+        except ValueError:
+            pass
+    generated = _HISTORY_TOKEN_GENERATED_AT_RE.search(text)
+    if generated:
+        value = "_".join(part for part in generated.groups() if part)
+        try:
+            return datetime.strptime(
+                value,
+                "%Y-%m-%d_%H_%M_%S_%f" if len(generated.groups()[-1] or "") else "%Y-%m-%d_%H_%M_%S",
+            )
+        except ValueError:
+            pass
+    try:
+        return datetime.fromtimestamp(path.stat().st_mtime).replace(microsecond=0)
+    except OSError:
+        return None
+
+
+def _historical_token_run_id(group_key: str) -> str:
+    digest = hashlib.sha256(group_key.encode("utf-8")).hexdigest()[:24]
+    return f"historical_report_{digest}"
+
+
+def import_historical_report_token_usage() -> dict[str, int | bool]:
+    """Import token usage from archived reports without double counting runs."""
+    settings = flat_config()
+    root = configured_reports_dir(settings)
+    if not root.is_dir():
+        return {
+            "ok": True,
+            "reports": 0,
+            "imported": 0,
+            "updated": 0,
+            "unchanged": 0,
+            "already_recorded": 0,
+            "conflicted": 0,
+            "unreadable": 0,
+        }
+
+    data_dir = configured_data_dir(settings)
+    try:
+        with database_restore_activity_gate(
+            exclusive=True, nonblocking=True, data_dir=data_dir
+        ):
+            store = open_store(settings, create=True)
+            if store is None:
+                raise ModernWebUIError("SQLite 数据库尚不可用。")
+            groups: dict[str, dict[str, Any]] = {}
+            unreadable = 0
+            try:
+                paths = sorted(
+                    (
+                        path
+                        for path in root.rglob("*")
+                        if path.is_file() and path.suffix.lower() in {".md", ".html"}
+                    ),
+                    key=lambda item: item.as_posix(),
+                )
+            except OSError as exc:
+                raise ModernWebUIError(f"读取历史报告失败：{exc}") from exc
+
+            for path in paths:
+                text = _read_report_tail(path)
+                if not text:
+                    continue
+                parsed = _parse_historical_token_usage(path, text)
+                if parsed is None:
+                    if _HISTORY_TOKEN_USAGE_MARKER_RE.search(text):
+                        unreadable += 1
+                    continue
+                mode = _historical_token_report_kind(path, root)
+                group_key = _historical_token_group_key(path, root, mode)
+                group = groups.setdefault(
+                    group_key,
+                    {"mode": mode, "items": [], "references": []},
+                )
+                group["items"].append((path, parsed, text))
+                group["references"].append(path.relative_to(root).as_posix())
+
+            references = [
+                reference
+                for group in groups.values()
+                for reference in group["references"]
+            ]
+            tracked_references = store.token_usage_report_references(references)
+            result: dict[str, int | bool] = {
+                "ok": True,
+                "reports": len(groups),
+                "imported": 0,
+                "updated": 0,
+                "unchanged": 0,
+                "already_recorded": 0,
+                "conflicted": 0,
+                "unreadable": unreadable,
+            }
+            for group_key, group in groups.items():
+                items = sorted(
+                    group["items"],
+                    key=lambda item: (item[0].suffix.lower() != ".md", item[0].as_posix()),
+                )
+                summaries = {
+                    (item[1]["prompt"], item[1]["completion"], item[1]["total"])
+                    for item in items
+                }
+                if len(summaries) != 1:
+                    result["conflicted"] = int(result["conflicted"]) + 1
+                    continue
+                normalized_references = {
+                    DailyResearchStore.normalize_report_reference(reference).casefold()
+                    for reference in group["references"]
+                }
+                if normalized_references.intersection(tracked_references):
+                    result["already_recorded"] = int(result["already_recorded"]) + 1
+                    continue
+                path, usage, text = items[0]
+                recorded_at = _historical_token_recorded_at(path, text)
+                if recorded_at is None:
+                    result["unreadable"] = int(result["unreadable"]) + 1
+                    continue
+                # Trend reports do not have daily_runs report-path entries.
+                # Their runtime ledger uses this timestamp-based synthetic ID.
+                if group["mode"] == "trend_research":
+                    native_run_id = f"trend_{recorded_at.strftime('%Y%m%d_%H%M%S')}"
+                    if store.has_token_usage_for_run(native_run_id):
+                        result["already_recorded"] = int(result["already_recorded"]) + 1
+                        continue
+                outcome = store.upsert_historical_token_usage(
+                    _historical_token_run_id(group_key),
+                    usage["by_model"],
+                    mode=str(group["mode"]),
+                    recorded_at=recorded_at,
+                )
+                result[outcome] = int(result[outcome]) + 1
+            return result
+    except DatabaseRestoreBusyError as exc:
+        raise ModernWebUIError(
+            "有运行中的任务正在使用数据库，请等待任务完成后再导入历史报告用量。"
+        ) from exc
 
 
 def _safe_report_source(value: object, *, fallback: str = "arxiv") -> str:

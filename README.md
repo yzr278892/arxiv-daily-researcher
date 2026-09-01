@@ -199,6 +199,8 @@ uvicorn src.modern_webui.app:app --host 127.0.0.1 --port 8501
 
 Docker 部署由 `config-panel` 提供服务。WebUI 与 worker 共享 `.env`、`runtime/`、`configs/`、`data/` 和 `logs/`；保存设置后，后续任务会读取新配置。左侧“保存所有更改”统一保存各配置页内容。
 
+“用量统计”可按报告批次从归档 Markdown/HTML 导入历史 Token 用量。导入会与 SQLite 中已有运行记录去重，重复执行不会累计；Markdown 保留的模型拆分会一并写入。
+
 | 分组 | 页面 | 用途 |
 | :--- | :--- | :--- |
 | 运行 | 每日研究、过去日报、趋势任务 | 启动任务、查看队列、状态与日志 |
@@ -216,9 +218,9 @@ Docker 部署由 `config-panel` 提供服务。WebUI 与 worker 共享 `.env`、
       <sub>每日研究、状态和队列</sub>
     </td>
     <td align="center" width="33%">
-      <img src="assets/webui_analytics_v4.png" alt="用量统计和 Token 趋势" width="100%" />
+      <img src="assets/webui_analytics_v4.png" alt="用量统计、Token 趋势和历史导入" width="100%" />
       <br />
-      <sub>用量统计与时间范围</sub>
+      <sub>用量统计、时间范围和历史导入</sub>
     </td>
     <td align="center" width="33%">
       <img src="assets/webui_scoring_v4.png" alt="评分策略与作者偏好" width="100%" />

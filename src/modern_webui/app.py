@@ -535,6 +535,16 @@ async def analytics_get(request: Request) -> JSONResponse:
         raise _safe_error(exc) from exc
 
 
+async def analytics_import_history(request: Request) -> JSONResponse:
+    _require_session(request)
+    try:
+        return JSONResponse(
+            await _blocking_call(backend.import_historical_report_token_usage)
+        )
+    except Exception as exc:
+        raise _safe_error(exc) from exc
+
+
 async def reports_get(request: Request) -> JSONResponse:
     _require_session(request)
     return JSONResponse(
@@ -859,6 +869,7 @@ app = Starlette(
         Route("/api/trend/templates/delete", trend_templates_delete, methods=["POST"]),
         Route("/api/diagnostics", diagnostics_get, methods=["GET"]),
         Route("/api/analytics", analytics_get, methods=["GET"]),
+        Route("/api/analytics/import-history", analytics_import_history, methods=["POST"]),
         Route("/api/reports", reports_get, methods=["GET"]),
         Route("/api/reports/{token:str}/file", report_file, methods=["GET"]),
         Route("/api/reports/{token:str}/papers", report_papers_get, methods=["GET"]),

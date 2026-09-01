@@ -2089,39 +2089,132 @@ class DailyResearchStore:
         by_model: Dict[str, Dict[str, int]],
         *,
         mode: str = "daily_research",
+        recorded_at: datetime | str | None = None,
     ) -> None:
         """Persist one run's per-model token usage.
 
         ``by_model`` follows TokenCounter.get_summary(): ``{model: {"prompt":
         int, "completion": int, "total": int}}``.  Recording again for the
         same run replaces its rows, keeping interrupted-then-retried runs
-        from double counting.
+        from double counting.  ``recorded_at`` is normally omitted for a live
+        run; historical report imports pass the report generation timestamp so
+        charts remain on the original reporting day.
         """
-        now = datetime.now().isoformat()
-        with self._connect() as conn:
-            conn.execute(
-                "DELETE FROM run_token_usage WHERE run_id = ?", (run_id,)
-            )
-            for model, usage in (by_model or {}).items():
-                prompt = int(usage.get("prompt", 0) or 0)
-                completion = int(usage.get("completion", 0) or 0)
-                conn.execute(
-                    """
-                    INSERT INTO run_token_usage (
-                        run_id, mode, model, prompt_tokens,
-                        completion_tokens, total_tokens, recorded_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        run_id,
-                        mode,
-                        str(model),
-                        prompt,
-                        completion,
-                        prompt + completion,
-                        now,
-                    ),
+        timestamp = self._token_usage_timestamp(recorded_at)
+        rows = self._token_usage_rows(by_model, mode, timestamp)
+        with self._lock, self._connect() as conn:
+            self._replace_token_usage_rows(conn, run_id, rows)
+
+    @staticmethod
+    def _token_usage_timestamp(recorded_at: datetime | str | None) -> str:
+        """Normalise a local report/run timestamp for SQLite range queries."""
+        if recorded_at is None:
+            return datetime.now().isoformat()
+        if isinstance(recorded_at, datetime):
+            return recorded_at.replace(tzinfo=None).isoformat()
+        if isinstance(recorded_at, str):
+            text = recorded_at.strip()
+            if text:
+                try:
+                    return datetime.fromisoformat(text).replace(tzinfo=None).isoformat()
+                except ValueError as exc:
+                    raise ValueError("invalid token usage timestamp") from exc
+        raise ValueError("invalid token usage timestamp")
+
+    @staticmethod
+    def _token_usage_rows(
+        by_model: Dict[str, Dict[str, int]], mode: str, recorded_at: str
+    ) -> list[tuple[str, int, int, int, str, str]]:
+        """Convert one token summary into stable, comparable database rows."""
+        rows: list[tuple[str, int, int, int, str, str]] = []
+        for model, usage in (by_model or {}).items():
+            if not isinstance(usage, dict):
+                continue
+            prompt = max(0, int(usage.get("prompt", 0) or 0))
+            completion = max(0, int(usage.get("completion", 0) or 0))
+            rows.append(
+                (
+                    str(model or "unknown").strip() or "unknown",
+                    prompt,
+                    completion,
+                    prompt + completion,
+                    str(mode or "daily_research"),
+                    recorded_at,
                 )
+            )
+        return sorted(rows)
+
+    @staticmethod
+    def _replace_token_usage_rows(
+        conn: sqlite3.Connection,
+        run_id: str,
+        rows: list[tuple[str, int, int, int, str, str]],
+    ) -> None:
+        conn.execute("DELETE FROM run_token_usage WHERE run_id = ?", (run_id,))
+        conn.executemany(
+            """
+            INSERT INTO run_token_usage (
+                run_id, mode, model, prompt_tokens,
+                completion_tokens, total_tokens, recorded_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (run_id, mode, model, prompt, completion, total, recorded_at)
+                for model, prompt, completion, total, mode, recorded_at in rows
+            ],
+        )
+
+    def upsert_historical_token_usage(
+        self,
+        run_id: str,
+        by_model: Dict[str, Dict[str, int]],
+        *,
+        mode: str,
+        recorded_at: datetime | str,
+    ) -> str:
+        """Insert or update one stable historical-report token record.
+
+        The caller supplies a deterministic synthetic ``run_id`` for a report
+        batch.  Repeating an import therefore never adds another run; an
+        edited archive report simply replaces the previous imported values.
+        Returns ``imported``, ``updated`` or ``unchanged``.
+        """
+        timestamp = self._token_usage_timestamp(recorded_at)
+        rows = self._token_usage_rows(by_model, mode, timestamp)
+        if not rows:
+            raise ValueError("historical token usage requires at least one model row")
+        with self._lock, self._connect() as conn:
+            current = conn.execute(
+                """
+                SELECT model, prompt_tokens, completion_tokens, total_tokens, mode, recorded_at
+                FROM run_token_usage WHERE run_id = ?
+                ORDER BY model, prompt_tokens, completion_tokens, total_tokens, mode, recorded_at
+                """,
+                (run_id,),
+            ).fetchall()
+            current_rows = [
+                (
+                    str(row["model"]),
+                    int(row["prompt_tokens"] or 0),
+                    int(row["completion_tokens"] or 0),
+                    int(row["total_tokens"] or 0),
+                    str(row["mode"]),
+                    str(row["recorded_at"]),
+                )
+                for row in current
+            ]
+            if current_rows == rows:
+                return "unchanged"
+            self._replace_token_usage_rows(conn, run_id, rows)
+        return "updated" if current_rows else "imported"
+
+    def has_token_usage_for_run(self, run_id: str) -> bool:
+        """Return whether a normal runtime already recorded this run's usage."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM run_token_usage WHERE run_id = ? LIMIT 1", (run_id,)
+            ).fetchone()
+        return row is not None
 
     # ─── 旧版本（v3.2）历史导入与补充运行积压 ─────────────────────────────
 
@@ -2544,6 +2637,58 @@ class DailyResearchStore:
         if lowered.startswith("reports/"):
             return raw[len("reports/") :].lstrip("/")
         return raw.lstrip("./")
+
+    def token_usage_report_references(self, references: list[str]) -> set[str]:
+        """Return report references already represented by live token rows.
+
+        A v4 daily/supplement run stores its generated report paths in
+        ``daily_runs`` and its token summary under the same ``run_id``.  The
+        historical-report importer uses this link to avoid adding a synthetic
+        row for reports that are already covered by the normal runtime
+        accounting.
+        """
+        wanted = {
+            self.normalize_report_reference(value).casefold()
+            for value in references
+            if self.normalize_report_reference(value)
+        }
+        if not wanted:
+            return set()
+
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT runs.run_id, runs.report_paths_json
+                FROM daily_runs AS runs
+                WHERE runs.report_paths_json IS NOT NULL
+                  AND trim(runs.report_paths_json) != ''
+                  AND EXISTS (
+                      SELECT 1 FROM run_token_usage AS usage
+                      WHERE usage.run_id = runs.run_id
+                  )
+                """
+            ).fetchall()
+
+        matched: set[str] = set()
+
+        def collect(value: object) -> None:
+            if isinstance(value, str):
+                reference = self.normalize_report_reference(value).casefold()
+                if reference in wanted:
+                    matched.add(reference)
+            elif isinstance(value, dict):
+                for nested in value.values():
+                    collect(nested)
+            elif isinstance(value, (list, tuple)):
+                for nested in value:
+                    collect(nested)
+
+        for row in rows:
+            try:
+                collect(json.loads(row["report_paths_json"] or "{}"))
+            except (TypeError, ValueError, json.JSONDecodeError):
+                continue
+        return matched
 
     @classmethod
     def _relocate_report_reference(
