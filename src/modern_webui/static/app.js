@@ -211,6 +211,9 @@ const MODERN_EN_TRANSLATIONS = Object.freeze({
   "恢复内置模板": "Restore built-in template",
   "填写趋势研究的深度分析要求": "Describe the deep-analysis requirements for trend research",
   "模板会作为本次趋势研究的深度分析要求。编辑内置模板后保存即可覆盖本机副本；恢复会重新使用内置内容。": "The template supplies the deep-analysis requirements for this trend run. Saving an edited built-in template overrides its local copy; restoring it uses the built-in text again.",
+  "研究脉络综述": "Research Landscape Review",
+  "方法与证据比较": "Methods and Evidence Comparison",
+  "前沿机会与风险": "Frontier Opportunities and Risks",
   "已恢复内置提示词模板。": "Built-in prompt template restored.",
   "模板名称": "Template name",
   "模板内容": "Template content",
@@ -393,6 +396,12 @@ const MODERN_EN_TRANSLATIONS = Object.freeze({
   "创建本地管理员账户，或在可信内网中跳过登录。": "Create a local administrator account, or skip sign-in on a trusted private network.",
   "使用本机配置的管理员账户登录。": "Sign in with the local administrator account.",
   "已配置；留空则保持不变": "Configured; leave blank to keep unchanged",
+  "请输入 API Key": "Enter an API key",
+  "请输入密码": "Enter a password",
+  "请输入 Webhook URL": "Enter a webhook URL",
+  "请输入 Token": "Enter a token",
+  "请输入签名密钥": "Enter the signing secret",
+  "请输入内容": "Enter a value",
   "例如：实验进展综述": "e.g. Experimental Progress Review",
   "例如 quantum error correction": "e.g. quantum error correction",
   "例如 quantum sensing": "e.g. quantum sensing",
@@ -562,6 +571,245 @@ const MODERN_EN_TRANSLATIONS = Object.freeze({
   "确认跳过登录？仅建议在可信内网使用。": "Skip sign-in? Use this only on a trusted private network.",
   "配置已重新加载。": "Configuration reloaded.",
   "确认请求重启研究容器？正在运行的任务会由容器重启策略处理。": "Request a research-container restart? Running tasks are handled by the container restart policy.",
+  "ISSN（逗号分隔）": "ISSN (comma-separated)",
+  "LLM 评分的并行处理，注意 API 速率限制。": "Run LLM scoring in parallel; observe API rate limits.",
+  "LLM 请求池": "LLM Request Pool",
+  "MinerU PDF 解析 API": "MinerU PDF Parsing API",
+  "PDF 解析器": "PDF Parser",
+  "← 前一天": "← Previous Day",
+  "仅导入已有 HTML 论文": "Import existing HTML papers only",
+  "保存所有更改": "Save All Changes",
+  "保存论文级评分与分析进度，用于断点续跑和失败恢复。": "Persist per-paper scoring and analysis progress for resumable runs and failure recovery.",
+  "免费 API Key 可将每日 API 额度提高到匿名使用的 10 倍，并可查看用量。": "A free API key raises the daily quota to ten times anonymous access and enables usage visibility.",
+  "全局限制 LLM 请求速率，避免并发任务触发 API 限流。": "Limit LLM request rates globally to avoid API throttling from concurrent tasks.",
+  "全部": "All",
+  "关键词趋势追踪": "Keyword Trend Tracking",
+  "关闭": "Off",
+  "关闭后不会请求 Semantic Scholar，也不会把其 TL;DR 用于后续处理。": "When disabled, Semantic Scholar is not requested and its TL;DR is not used in later processing.",
+  "分析": "Analysis",
+  "分类：": "Categories:",
+  "功能开关": "Feature Toggles",
+  "历史数据补全": "Historical Data Repair",
+  "历史遗漏扫描": "Historical Omission Scan",
+  "同时运行：": "Also running:",
+  "启用 OpenAlex 来源": "Enable OpenAlex Source",
+  "启用 Semantic Scholar TL;DR 增强": "Enable Semantic Scholar TL;DR Enrichment",
+  "因互斥跳过": "Skipped due to mutual exclusion",
+  "备份文件": "Backup Files",
+  "多": "High",
+  "天": "days",
+  "失败": "Failed",
+  "完成时间：": "Completed:",
+  "完整导入流程": "Full import workflow",
+  "定时同步时间": "Scheduled sync time",
+  "密码": "Password",
+  "少": "Low",
+  "尚未配置主要关键词。此次运行会先从参考文献 PDF 提取可用关键词；提取到的关键词将临时作为核心集合。若没有可用 PDF 或提取结果为空，运行会给出明确提示。": "No primary keywords are configured. This run first extracts usable keywords from reference PDFs and temporarily uses them as the core set. If no usable PDF or result is available, the run reports it clearly.",
+  "尚未配置主要关键词，且参考文献关键词提取未启用。运行无法开始；请添加主要关键词，或启用参考文献关键词提取并提供参考 PDF。": "No primary keywords are configured and reference-keyword extraction is disabled. The run cannot start; add primary keywords, or enable extraction and provide reference PDFs.",
+  "已中断": "Interrupted",
+  "已完成": "Completed",
+  "已拒绝": "Rejected",
+  "并发设置": "Concurrency Settings",
+  "开启来源后才会调用对应服务；关闭时会隐藏其配置，已保存的密钥不会被清除。": "A service is called only when its source is enabled. Disabling it hides its settings without clearing saved keys.",
+  "开始于": "Started",
+  "等待工作进程接手": "Waiting for worker hand-off",
+  "当前没有过去日报任务。": "There are no past daily report tasks.",
+  "待补全：": "Missing data:",
+  "成功": "Succeeded",
+  "打开 OpenAlex API 控制台 ↗": "Open OpenAlex API console ↗",
+  "打开 Semantic Scholar API 申请页 ↗": "Open Semantic Scholar API application ↗",
+  "报告卡": "Report cards",
+  "报告路径：": "Report path:",
+  "收藏作者 Top": "Top favorite authors",
+  "日志尾部 15 行": "Last 15 log lines",
+  "旧历史导入": "Legacy history import",
+  "显示所选时间范围内的每日研究与过去日报；旧历史维护任务请在“系统 → 历史维护”查看。": "Shows daily research and past daily reports in the selected range. View legacy history-maintenance tasks under System → History Maintenance.",
+  "暂无报告": "No reports",
+  "最近一次导入结果": "Latest import result",
+  "服务商预设": "Provider preset",
+  "未完成任务": "Unfinished tasks",
+  "未知": "Unknown",
+  "未知原因": "Unknown reason",
+  "来源分布：": "Source breakdown:",
+  "正在接手": "Being claimed",
+  "每日研究持久化": "Daily Research Persistence",
+  "没有匹配的论文。": "No matching papers.",
+  "测试 OpenAlex 连接": "Test OpenAlex Connection",
+  "测试 Semantic Scholar 连接": "Test Semantic Scholar Connection",
+  "深度分析": "Deep Analysis",
+  "用于可选 TL;DR 增强。匿名额度由所有用户共享；API Key 初始限额为每秒 1 次，应用会自动按此节奏请求。": "Used for optional TL;DR enrichment. Anonymous quota is shared; API keys start at one request per second, which the app observes automatically.",
+  "用户名": "Username",
+  "研究背景": "Research context",
+  "确认密码": "Confirm password",
+  "第三方 API 密钥": "Third-party API keys",
+  "网络代理设置": "Network Proxy Settings",
+  "翻译": "Translation",
+  "补充报告": "Supplementary reports",
+  "运行中": "Running",
+  "运行锁：": "Run locks:",
+  "近 3 天": "Last 3 days",
+  "近 7 天": "Last 7 days",
+  "近 14 天": "Last 14 days",
+  "近 30 天": "Last 30 days",
+  "近一年 Token 使用热力图": "Token usage heatmap for the past year",
+  "连接与目录权限正常。": "Connection and directory access are available.",
+  "连接或目录权限验证失败。": "Connection or directory access validation failed.",
+  "选择解析研究论文 PDF 的方式。": "Choose how research-paper PDFs are parsed.",
+  "选择论文如何获得资格，以及通过后如何排序。新配置建议使用核心相关性 V2。": "Choose how papers qualify and how qualifying papers are ranked. Core Relevance V2 is recommended for new configurations.",
+  "重置密码": "Reset password",
+  "重试": "Retry",
+  "重试与日志": "Retries and Logs",
+  "问题：": "Issue:",
+  "额外数据源": "Additional Data Sources",
+  "（空）": "(empty)",
+  "🎯 代理范围": "🎯 Proxy Scope",
+  "📂 同步范围": "📂 Sync Scope",
+});
+
+// These messages are emitted by the API after the initial page render, most
+// often while a task is changing state or an operator is validating a form.
+// Keep them separate from authored view copy so the dynamic backend contract
+// is easy to audit without turning safe server errors into mixed-language UI.
+const DYNAMIC_EN_TRANSLATIONS = Object.freeze({
+  // Task states and worker progress.
+  "准备运行": "Preparing run",
+  "扫描数据源": "Scanning sources",
+  "评分筛选": "Scoring and filtering",
+  "生成报告": "Generating report",
+  "导入旧历史": "Importing legacy history",
+  "读取历史记录": "Reading historical records",
+  "整理关键词": "Preparing keywords",
+  "读取历史报告": "Reading historical reports",
+  "写入 SQLite": "Writing to SQLite",
+  "整理补充任务": "Preparing supplementary tasks",
+  "扫描遗漏论文": "Scanning omitted papers",
+  "生成补充报告": "Generating supplementary report",
+  "生成周补充报告": "Generating weekly supplementary report",
+  "正在运行": "Running",
+  "处理中": "Processing",
+  "等待工作进程的请求已过期": "The request waiting for the worker has expired",
+  "请检查研究容器或清除本地过期请求": "Check the research container or clear stale local requests",
+  "正在运行，等待进度写入": "Running; waiting for a progress update",
+  "请查看问题摘要后重试": "Review the issue summary, then retry",
+  "工作进程正在接手任务": "The worker is claiming the task",
+  "等待后端空闲": "Waiting for the worker to become idle",
+  "等待系统空闲后继续运行": "Waiting until the system is idle",
+  "等待 ": "Waiting for ",
+  " 时段及后端空闲": " window and for the worker to become idle",
+  "未知任务": "Unknown task",
+  "系统日志": "System Logs",
+  "其他日志": "Other Logs",
+
+  // Configuration and request validation.
+  "配置层级过深。": "Configuration nesting is too deep.",
+  "配置字段长度无效。": "A configuration field has an invalid length.",
+  "配置列表过长。": "The configuration list is too long.",
+  "配置对象过大。": "The configuration object is too large.",
+  "配置字段名无效。": "A configuration field name is invalid.",
+  "配置包含不支持的数据类型。": "Configuration contains an unsupported data type.",
+  "配置更新必须是对象。": "The configuration update must be an object.",
+  "环境变量更新必须是对象。": "The environment update must be an object.",
+  "包含不支持的配置字段：": "Unsupported configuration fields: ",
+  "包含不支持的环境变量字段。": "The environment update contains unsupported fields.",
+  "环境变量值必须是文本、数字或开关。": "Environment values must be text, numbers, or switches.",
+  "环境变量值长度无效。": "An environment value has an invalid length.",
+  "只能清除受管理的密钥字段。": "Only managed secret fields can be cleared.",
+  "保存环境变量失败：": "Failed to save environment variables: ",
+  "无法写入重启请求：": "Failed to write the restart request: ",
+  "请求内容过大。": "The request body is too large.",
+  "请求长度无效。": "The request length is invalid.",
+  "请求必须是 JSON 对象。": "The request must be a JSON object.",
+  "请求未完成，请查看系统日志。": "The request did not complete; see the system logs.",
+  "无法读取 WebUI 页面。": "Failed to read the WebUI page.",
+  "未知状态页面。": "Unknown status page.",
+
+  // Queue, task, search, and template errors.
+  "Docker 部署请保留请求并检查或重启研究容器。": "On Docker, keep the request and check or restart the research container.",
+  "当前没有可清除的过期请求。": "There are no stale requests to clear.",
+  "无法读取任务队列：": "Failed to read the task queue: ",
+  "清除过期请求失败：": "Failed to clear stale requests: ",
+  "不支持的任务类型。": "Unsupported task type.",
+  "不支持该任务的停止操作。": "This task does not support stopping.",
+  "没有可停止的 WebUI 任务。": "There is no WebUI task that can be stopped.",
+  "未找到可重试的历史维护任务。": "No retryable history-maintenance task was found.",
+  "该历史维护任务当前不能重试。": "This history-maintenance task cannot be retried now.",
+  "最低分数必须是数字。": "Minimum score must be a number.",
+  "检索失败：": "Search failed: ",
+  "读取收藏数据失败：": "Failed to read favorite data: ",
+  "SQLite 数据库尚未创建。": "The SQLite database has not been created yet.",
+  "SQLite 数据库尚不可用。": "The SQLite database is not available yet.",
+  "收藏通过论文失败：": "Failed to favorite qualifying papers: ",
+  "论文来源和标识不能为空。": "Paper source and identifier are required.",
+  "保存趋势提示词模板失败：": "Failed to save the trend prompt template: ",
+  "模板名称不能为空。": "Template name is required.",
+  "模板名称长度或格式无效。": "Template name length or format is invalid.",
+  "模板内容不能为空。": "Template content is required.",
+  "模板内容长度或格式无效。": "Template content length or format is invalid.",
+  "最多保存 50 个趋势提示词模板。": "At most 50 trend prompt templates can be saved.",
+  "该内置模板尚未修改，无需恢复。": "This built-in template has not been changed, so it does not need restoring.",
+  "未找到该趋势提示词模板。": "Trend prompt template not found.",
+
+  // Diagnostics, reports, backup, and integration errors.
+  "诊断时间范围无效。": "The diagnostics time range is invalid.",
+  "读取运行诊断失败：": "Failed to read run diagnostics: ",
+  "用量统计时间范围无效。": "The usage-statistics time range is invalid.",
+  "自定义时间段需要有效的开始和结束日期。": "Custom range requires valid start and end dates.",
+  "自定义时间段的结束日期不能早于开始日期。": "The custom-range end date cannot be earlier than the start date.",
+  "读取用量统计失败：": "Failed to read usage statistics: ",
+  "报告标识无效。": "Report identifier is invalid.",
+  "报告路径无效。": "Report path is invalid.",
+  "报告文件不存在。": "Report file does not exist.",
+  "读取本地备份失败：": "Failed to read local backups: ",
+  "请先启用 WebDAV 同步。": "Enable WebDAV synchronization first.",
+  "WebDAV URL 或用户名尚未配置完整。": "WebDAV URL or username is not configured completely.",
+  "创建 WebDAV 客户端失败：": "Failed to create the WebDAV client: ",
+  "WebDAV 配置覆盖必须是对象。": "The WebDAV configuration override must be an object.",
+  "WebDAV 凭据覆盖必须是对象。": "The WebDAV credential override must be an object.",
+  "包含不支持的 WebDAV 配置字段。": "The WebDAV configuration contains unsupported fields.",
+  "WebDAV 配置值无效。": "A WebDAV configuration value is invalid.",
+  "包含不支持的 WebDAV 凭据字段。": "The WebDAV credentials contain unsupported fields.",
+  "WebDAV 凭据值无效。": "A WebDAV credential value is invalid.",
+  "WebDAV 凭据长度无效。": "A WebDAV credential has an invalid length.",
+  "创建本地备份失败：": "Failed to create the local backup: ",
+  "导出备份失败：": "Failed to export the backup: ",
+  "备份文件为空或超过 1 GB 限制。": "The backup file is empty or exceeds the 1 GB limit.",
+  "仅支持 zip、gz 或 db 备份文件。": "Only zip, gz, or db backup files are supported.",
+  "有运行中的任务正在使用数据库，请等待任务完成后再恢复备份。": "A running task is using the database; wait for it to finish before restoring a backup.",
+  "导入备份失败：": "Failed to import the backup: ",
+  "未找到可导出的配置文件。": "No configuration file is available to export.",
+  "WebDAV ": "WebDAV ",
+  " 失败：": " failed: ",
+  "不支持的 WebDAV 操作。": "Unsupported WebDAV operation.",
+  "不支持的连接测试。": "Unsupported connection test.",
+  "连接测试参数无效：": "Connection-test parameters are invalid: ",
+  "不支持的通知渠道。": "Unsupported notification channel.",
+  "测试通知参数必须是对象。": "Test-notification parameters must be an object.",
+  "测试通知参数格式无效。": "Test-notification parameter format is invalid.",
+  "测试通知参数长度无效。": "A test-notification parameter has an invalid length.",
+  "测试通知未发送：": "Test notification was not sent: ",
+  "请检查渠道配置和网络。": "Check the channel configuration and network.",
+  "日志标识无效。": "Log identifier is invalid.",
+  "日志路径无效。": "Log path is invalid.",
+  "日志文件不存在。": "Log file does not exist.",
+  "读取日志失败：": "Failed to read the log: ",
+
+  // Authentication and account management errors.
+  "管理员账户尚未初始化。": "The administrator account has not been initialized.",
+  "管理员账户已经初始化。": "The administrator account is already initialized.",
+  "管理员": "Administrator",
+  "请先登录。": "Sign in first.",
+  "只有账户所有者可以管理账户。": "Only the account owner can manage accounts.",
+  "请先初始化管理员账户。": "Initialize an administrator account first.",
+  "该用户名已经存在。": "This username already exists.",
+  "账户数量已达到上限。": "The account limit has been reached.",
+  "请先确认删除该管理员账户。": "Confirm deletion of this administrator account first.",
+  "不能删除所有者账户。": "The owner account cannot be deleted.",
+  "只能重置其他管理员的密码。": "Only other administrators' passwords can be reset.",
+  "登录尝试过于频繁，请在 ": "Too many sign-in attempts. Try again in ",
+  " 秒后重试。": " seconds.",
+  "用户名须为 3–64 位字母、数字、`.`、`_` 或 `-`，且以字母或数字开头。": "Username must be 3–64 letters, numbers, `.`, `_`, or `-`, and start with a letter or number.",
+  "账户列表必须包含一个所有者账户。": "The account list must include an owner account.",
+  "账户列表无效。": "The account list is invalid.",
 });
 
 const FALLBACK_ARXIV_CATEGORIES = [
@@ -584,10 +832,13 @@ const state = {
   timers: new Map(),
   pageData: {},
   renderToken: 0,
+  pageRequestController: null,
   language: window.localStorage.getItem("adr-modern-language") === "en" ? "en" : "zh",
   theme: window.localStorage.getItem("adr-modern-theme") === "dark" ? "dark" : "light",
   configurationDirty: false,
   translationIndex: new Map(),
+  translationFragments: [],
+  localizedTextCache: new Map(),
   translationsLoaded: false,
   translationsPromise: null,
   // Chinese is the authored UI language. Until English has been selected,
@@ -601,13 +852,56 @@ const state = {
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
 
+function rebuildTranslationLookup() {
+  // Prefer the shared catalogue where it supplies a translation, then retain
+  // the modern-only entries.  Keeping the fragments sorted once avoids an
+  // O(catalogue) scan for every text node during a status refresh.
+  const pairs = new Map([
+    ...Object.entries(MODERN_EN_TRANSLATIONS),
+    ...Object.entries(DYNAMIC_EN_TRANSLATIONS),
+  ]);
+  state.translationIndex.forEach((english, chinese) => pairs.set(chinese, english));
+  state.translationFragments = Array.from(pairs.entries())
+    .filter(([chinese, english]) => /[\u4e00-\u9fff]/.test(chinese) && english && chinese !== english)
+    .sort(([left], [right]) => right.length - left.length);
+  state.localizedTextCache.clear();
+}
+
+function translateEmbeddedText(text, translate) {
+  if (!state.translationFragments.length) rebuildTranslationLookup();
+  let result = text;
+  for (const [chinese, english] of state.translationFragments) {
+    if (result.includes(chinese)) result = result.replaceAll(chinese, english);
+  }
+  // A few compatibility strings differ only by punctuation from their shared
+  // catalogue entry.  Once every Chinese wording has been replaced, use
+  // English punctuation too rather than leaving a visually mixed sentence.
+  if (result !== text && !/[\u4e00-\u9fff]/.test(result)) {
+    result = result
+      .replaceAll("。", ".")
+      .replaceAll("，", ", ")
+      .replaceAll("；", "; ")
+      .replaceAll("：", ": ")
+      .replaceAll("（", " (")
+      .replaceAll("）", ")");
+  }
+  return result === text ? "" : result;
+}
+
 function localizedString(value) {
   const source = String(value ?? "");
   if (state.language !== "en") return source;
+  const cached = state.localizedTextCache.get(source);
+  if (cached !== undefined) return cached;
   const leading = source.match(/^\s*/)?.[0] || "";
   const trailing = source.match(/\s*$/)?.[0] || "";
   const core = source.slice(leading.length, source.length - trailing.length);
-  const translate = (text) => state.translationIndex.get(text) || MODERN_EN_TRANSLATIONS[text] || "";
+  const translate = (text) => (
+    state.translationIndex.get(text)
+    || MODERN_EN_TRANSLATIONS[text]
+    || DYNAMIC_EN_TRANSLATIONS[text]
+    || ""
+  );
   let translated = translate(core);
   // Section headings are rendered as an icon followed by wording in one text
   // node (for example "🧮 评价策略").  The shared catalogue stores the
@@ -620,7 +914,17 @@ function localizedString(value) {
       if (suffix) translated = `${decorated[1]}${suffix}`;
     }
   }
-  return `${leading}${translated || core}${trailing}`;
+  if (!translated) translated = translateEmbeddedText(core, translate);
+  const result = `${leading}${translated || core}${trailing}`;
+  state.localizedTextCache.set(source, result);
+  return result;
+}
+
+function localizedError(error, fallback = "请求未完成。") {
+  // API responses, connection checks, and worker summaries can all surface
+  // after the initial page render. Keep those messages in the active UI
+  // language too, while preserving unknown non-Chinese server text.
+  return localizedString(error?.message || fallback);
 }
 
 function localizeRoot(root = document) {
@@ -716,6 +1020,7 @@ function loadTranslations() {
       state.translationIndex = new Map(entries
         .filter((entry) => entry && typeof entry.zh === "string" && typeof entry.en === "string")
         .map((entry) => [entry.zh, entry.en]));
+      rebuildTranslationLookup();
       state.translationsLoaded = true;
     })
     .finally(() => { state.translationsPromise = null; });
@@ -886,13 +1191,21 @@ async function api(path, options = {}) {
     headers["Content-Type"] = "application/json";
     options.body = JSON.stringify(options.body);
   }
-  const response = await fetch(path, { credentials: "same-origin", ...options, headers });
+  const requestOptions = { credentials: "same-origin", ...options, headers };
+  // Page-local reads are never useful after navigation.  Cancelling them
+  // releases the browser connection and prevents a slow previous page from
+  // competing with the page the operator has already opened.  Mutating
+  // actions always provide a method/body and deliberately keep running.
+  if (!requestOptions.signal && !requestOptions.method && !requestOptions.body) {
+    requestOptions.signal = state.pageRequestController?.signal;
+  }
+  const response = await fetch(path, requestOptions);
   if (response.status === 204) return null;
   const contentType = response.headers.get("content-type") || "";
   const payload = contentType.includes("application/json") ? await response.json().catch(() => ({})) : await response.text();
   if (!response.ok) {
     const detail = typeof payload === "object" ? payload.detail : payload;
-    throw new Error(detail || "请求未完成。 ");
+    throw new Error(localizedString(detail || "请求未完成。"));
   }
   return payload;
 }
@@ -906,8 +1219,14 @@ function toast(text, type = "success") {
   node._timer = window.setTimeout(() => { node.hidden = true; }, 4200);
 }
 
+function isAbortError(error) {
+  return error?.name === "AbortError";
+}
+
 function runLocalRefresh(promise) {
-  Promise.resolve(promise).catch((error) => toast(error?.message || "请求未完成。", "error"));
+  Promise.resolve(promise).catch((error) => {
+    if (!isAbortError(error)) toast(localizedError(error), "error");
+  });
 }
 
 function beginLocalRequest(name) {
@@ -918,6 +1237,37 @@ function beginLocalRequest(name) {
 
 function isCurrentLocalRequest(name, version) {
   return state.localRequestVersions.get(name) === version;
+}
+
+function replaceMarkupIfChanged(host, markup) {
+  if (!host || host._adrMarkup === markup) return false;
+  host.innerHTML = markup;
+  host._adrMarkup = markup;
+  return true;
+}
+
+function rememberMarkup(host, markup) {
+  if (host) host._adrMarkup = markup;
+}
+
+function beginFragmentRefresh(host, message) {
+  if (!host) return false;
+  const hasRenderedContent = Boolean(host.firstElementChild && !host.firstElementChild.classList.contains("loading"));
+  host.classList.add("refresh-region");
+  if (hasRenderedContent) {
+    host.classList.add("is-refreshing");
+    host.setAttribute("aria-busy", "true");
+  } else {
+    host.innerHTML = `<div class="loading">${escapeHtml(message)}</div>`;
+    applyLocale(host);
+  }
+  return hasRenderedContent;
+}
+
+function finishFragmentRefresh(host) {
+  if (!host) return;
+  host.classList.remove("is-refreshing");
+  host.removeAttribute("aria-busy");
 }
 
 function clearTimers() {
@@ -987,6 +1337,17 @@ function section(title, body, options = {}) {
 
 function divider() { return '<div class="section-divider"></div>'; }
 
+function defaultSecretPlaceholder(key, placeholder = "") {
+  if (placeholder) return placeholder;
+  const name = String(key || "").toUpperCase();
+  if (name.includes("WEBHOOK") || name.endsWith("_URL")) return "请输入 Webhook URL";
+  if (name.includes("API_KEY")) return "请输入 API Key";
+  if (name.includes("PASSWORD") || name.includes("PASSWD")) return "请输入密码";
+  if (name.includes("TOKEN")) return "请输入 Token";
+  if (name.includes("SECRET")) return "请输入签名密钥";
+  return "请输入内容";
+}
+
 function field(options) {
   const {
     label, key, type = "text", scope = "config", fallback = "", help = "", min, max, step,
@@ -1020,7 +1381,8 @@ function field(options) {
   }
   if (type === "secret") {
     const configured = secretConfigured(key);
-    return `<label class="form-field"><span>${escapeHtml(label)}${hint}</span><input type="password" ${data} data-secret="1" autocomplete="new-password" placeholder="${configured ? "已配置；留空则保持不变" : placeholder}" /></label>`;
+    const emptySecretPlaceholder = defaultSecretPlaceholder(key, placeholder);
+    return `<label class="form-field"><span>${escapeHtml(label)}${hint}</span><input type="password" ${data} data-secret="1" autocomplete="new-password" placeholder="${configured ? "已配置；留空则保持不变" : emptySecretPlaceholder}" /></label>`;
   }
   if (type === "range") {
     const rangeKey = `${scope}:${key}`;
@@ -1175,10 +1537,10 @@ function statusCard(status, options = {}) {
   ].join(" · ") : "";
   const relevantLocks = Array.isArray(status.relevant_locks) ? status.relevant_locks : [];
   const relevantNames = new Set(relevantLocks.map((lock) => String(lock.name || "")));
-  const lockLine = relevantLocks.length ? `<p class="status-locks">${escapeHtml(localeText("运行锁：", "Run locks: "))}${relevantLocks.map((lock) => `${escapeHtml(lock.name || "—")}${lock.pid ? ` (PID ${escapeHtml(lock.pid)})` : ""}`).join(" · ")}</p>` : "";
+  const lockLine = relevantLocks.length ? `<p class="status-locks">${escapeHtml(localeText("运行锁：", "Run locks: "))}${relevantLocks.map((lock) => `${escapeHtml(localizedString(lock.name || "—"))}${lock.pid ? ` (PID ${escapeHtml(lock.pid)})` : ""}`).join(" · ")}</p>` : "";
   const relatedLocks = (Array.isArray(status.active_locks) ? status.active_locks : []).filter((lock) => !relevantNames.has(String(lock.name || "")));
-  const relatedLine = relatedLocks.length ? `<p class="status-locks">${escapeHtml(localeText("同时运行：", "Also running: "))}${relatedLocks.map((lock) => escapeHtml(lock.name || "—")).join(" · ")}</p>` : "";
-  const liveLog = status.live_log && typeof status.live_log === "object" && status.live_log.content ? `<details class="live-log" open><summary>📜 ${escapeHtml(status.live_log.name || localeText("运行日志", "Run log"))} · ${escapeHtml(localeText("日志尾部 15 行", "Last 15 log lines"))}${status.live_log.truncated ? localeText("（已截断）", " (truncated)") : ""}</summary><pre>${escapeHtml(status.live_log.content)}</pre></details>` : "";
+  const relatedLine = relatedLocks.length ? `<p class="status-locks">${escapeHtml(localeText("同时运行：", "Also running: "))}${relatedLocks.map((lock) => escapeHtml(localizedString(lock.name || "—"))).join(" · ")}</p>` : "";
+  const liveLog = status.live_log && typeof status.live_log === "object" && status.live_log.content ? `<details class="live-log" open><summary>📜 ${escapeHtml(localizedString(status.live_log.name || localeText("运行日志", "Run log")))} · ${escapeHtml(localeText("日志尾部 15 行", "Last 15 log lines"))}${status.live_log.truncated ? localeText("（已截断）", " (truncated)") : ""}</summary><pre>${escapeHtml(status.live_log.content)}</pre></details>` : "";
   const stop = status.can_stop && options.allowStop !== false
     ? `<button class="danger-button" data-stop-task="${escapeAttribute(status.stop_kind || options.kind || "")}">停止当前任务</button>`
     : "";
@@ -1209,16 +1571,21 @@ function updateDailyStatus(root, status) {
   const statusHost = $("#daily-status-content", root);
   const queue = $("#daily-queue-content", root);
   if (!launch || !statusHost || !queue) return false;
-  launch.innerHTML = dailyLaunch(status);
-  statusHost.innerHTML = statusCard(status, { kind: "daily", refresh: false });
-  queue.innerHTML = dailyQueue(status);
-  // Only the newly replaced status/action fragments need event bindings. The
-  // settings form stays in place, keeping unfinished edits and focus intact.
-  bindCommon(launch);
-  bindCommon(statusHost);
-  applyLocale(launch);
-  applyLocale(statusHost);
-  applyLocale(queue);
+  const launchChanged = replaceMarkupIfChanged(launch, dailyLaunch(status));
+  const statusChanged = replaceMarkupIfChanged(statusHost, statusCard(status, { kind: "daily", refresh: false }));
+  const queueChanged = replaceMarkupIfChanged(queue, dailyQueue(status));
+  // Polling while an active task is waiting on a remote API often returns the
+  // same state.  Do not rebuild or relocalize an unchanged card every five
+  // seconds; the settings form, focus and scroll position remain untouched.
+  if (launchChanged) {
+    bindCommon(launch);
+    applyLocale(launch);
+  }
+  if (statusChanged) {
+    bindCommon(statusHost);
+    applyLocale(statusHost);
+  }
+  if (queueChanged) applyLocale(queue);
   return true;
 }
 
@@ -1232,9 +1599,10 @@ async function refreshDailyStatus() {
       scheduleRefresh("daily", refreshDailyStatus, 5000);
     }
   } catch (error) {
+    if (isAbortError(error) || state.page !== "daily_research") return;
     // Preserve the usable page and settings form if a transient status read
     // fails; the next manual refresh or task update can retry it.
-    toast(localeText(`状态刷新失败：${error.message}`, `Status refresh failed: ${error.message}`), "error");
+    toast(localeText(`状态刷新失败：${error.message}`, `Status refresh failed: ${localizedError(error)}`), "error");
   }
 }
 
@@ -1244,8 +1612,14 @@ async function renderDaily(token) {
   const status = await fetchStatus("daily");
   if (token !== state.renderToken) return;
   const autoRefresh = state.pageData.dailyAutoRefresh !== false;
-  root.innerHTML = `${pageHeader()}${section("每日研究", `<div id="daily-launch">${dailyLaunch(status)}</div>`, { icon: "🚀" })}${divider()}${section("状态面板", `<label class="toggle-field refresh-row"><span><strong>状态自动刷新</strong><small>开启后，仅在任务运行或刚提交等待接手时每 5 秒刷新状态、队列和日志尾部。</small></span><input id="daily-auto-refresh" type="checkbox" ${autoRefresh ? "checked" : ""}/><i></i></label><div id="daily-status-content" class="task-status-region">${statusCard(status, { kind: "daily", refresh: false })}</div>${divider()}<h3>每日研究队列</h3><div id="daily-queue-content">${dailyQueue(status)}</div>`, { icon: "📊" })}${divider()}${renderDailySettings()}`;
+  const launchMarkup = dailyLaunch(status);
+  const statusMarkup = statusCard(status, { kind: "daily", refresh: false });
+  const queueMarkup = dailyQueue(status);
+  root.innerHTML = `${pageHeader()}${section("每日研究", `<div id="daily-launch">${launchMarkup}</div>`, { icon: "🚀" })}${divider()}${section("状态面板", `<label class="toggle-field refresh-row"><span><strong>状态自动刷新</strong><small>开启后，仅在任务运行或刚提交等待接手时每 5 秒刷新状态、队列和日志尾部。</small></span><input id="daily-auto-refresh" type="checkbox" ${autoRefresh ? "checked" : ""}/><i></i></label><div id="daily-status-content" class="task-status-region">${statusMarkup}</div>${divider()}<h3>每日研究队列</h3><div id="daily-queue-content">${queueMarkup}</div>`, { icon: "📊" })}${divider()}${renderDailySettings()}`;
   bindCommon(root);
+  rememberMarkup($("#daily-launch", root), launchMarkup);
+  rememberMarkup($("#daily-status-content", root), statusMarkup);
+  rememberMarkup($("#daily-queue-content", root), queueMarkup);
   $("#daily-auto-refresh", root)?.addEventListener("change", (event) => {
     state.pageData.dailyAutoRefresh = event.target.checked;
     if (!event.target.checked) window.clearTimeout(state.timers.get("daily"));
@@ -1260,8 +1634,8 @@ function renderDailySettings() {
 
 function compactTaskNotice(status) {
   const task = status?.task || {};
-  if (status?.is_active) return `<p class="info-box">⏳ ${escapeHtml(task.label || "任务")}${task.phase ? ` · ${escapeHtml(task.phase)}` : ""}</p>`;
-  if (["failed", "rejected", "interrupted", "skipped_busy"].includes(task.state)) return `<p class="issue-box">${escapeHtml(task.label || "上次任务未完成")}${task.detail ? `：${escapeHtml(task.detail)}` : ""}</p>`;
+  if (status?.is_active) return `<p class="info-box">⏳ ${escapeHtml(localizedString(task.label || "任务"))}${task.phase ? ` · ${escapeHtml(localizedString(task.phase))}` : ""}</p>`;
+  if (["failed", "rejected", "interrupted", "skipped_busy"].includes(task.state)) return `<p class="issue-box">${escapeHtml(localizedString(task.label || "上次任务未完成"))}${task.detail ? `${localeText("：", ": ")}${escapeHtml(localizedString(task.detail))}` : ""}</p>`;
   return "";
 }
 
@@ -1273,7 +1647,7 @@ function pastDailyMarkup(status, values) {
     { label: "等待中", value: formatNumber(queue.pending), help: queue.next_date ? localeText(`下一日期：${queue.next_date}`, `Next date: ${queue.next_date}`) : "暂无待处理日期" },
     { label: "运行中", value: formatNumber(queue.running), help: queue.active_date ? localeText(`当前日期：${queue.active_date}`, `Current date: ${queue.active_date}`) : "" },
     { label: "已完成", value: formatNumber(queue.completed), help: "已生成历史日期报告" },
-    { label: "失败", value: formatNumber(queue.failed), help: queue.first_error || "失败任务可在日志中查看" },
+    { label: "失败", value: formatNumber(queue.failed), help: localizedString(queue.first_error || "失败任务可在日志中查看") },
   ]) : '<p class="empty-state">当前没有过去日报任务。</p>', { icon: "📋" })}`;
 }
 
@@ -1284,7 +1658,7 @@ function bindPastDaily(root, values, token) {
   $("#backfill-start", root)?.addEventListener("click", async () => {
     const from = $("#backfill-from").value; const to = $("#backfill-to").value;
     if (!from || !to || from > to) return toast("请填写有效的开始和结束日期。", "error");
-    try { await api("/api/tasks/backfill_run", { method: "POST", body: { args: { date_from: from, date_to: to } } }); toast("过去日报已加入队列。 "); await refreshPastDailyContent(root, token); } catch (error) { toast(error.message, "error"); }
+    try { await api("/api/tasks/backfill_run", { method: "POST", body: { args: { date_from: from, date_to: to } } }); toast("过去日报已加入队列。 "); await refreshPastDailyContent(root, token); } catch (error) { toast(localizedError(error), "error"); }
   });
 }
 
@@ -1294,19 +1668,77 @@ async function refreshPastDailyContent(root = $("#page-root"), token = state.ren
   const requestVersion = beginLocalRequest("past-daily-content");
   const yesterday = relativeLocalDateKey(-1);
   const values = state.pageData.past || { from: yesterday, to: yesterday };
-  host.innerHTML = '<div class="loading">正在读取过去日报队列…</div>';
-  const status = await fetchStatus("past");
-  if (token !== state.renderToken || state.page !== "past_daily" || !isCurrentLocalRequest("past-daily-content", requestVersion)) return;
-  host.innerHTML = pastDailyMarkup(status, values);
-  bindCommon(host);
-  bindPastDaily(root, values, token);
-  applyLocale(host);
+  beginFragmentRefresh(host, "正在读取过去日报队列…");
+  try {
+    const status = await fetchStatus("past");
+    if (token !== state.renderToken || state.page !== "past_daily" || !isCurrentLocalRequest("past-daily-content", requestVersion)) return;
+    host.innerHTML = pastDailyMarkup(status, values);
+    bindCommon(host);
+    bindPastDaily(root, values, token);
+    applyLocale(host);
+  } finally {
+    if (token === state.renderToken && state.page === "past_daily" && isCurrentLocalRequest("past-daily-content", requestVersion)) {
+      finishFragmentRefresh(host);
+    }
+  }
 }
 
 async function renderPastDaily(token) {
   const root = $("#page-root");
   root.innerHTML = `${pageHeader()}<div id="past-daily-content"><div class="loading">正在读取过去日报队列…</div></div>`;
   await refreshPastDailyContent(root, token);
+}
+
+function trendTemplateDisplayName(item) {
+  // Built-in template identifiers are application-provided UI data. Custom
+  // names remain exactly as entered by the operator, but built-ins should not
+  // leave Chinese options or read-only values in an English interface.
+  if (item?.builtin) return localizedString(item.name);
+  return String(item?.name || "");
+}
+
+const BUILTIN_TREND_TEMPLATE_ENGLISH_TEXT = Object.freeze({
+  "综合分析": `Write a comprehensive trend analysis of the following paper set in Markdown. Include these five sections:
+
+## 1. Active Topics
+Identify 3–5 main research subfields. For each, list representative papers (identifier and title) and assess activity (high/medium/low) and direction (rising/stable/declining).
+
+## 2. Evolution Over Time
+Split the period into earlier and later stages. Summarize shifts in research focus and note turning points and representative papers.
+
+## 3. Key Researchers
+List the five researchers with the most papers and their main directions. Briefly describe the principal collaboration groups.
+
+## 4. Gaps and Opportunities
+Identify less-covered directions and two or three promising cross-disciplinary opportunities.
+
+## 5. Methodological Trends
+List the five most common methods and identify emerging methods.
+
+Requirements:
+- Base the analysis only on the supplied paper data; do not cite external papers.
+- Keep each section concise and clear.
+- Include paper identifiers when referring to papers.`,
+  "研究脉络综述": `Based on the papers collected in this run, write a trend review for researchers.
+
+Use this structure: research questions and scope; key advances by theme or timeline; representative methods and results; relationships between approaches; known limitations; and questions worth tracking next. Use only information verifiable in the supplied papers. State clearly when evidence is insufficient; do not add unreported experimental results, conclusions, or citations.`,
+  "方法与证据比较": `Compare the methods and strength of evidence used in these papers to help researchers judge the maturity of each approach.
+
+For every method class, explain the core problem addressed; theoretical, experimental, or data evidence used; key strengths and limitations; reproducibility or validation conditions; and what can and cannot be compared directly across papers. End with a concise comparative conclusion. Use only the supplied paper information and do not infer unreported metrics.`,
+  "前沿机会与风险": `Extract the research opportunities, technical bottlenecks, and potential risks reflected by these papers.
+
+First summarize consensus and disagreement, then separate near-term testable questions from medium- and long-term directions. For every opportunity or risk, state the supporting paper evidence, dependencies, and uncertainty. End with no more than five priorities to track. Do not present speculation as fact or add application prospects unsupported by the papers.`,
+});
+
+function trendTemplateDisplayText(item) {
+  // An overridden built-in template is user-owned content and must remain
+  // untouched. Only the unchanged built-in prompts have a translated UI
+  // representation; selecting or starting one in English therefore sends the
+  // same intent in English without rewriting any saved custom prompt.
+  if (state.language === "en" && item?.builtin && !item.overridden) {
+    return BUILTIN_TREND_TEMPLATE_ENGLISH_TEXT[item.name] || String(item.text || "");
+  }
+  return String(item?.text || "");
 }
 
 function renderTrendForm(templates = []) {
@@ -1323,11 +1755,11 @@ function renderTrendForm(templates = []) {
   const values = state.pageData.trend || {
     keywords: "", date_from: defaultFrom, date_to: today, categories: [],
     max_results: config("trend_max_results", 500), sort_order: config("trend_sort_order", "ascending"),
-    analysis_prompt: configuredPrompt || defaultTemplate?.text || "", template: matchingTemplate?.name || "",
+    analysis_prompt: configuredPrompt || trendTemplateDisplayText(defaultTemplate), template: matchingTemplate?.name || "",
   };
   const categoryChoices = arxivCategories().map((item) => ({ value: item.code, label: item.label }));
   const selectedTemplate = templates.find((item) => item.name === values.template) || null;
-  const templateLabel = (item) => `${item.name}${item.default ? localeText("（默认内置）", " (built-in default)") : item.builtin ? localeText("（内置）", " (built-in)") : ""}`;
+  const templateLabel = (item) => `${trendTemplateDisplayName(item)}${item.default ? localeText("（默认内置）", " (built-in default)") : item.builtin ? localeText("（内置）", " (built-in)") : ""}`;
   const templateOptions = templates.map((item) => `<option value="${escapeAttribute(item.name)}" ${values.template === item.name ? "selected" : ""}>${escapeHtml(templateLabel(item))}</option>`).join("");
   const outputFormats = Array.isArray(config("trend_output_formats", ["markdown", "html"]))
     ? config("trend_output_formats", ["markdown", "html"])
@@ -1337,8 +1769,11 @@ function renderTrendForm(templates = []) {
     const enabled = state.draft.config[key] ?? outputFormats.includes(format);
     return `<label class="toggle-field"><span>${escapeHtml(label)}</span><input type="checkbox" data-field="${escapeAttribute(key)}" data-scope="config" ${enabled ? "checked" : ""}/><i></i></label>`;
   };
-  const templateName = selectedTemplate?.name || String(values.template_name || "");
-  const templateText = String(values.analysis_prompt || selectedTemplate?.text || defaultTemplate?.text || "");
+  const templateName = selectedTemplate ? trendTemplateDisplayName(selectedTemplate) : String(values.template_name || "");
+  const canonicalSelectedText = String(selectedTemplate?.text || "");
+  const templateText = selectedTemplate?.builtin && !selectedTemplate.overridden && values.analysis_prompt === canonicalSelectedText
+    ? trendTemplateDisplayText(selectedTemplate)
+    : String(values.analysis_prompt || trendTemplateDisplayText(selectedTemplate) || trendTemplateDisplayText(defaultTemplate));
   const templateEditor = `<div class="trend-template-editor"><div class="form-grid two"><label class="form-field"><span>提示词模板</span><select id="trend-template"><option value="">新建或自定义模板</option>${templateOptions}</select></label><div class="form-field"><span>模板操作</span><div class="template-action-buttons"><button id="trend-template-new" type="button" class="secondary-button">新建模板</button><button id="trend-template-delete" type="button" class="secondary-button" ${selectedTemplate && (!selectedTemplate.builtin || selectedTemplate.overridden) ? "" : "disabled"}>${selectedTemplate?.builtin ? "恢复内置模板" : "删除当前模板"}</button></div></div></div><label class="form-field"><span>模板名称</span><input id="trend-template-name" maxlength="120" ${selectedTemplate ? "readonly" : ""} value="${escapeAttribute(templateName)}" placeholder="例如：实验进展综述" /></label><label class="form-field"><span>模板内容</span><textarea id="trend-template-text" rows="8" maxlength="8000" placeholder="填写趋势研究的深度分析要求">${escapeHtml(templateText)}</textarea></label><p class="hint-text">每次趋势研究都会运行综合分析；默认使用内置模板，可在此查看、编辑、保存或恢复。</p><div class="action-row"><button id="trend-template-save" type="button" class="secondary-button">保存模板</button><span id="trend-template-result" class="inline-result"></span></div></div>`;
   const tldrSettings = `${field({ label: "为每篇趋势论文生成 TL;DR", key: "trend_generate_tldr", type: "checkbox", fallback: true, help: "用简短文字概括每篇入选论文的研究问题、方法和结论；关闭后趋势报告只保留标题、摘要和综合分析。" })}<div id="trend-tldr-dependent" class="trend-dependent-fields" ${generateTldr ? "" : "hidden"}>${field({ label: "TL;DR 批大小", key: "trend_tldr_batch_size", type: "number", min: 1, max: 50, fallback: 10 })}</div>`;
   const analysisSettings = `<h3>综合分析模板</h3>${templateEditor}`;
@@ -1396,20 +1831,25 @@ async function renderTrend(token) {
   if (token !== state.renderToken) return;
   let templates = Array.isArray(templateData.items) ? templateData.items : [];
   const form = renderTrendForm(templates);
-  root.innerHTML = `${pageHeader()}${section("趋势研究", `${form.run}<div id="trend-launch"><div class="action-row"><button id="trend-start" class="primary-button" ${status.can_start ? "" : "disabled"}>开始运行</button></div></div><div id="trend-status-content" class="task-status-region">${statusCard(status, { kind: "trend", refresh: false })}</div>`, { icon: "📈" })}${divider()}${section("分析参数", form.parameters, { icon: "🔍" })}${divider()}${section("趋势研究配置", form.configuration, { icon: "⚙️", hint: "输出格式会在保存时转换为兼容配置。" })}`;
+  const launchMarkup = `<div class="action-row"><button id="trend-start" class="primary-button" ${status.can_start ? "" : "disabled"}>开始运行</button></div>`;
+  const statusMarkup = statusCard(status, { kind: "trend", refresh: false });
+  root.innerHTML = `${pageHeader()}${section("趋势研究", `${form.run}<div id="trend-launch">${launchMarkup}</div><div id="trend-status-content" class="task-status-region">${statusMarkup}</div>`, { icon: "📈" })}${divider()}${section("分析参数", form.parameters, { icon: "🔍" })}${divider()}${section("趋势研究配置", form.configuration, { icon: "⚙️", hint: "输出格式会在保存时转换为兼容配置。" })}`;
   bindCommon(root);
+  rememberMarkup($("#trend-launch", root), launchMarkup);
+  rememberMarkup($("#trend-status-content", root), statusMarkup);
   const preserveTrend = () => {
     const prior = state.pageData.trend || {};
     const templateControl = $("#trend-template");
+    const activeTemplate = selectedTemplate();
     state.pageData.trend = {
       keywords: $("#trend-keywords").value, date_from: $("#trend-from").value, date_to: $("#trend-to").value,
       categories: Array.isArray(prior.categories) ? [...prior.categories] : [], sort_order: $("#trend-sort").value,
       max_results: Number($("#trend-max-results").value), template: templateControl?.value ?? String(prior.template || ""),
-      template_name: $("#trend-template-name")?.value ?? String(prior.template_name || ""),
+      template_name: activeTemplate?.name ?? $("#trend-template-name")?.value ?? String(prior.template_name || ""),
       analysis_prompt: $("#trend-template-text")?.value ?? String(prior.analysis_prompt || ""),
     };
   };
-  const templateOptions = (selected) => `<option value="">新建或自定义模板</option>${templates.map((item) => `<option value="${escapeAttribute(item.name)}" ${item.name === selected ? "selected" : ""}>${escapeHtml(`${item.name}${item.default ? localeText("（默认内置）", " (built-in default)") : item.builtin ? localeText("（内置）", " (built-in)") : ""}`)}</option>`).join("")}`;
+  const templateOptions = (selected) => `<option value="">新建或自定义模板</option>${templates.map((item) => `<option value="${escapeAttribute(item.name)}" ${item.name === selected ? "selected" : ""}>${escapeHtml(`${trendTemplateDisplayName(item)}${item.default ? localeText("（默认内置）", " (built-in default)") : item.builtin ? localeText("（内置）", " (built-in)") : ""}`)}</option>`).join("")}`;
   const selectedTemplate = () => templates.find((item) => item.name === $("#trend-template")?.value) || null;
   const updateTemplateAction = () => {
     const item = selectedTemplate();
@@ -1427,10 +1867,10 @@ async function renderTrend(token) {
     const textInput = $("#trend-template-text");
     if (selector) selector.value = item?.name || "";
     if (nameInput) {
-      nameInput.value = item?.name || "";
+      nameInput.value = item ? trendTemplateDisplayName(item) : "";
       nameInput.readOnly = Boolean(item);
     }
-    if (textInput) textInput.value = item?.text || "";
+    if (textInput) textInput.value = item ? trendTemplateDisplayText(item) : "";
     updateTemplateAction();
     preserveTrend();
   };
@@ -1476,7 +1916,11 @@ async function renderTrend(token) {
     preserveTrend(); markConfigurationDirty();
   }));
   $('[data-field="trend_generate_tldr"]', root)?.addEventListener("change", (event) => {
-    $("#trend-tldr-dependent", root).hidden = !event.target.checked;
+    const dependent = $("#trend-tldr-dependent", root);
+    if (dependent) {
+      dependent.hidden = !event.target.checked;
+      if (event.target.checked) applyLocale(dependent);
+    }
   });
   $("#trend-template", root)?.addEventListener("change", (event) => {
     selectTemplate(event.target.value);
@@ -1487,7 +1931,8 @@ async function renderTrend(token) {
     markConfigurationDirty();
   });
   $("#trend-template-save")?.addEventListener("click", async () => {
-    const name = $("#trend-template-name").value.trim();
+    const selected = selectedTemplate();
+    const name = selected?.builtin ? selected.name : $("#trend-template-name").value.trim();
     const text = $("#trend-template-text").value.trim();
     try {
       const result = await api("/api/trend/templates", { method: "PUT", body: { name, text } });
@@ -1504,9 +1949,10 @@ async function renderTrend(token) {
     const name = $("#trend-template").value;
     const item = selectedTemplate();
     if (!name || !item) return;
+    const displayName = trendTemplateDisplayName(item);
     const confirmation = item.builtin
-      ? localeText(`确认恢复提示词模板“${name}”？`, `Restore the built-in prompt template “${name}”?`)
-      : localeText(`确认删除提示词模板“${name}”？`, `Delete prompt template “${name}”?`);
+      ? localeText(`确认恢复提示词模板“${displayName}”？`, `Restore the built-in prompt template “${displayName}”?`)
+      : localeText(`确认删除提示词模板“${displayName}”？`, `Delete prompt template “${displayName}”?`);
     if (!window.confirm(confirmation)) return;
     try {
       const result = await api("/api/trend/templates/delete", { method: "POST", body: { name } });
@@ -1535,18 +1981,22 @@ async function renderTrend(token) {
     } catch (error) { toast(error.message, "error"); }
   };
   root._trendStartHandler = startTrend;
-  $("#trend-start").addEventListener("click", startTrend);
+  const trendStartButton = $("#trend-start", root);
+  trendStartButton?.addEventListener("click", startTrend);
+  if (trendStartButton) trendStartButton._adrTrendStartHandler = startTrend;
 }
 
 function updateTrendStatus(root, status) {
   const launch = $("#trend-launch", root);
   const statusHost = $("#trend-status-content", root);
   if (!launch || !statusHost) return false;
-  launch.innerHTML = `<div class="action-row"><button id="trend-start" class="primary-button" ${status.can_start ? "" : "disabled"}>开始运行</button></div>`;
-  statusHost.innerHTML = statusCard(status, { kind: "trend", refresh: false });
-  bindCommon(statusHost);
-  applyLocale(launch);
-  applyLocale(statusHost);
+  const launchChanged = replaceMarkupIfChanged(launch, `<div class="action-row"><button id="trend-start" class="primary-button" ${status.can_start ? "" : "disabled"}>开始运行</button></div>`);
+  const statusChanged = replaceMarkupIfChanged(statusHost, statusCard(status, { kind: "trend", refresh: false }));
+  if (launchChanged) applyLocale(launch);
+  if (statusChanged) {
+    bindCommon(statusHost);
+    applyLocale(statusHost);
+  }
   return true;
 }
 
@@ -1559,8 +2009,16 @@ async function refreshTrendStatus(root = $("#page-root"), token = state.renderTo
     // existing submit handler through a click relay rather than reconstructing
     // the analysis form or discarding its in-progress values.
     const start = root._trendStartHandler;
-    if (typeof start === "function") $("#trend-start", root)?.addEventListener("click", start);
-  } catch (error) { toast(localeText(`状态刷新失败：${error.message}`, `Status refresh failed: ${error.message}`), "error"); }
+    const startButton = $("#trend-start", root);
+    if (typeof start === "function" && startButton?._adrTrendStartHandler !== start) {
+      startButton?.addEventListener("click", start);
+      if (startButton) startButton._adrTrendStartHandler = start;
+    }
+  } catch (error) {
+    if (!isAbortError(error) && state.page === "trend_tasks") {
+      toast(localeText(`状态刷新失败：${error.message}`, `Status refresh failed: ${localizedError(error)}`), "error");
+    }
+  }
 }
 
 function reportTypeLabel(type) {
@@ -1650,8 +2108,15 @@ function buildMarkedReportHtml(rawHtml, papers) {
     : [];
   if (!candidates.length) return { html: String(rawHtml || ""), injected: false };
   const serializedCandidates = JSON.stringify(candidates).replaceAll("<", "\\u003c");
+  // The report iframe is deliberately isolated from the management DOM, so
+  // its small preference controls do not pass through ``applyLocale``. Pass
+  // the active labels into the injected script instead of leaving Chinese
+  // tooltips behind in an otherwise English report view.
+  const serializedLabels = JSON.stringify(state.language === "en"
+    ? { like: "Like", dislike: "Not interested" }
+    : { like: "喜欢", dislike: "不感兴趣" }).replaceAll("<", "\\u003c");
   const style = '<style id="adr-report-mark-style">.adr-report-mark-bar{float:right;display:flex;gap:4px;margin-left:12px}.adr-report-mark-btn{border:1px solid rgba(127,127,127,.45);border-radius:8px;background:rgba(255,255,255,.78);cursor:pointer;font-size:13px;line-height:1;padding:4px 7px;color:inherit}.adr-report-mark-btn:hover{background:rgba(255,255,255,.95)}.adr-report-mark-btn.active[data-preference=like]{background:#16a34a;border-color:#16a34a;color:#fff}.adr-report-mark-btn.active[data-preference=dislike]{background:#dc2626;border-color:#dc2626;color:#fff}</style>';
-  const script = `<script>(function(){if(window.__adrReportMarks)return;window.__adrReportMarks=true;var candidates=${serializedCandidates};function normalize(value){return String(value||'').replace(/\\s+/g,' ').trim().toLocaleLowerCase();}function button(preference,current){var item=document.createElement('button');item.type='button';item.className='adr-report-mark-btn'+(preference===current?' active':'');item.dataset.preference=preference;item.title=preference==='like'?'喜欢':'不感兴趣';item.textContent=preference==='like'?'👍':'👎';return item;}function set(bar,pref){pref=pref==='like'||pref==='dislike'?pref:'none';bar.dataset.current=pref;bar.querySelectorAll('.adr-report-mark-btn').forEach(function(item){item.classList.toggle('active',item.dataset.preference===pref);});}document.querySelectorAll('.revision-label').forEach(function(node){var text=normalize(node.textContent);if(/^v\\d+$/.test(text)||text==='↻ 重试')node.remove();});var used={};document.querySelectorAll('.card.pass,.card.fail').forEach(function(card){var cardText=normalize(card.textContent);var index=-1;for(var i=0;i<candidates.length;i+=1){if(!used[i]&&cardText.indexOf(normalize(candidates[i].title))!==-1){index=i;break;}}if(index<0)return;var field=card.querySelector('.field');if(!field)return;var paper=candidates[index];used[index]=true;var current=paper.preference==='like'||paper.preference==='dislike'?paper.preference:'none';var bar=document.createElement('div');bar.className='adr-report-mark-bar';bar.dataset.source=String(paper.source);bar.dataset.paperId=String(paper.paper_id);bar.dataset.current=current;bar.append(button('like',current),button('dislike',current));field.insertBefore(bar,field.firstChild);});window.addEventListener('message',function(event){var data=event.data||{};if(data.type!=='adr-report-mark-state')return;document.querySelectorAll('.adr-report-mark-bar').forEach(function(bar){if(bar.dataset.source===String(data.source||'')&&bar.dataset.paperId===String(data.paper_id||''))set(bar,data.preference);});});document.addEventListener('click',function(event){var item=event.target&&event.target.closest?event.target.closest('.adr-report-mark-btn'):null;if(!item)return;event.preventDefault();var bar=item.closest('.adr-report-mark-bar');if(!bar)return;var wanted=item.dataset.preference===(bar.dataset.current||'none')?'none':item.dataset.preference;set(bar,wanted);parent.postMessage({type:'adr-report-mark',source:bar.dataset.source,paper_id:bar.dataset.paperId,preference:wanted},'*');});})();</script>`;
+  const script = `<script>(function(){if(window.__adrReportMarks)return;window.__adrReportMarks=true;var candidates=${serializedCandidates};var labels=${serializedLabels};function normalize(value){return String(value||'').replace(/\\s+/g,' ').trim().toLocaleLowerCase();}function button(preference,current){var item=document.createElement('button');item.type='button';item.className='adr-report-mark-btn'+(preference===current?' active':'');item.dataset.preference=preference;item.title=labels[preference]||preference;item.textContent=preference==='like'?'👍':'👎';return item;}function set(bar,pref){pref=pref==='like'||pref==='dislike'?pref:'none';bar.dataset.current=pref;bar.querySelectorAll('.adr-report-mark-btn').forEach(function(item){item.classList.toggle('active',item.dataset.preference===pref);});}document.querySelectorAll('.revision-label').forEach(function(node){var text=normalize(node.textContent);if(/^v\\d+$/.test(text)||text==='↻ 重试')node.remove();});var used={};document.querySelectorAll('.card.pass,.card.fail').forEach(function(card){var cardText=normalize(card.textContent);var index=-1;for(var i=0;i<candidates.length;i+=1){if(!used[i]&&cardText.indexOf(normalize(candidates[i].title))!==-1){index=i;break;}}if(index<0)return;var field=card.querySelector('.field');if(!field)return;var paper=candidates[index];used[index]=true;var current=paper.preference==='like'||paper.preference==='dislike'?paper.preference:'none';var bar=document.createElement('div');bar.className='adr-report-mark-bar';bar.dataset.source=String(paper.source);bar.dataset.paperId=String(paper.paper_id);bar.dataset.current=current;bar.append(button('like',current),button('dislike',current));field.insertBefore(bar,field.firstChild);});window.addEventListener('message',function(event){var data=event.data||{};if(data.type!=='adr-report-mark-state')return;document.querySelectorAll('.adr-report-mark-bar').forEach(function(bar){if(bar.dataset.source===String(data.source||'')&&bar.dataset.paperId===String(data.paper_id||''))set(bar,data.preference);});});document.addEventListener('click',function(event){var item=event.target&&event.target.closest?event.target.closest('.adr-report-mark-btn'):null;if(!item)return;event.preventDefault();var bar=item.closest('.adr-report-mark-bar');if(!bar)return;var wanted=item.dataset.preference===(bar.dataset.current||'none')?'none':item.dataset.preference;set(bar,wanted);parent.postMessage({type:'adr-report-mark',source:bar.dataset.source,paper_id:bar.dataset.paperId,preference:wanted},'*');});})();</script>`;
   return {
     html: appendReportMarkup(appendReportMarkup(rawHtml, style, "head"), script, "body"),
     injected: true,
@@ -1659,10 +2124,13 @@ function buildMarkedReportHtml(rawHtml, papers) {
 }
 
 async function fetchReportHtml(reportId) {
-  const response = await fetch(`/api/reports/${encodeURIComponent(reportId)}/file`, { credentials: "same-origin" });
+  const response = await fetch(`/api/reports/${encodeURIComponent(reportId)}/file`, {
+    credentials: "same-origin",
+    signal: state.pageRequestController?.signal,
+  });
   if (!response.ok) {
     const text = await response.text().catch(() => "");
-    throw new Error(text || "读取报告失败。 ");
+    throw new Error(localizedString(text || "读取报告失败。"));
   }
   return response.text();
 }
@@ -1735,20 +2203,30 @@ async function refreshReportsDirectory(root = $("#page-root"), token = state.ren
   state.reportMarkAbortController?.abort();
   state.reportMarkAbortController = null;
   const showNonArxiv = Boolean(state.pageData.showNonArxiv);
-  host.innerHTML = '<div class="loading">正在读取报告目录…</div>';
-  const reports = await api(`/api/reports?non_arxiv=${showNonArxiv ? "1" : "0"}`);
-  if (token !== state.renderToken || state.page !== "reports" || !isCurrentLocalRequest("reports-directory", requestVersion)) return;
-  const all = [...reports.daily, ...reports.trend, ...reports.keyword_trend];
-  let selected = state.pageData.selectedReport;
-  if (!selected || !all.some((item) => item.id === selected)) selected = all[0]?.id || "";
-  state.pageData.selectedReport = selected;
-  if (!state.pageData.reportSelections) state.pageData.reportSelections = {};
-  host.innerHTML = reportDirectoryMarkup(reports, selected, showNonArxiv);
-  bindCommon(host);
-  const chooseReport = bindReportDirectory(root, reports, token);
-  applyLocale(host);
-  const report = all.find((item) => item.id === selected);
-  if (report) await loadReportPreview(report, reports, token, chooseReport);
+  beginFragmentRefresh(host, "正在读取报告目录…");
+  try {
+    const reports = await api(`/api/reports?non_arxiv=${showNonArxiv ? "1" : "0"}`);
+    if (token !== state.renderToken || state.page !== "reports" || !isCurrentLocalRequest("reports-directory", requestVersion)) return;
+    const all = [...reports.daily, ...reports.trend, ...reports.keyword_trend];
+    let selected = state.pageData.selectedReport;
+    if (!selected || !all.some((item) => item.id === selected)) selected = all[0]?.id || "";
+    state.pageData.selectedReport = selected;
+    if (!state.pageData.reportSelections) state.pageData.reportSelections = {};
+    host.innerHTML = reportDirectoryMarkup(reports, selected, showNonArxiv);
+    bindCommon(host);
+    const chooseReport = bindReportDirectory(root, reports, token);
+    applyLocale(host);
+    // The directory is usable as soon as its metadata arrives.  Load the
+    // selected report independently so a large HTML preview never freezes
+    // the picker or its current scroll position.
+    finishFragmentRefresh(host);
+    const report = all.find((item) => item.id === selected);
+    if (report) await loadReportPreview(report, reports, token, chooseReport);
+  } finally {
+    if (token === state.renderToken && state.page === "reports" && isCurrentLocalRequest("reports-directory", requestVersion)) {
+      finishFragmentRefresh(host);
+    }
+  }
 }
 
 async function renderReports(token) {
@@ -1800,13 +2278,13 @@ async function loadReportPreview(report, reports, token, chooseReport) {
           toast("论文偏好已保存。 ");
         } catch (error) {
           frame.contentWindow?.postMessage({ type: "adr-report-mark-state", source: paper.source, paper_id: paper.paper_id, preference: paper.preference || "none" }, "*");
-          toast(error.message, "error");
+          toast(localizedError(error), "error");
         }
       }, { signal: markAbortController.signal });
     }
   } catch (error) {
     preview.className = "report-preview-host";
-    preview.innerHTML = section("报告预览", `<p class="error-message">${escapeHtml(error.message)}</p>`);
+    preview.innerHTML = section("报告预览", `<p class="error-message">${escapeHtml(localizedError(error))}</p>`);
     applyLocale(preview);
   }
 }
@@ -2094,8 +2572,13 @@ async function renderKeywords(token) {
   bindWeightedEntryEditor(root, editor);
   const referenceToggle = $('[data-field="enable_reference_extraction"]', root);
   referenceToggle?.addEventListener("change", (event) => {
-    $("#reference-extraction-dependent", root).hidden = !event.target.checked;
-    $("#reference-extraction-disabled-hint", root).hidden = event.target.checked;
+    const dependent = $("#reference-extraction-dependent", root);
+    const disabledHint = $("#reference-extraction-disabled-hint", root);
+    if (dependent) {
+      dependent.hidden = !event.target.checked;
+      if (event.target.checked) applyLocale(dependent);
+    }
+    if (disabledHint) disabledHint.hidden = event.target.checked;
     if (event.target.checked) loadExtractedKeywords(root, token);
   });
   if (booleanValue(configValue("enable_reference_extraction", false), false)) loadExtractedKeywords(root, token);
@@ -2322,7 +2805,10 @@ async function renderScoring(token) {
   bindWeightedEntryEditor(root, authorEditor);
   $('[data-field="enable_author_bonus"]', root)?.addEventListener("change", (event) => {
     const region = $("#author-bonus-entry-region", root);
-    if (region) region.hidden = !event.target.checked;
+    if (region) {
+      region.hidden = !event.target.checked;
+      if (event.target.checked) applyLocale(region);
+    }
   });
   bindLegacyFormulaPreview(root, strategy);
   if (strategy === "learned_preference_v1") {
@@ -2496,7 +2982,10 @@ async function renderApi(_token) {
   const bindThirdPartyToggle = (selector, key, dependent) => $(selector, root)?.addEventListener("change", (event) => {
     state.draft.env[key] = event.target.checked ? "true" : "false";
     const fields = $(dependent, root);
-    if (fields) fields.hidden = !event.target.checked;
+    if (fields) {
+      fields.hidden = !event.target.checked;
+      if (event.target.checked) applyLocale(fields);
+    }
     markConfigurationDirty();
   });
   bindThirdPartyToggle("#openalex-enabled", "ENABLE_OPENALEX", "#openalex-dependent");
@@ -2532,7 +3021,7 @@ async function testConnection(kind, payload, resultId) {
         : localeText("连接失败", "Connection failed")));
       result.className = `inline-result ${response.ok ? "success" : "error"}`;
     }
-  } catch (error) { if (result) { result.textContent = error.message; result.className = "inline-result error"; } else toast(error.message, "error"); }
+  } catch (error) { if (result) { result.textContent = localizedError(error); result.className = "inline-result error"; } else toast(localizedError(error), "error"); }
 }
 
 function renderNotifications() {
@@ -2571,10 +3060,10 @@ async function sendNotificationTest(button) {
       method: "POST",
       body: notificationTestPayload(channel),
     });
-    if (result) { result.textContent = response.ok ? localeText("测试通知已发送。", "Test notification sent.") : (response.message || ""); result.className = `inline-result ${response.ok ? "success" : "error"}`; }
+    if (result) { result.textContent = response.ok ? localeText("测试通知已发送。", "Test notification sent.") : localizedString(response.message || ""); result.className = `inline-result ${response.ok ? "success" : "error"}`; }
   } catch (error) {
-    if (result) { result.textContent = error.message; result.className = "inline-result error"; }
-    else toast(error.message, "error");
+    if (result) { result.textContent = localizedError(error); result.className = "inline-result error"; }
+    else toast(localizedError(error), "error");
   } finally {
     button.disabled = false;
     button.textContent = originalLabel;
@@ -2715,7 +3204,11 @@ function bindAdvancedInteractions(root) {
   const toggle = (selector, target, visible) => {
     $(selector, root)?.addEventListener("change", (event) => {
       const host = $(target, root);
-      if (host) host.hidden = !visible(event);
+      if (host) {
+        const shown = visible(event);
+        host.hidden = !shown;
+        if (shown) applyLocale(host);
+      }
     });
   };
   toggle('[data-field="pdf_parser_mode"]', "#mineru-model-version", (event) => event.target.value === "mineru");
@@ -2839,16 +3332,26 @@ async function renderBackupSync(token) {
     const enabled = event.target.checked;
     const dependent = $("#webdav-dependent", root);
     const hint = $("#webdav-disabled-hint", root);
-    if (dependent) dependent.hidden = !enabled;
+    if (dependent) {
+      dependent.hidden = !enabled;
+      if (enabled) applyLocale(dependent);
+    }
     if (hint) hint.hidden = enabled;
   });
   $('[data-field="webdav_sync_mode"]', root)?.addEventListener("change", (event) => {
     const timeField = $("#webdav-scheduled-time-field", root);
-    if (timeField) timeField.hidden = event.target.value !== "scheduled";
+    if (timeField) {
+      const shown = event.target.value === "scheduled";
+      timeField.hidden = !shown;
+      if (shown) applyLocale(timeField);
+    }
   });
   $('[data-field="backup_enabled"]', root)?.addEventListener("change", (event) => {
     const settings = $("#local-backup-settings", root);
-    if (settings) settings.hidden = !event.target.checked;
+    if (settings) {
+      settings.hidden = !event.target.checked;
+      if (event.target.checked) applyLocale(settings);
+    }
   });
   $("#webdav-scheduled-time", root)?.addEventListener("change", (event) => {
     const [hour, minute] = String(event.target.value || "").split(":").map(Number);
@@ -2971,7 +3474,7 @@ function historyStatusPanel(data) {
   const latestResult = historyIsLive(data)
     ? '<p class="hint-text">任务完成后显示最近导入结果。</p>'
     : importSummary(data?.last_import);
-  return `${statusCard(status, { kind: "history", refresh: false, allowStop: false })}${divider()}<h3>最近一次导入结果</h3>${latestResult}${divider()}<h3>未完成任务</h3>${pagedTable("history-tasks", [{ label: "任务", value: (row) => row.label || row.mode || "—" }, { label: "状态", value: (row) => historyTaskStateLabel(row.state) }, { label: "进度", value: (row) => row.progress || "—" }, { label: "开始时间", value: (row) => formatTime(row.started_at || row.created_at) }, { label: "完成时间", value: (row) => formatTime(row.completed_at) }, { label: "问题摘要", value: (row) => row.issue || "—" }, { label: "操作", html: (row) => row.retryable ? `<button class="secondary-button compact-button" data-history-retry="${escapeAttribute(row.request_id)}">重试</button>` : "—" }], tasks, { empty: "没有未完成的历史维护任务。" })}`;
+  return `${statusCard(status, { kind: "history", refresh: false, allowStop: false })}${divider()}<h3>最近一次导入结果</h3>${latestResult}${divider()}<h3>未完成任务</h3>${pagedTable("history-tasks", [{ label: "任务", value: (row) => localizedString(row.label || row.mode || "—") }, { label: "状态", value: (row) => historyTaskStateLabel(row.state) }, { label: "进度", value: (row) => localizedString(row.progress || "—") }, { label: "开始时间", value: (row) => formatTime(row.started_at || row.created_at) }, { label: "完成时间", value: (row) => formatTime(row.completed_at) }, { label: "问题摘要", value: (row) => localizedString(row.issue || "—") }, { label: "操作", html: (row) => row.retryable ? `<button class="secondary-button compact-button" data-history-retry="${escapeAttribute(row.request_id)}">重试</button>` : "—" }], tasks, { empty: "没有未完成的历史维护任务。" })}`;
 }
 
 function bindHistoryLaunchers(root) {
@@ -3023,10 +3526,11 @@ function updateHistoryStatus(root, data) {
   // unsaved checkbox value.  Keep their DOM nodes and only update their
   // disabled state so an automatic refresh never discards an operator edit.
   updateHistoryActionAvailability(root, data);
-  status.innerHTML = historyStatusPanel(data);
-  bindPagers(status);
-  bindHistoryRetries(status);
-  applyLocale(status);
+  if (replaceMarkupIfChanged(status, historyStatusPanel(data))) {
+    bindPagers(status);
+    bindHistoryRetries(status);
+    applyLocale(status);
+  }
   return true;
 }
 
@@ -3040,7 +3544,9 @@ async function refreshHistoryStatus() {
       scheduleRefresh("history", refreshHistoryStatus, 5000);
     }
   } catch (error) {
-    toast(localeText(`历史状态刷新失败：${error.message}`, `History status refresh failed: ${error.message}`), "error");
+    if (!isAbortError(error) && state.page === "history_tasks") {
+      toast(localeText(`历史状态刷新失败：${error.message}`, `History status refresh failed: ${localizedError(error)}`), "error");
+    }
   }
 }
 
@@ -3050,10 +3556,12 @@ async function renderHistory(token) {
   const data = await api("/api/history");
   if (token !== state.renderToken) return;
   const autoRefresh = state.pageData.historyAutoRefresh !== false;
-  root.innerHTML = `${pageHeader()}${section("旧版本历史导入", `<div id="history-actions">${historyActions(data)}</div>`, { icon: "📜" })}${divider()}${section("状态面板", `<label class="toggle-field refresh-row"><span><strong>状态自动刷新</strong><small>运行中每 5 秒更新。</small></span><input id="history-auto-refresh" type="checkbox" ${autoRefresh ? "checked" : ""}/><i></i></label><div id="history-status-content" class="task-status-region">${historyStatusPanel(data)}</div>`, { icon: "📊" })}`;
+  const statusMarkup = historyStatusPanel(data);
+  root.innerHTML = `${pageHeader()}${section("旧版本历史导入", `<div id="history-actions">${historyActions(data)}</div>`, { icon: "📜" })}${divider()}${section("状态面板", `<label class="toggle-field refresh-row"><span><strong>状态自动刷新</strong><small>运行中每 5 秒更新。</small></span><input id="history-auto-refresh" type="checkbox" ${autoRefresh ? "checked" : ""}/><i></i></label><div id="history-status-content" class="task-status-region">${statusMarkup}</div>`, { icon: "📊" })}`;
   bindCommon(root);
   bindHistoryLaunchers(root);
   bindHistoryRetries(root);
+  rememberMarkup($("#history-status-content", root), statusMarkup);
   $('[data-field="legacy_import_full_repair_enabled"]', root)?.addEventListener("change", (event) => {
     const hint = $("#history-full-repair-hint", root);
     if (!hint) return;
@@ -3108,7 +3616,8 @@ function diagnosticTaskKindLabel(kind) {
 function healthFailureDetail(row) {
   if (!row?.last_error) return "—";
   const timestamp = formatTime(row.last_error_at);
-  return timestamp === "—" ? String(row.last_error) : `${timestamp} · ${row.last_error}`;
+  const detail = localizedString(row.last_error);
+  return timestamp === "—" ? detail : `${timestamp} · ${detail}`;
 }
 
 function healthSuccessRate(value) {
@@ -3127,7 +3636,7 @@ function healthTable(key, kind, rows) {
     { label: "最近失败信息（已脱敏）", value: healthFailureDetail },
   ], rows, { empty: "所选范围内没有 LLM 调用记录。" });
   return pagedTable(key, [
-    { label: "来源", value: (row) => row.name || row.source },
+    { label: "来源", value: (row) => localizedString(row.name || row.source) },
     { label: "最近请求", value: (row) => formatTime(row.last_event_at) },
     { label: "最新状态", value: (row) => healthStatusLabel(row.last_status) },
     { label: "最近任务", value: (row) => diagnosticTaskKindLabel(row.last_task_kind) },
@@ -3142,12 +3651,62 @@ function diagnosticsRangeControl(id, value) {
   return `<label class="form-field narrow-field"><span>查看范围</span><select id="${escapeAttribute(id)}"><option value="3" ${value === "3" ? "selected" : ""}>近 3 天</option><option value="7" ${value === "7" ? "selected" : ""}>近 7 天</option><option value="14" ${value === "14" ? "selected" : ""}>近 14 天</option><option value="30" ${value === "30" ? "selected" : ""}>近 30 天</option><option value="all" ${value === "all" ? "selected" : ""}>全部</option></select></label>`;
 }
 
+function diagnosticsRanges() {
+  return { runs: "7", llm: "7", sources: "7", ...(state.pageData.diagnosticsRanges || {}) };
+}
+
+function diagnosticsPanelMarkup(key, data, ranges) {
+  if (key === "runs") {
+    return section("运行诊断", `${diagnosticsRangeControl("diagnostics-range", ranges.runs)}<p class="hint-text">显示所选时间范围内的每日研究与过去日报；旧历史维护任务请在“系统 → 历史维护”查看。</p>${pagedTable("operational-runs", [{ label: "任务", value: (row) => diagnosticTaskKindLabel(row.run_kind) }, { label: "状态", value: (row) => diagnosticRunStatusLabel(row.status) }, { label: "开始时间", value: (row) => formatTime(row.started_at) }, { label: "完成时间", value: (row) => formatTime(row.completed_at) }, { label: "论文数", key: "total_papers" }, { label: "问题摘要", value: (row) => localizedString(row.error_summary || "—") }], data.runs || [], { empty: "尚无每日研究或过去日报运行记录。" })}`, { icon: "🩺" });
+  }
+  if (key === "llm") {
+    return section("LLM 健康", `${diagnosticsRangeControl("llm-range", ranges.llm)}<p class="hint-text">汇总所有真实任务（含历史维护）的 LLM 调用；查看不会发送探针请求，也不会额外消耗 Token。</p>${healthTable("llm-health", "llm", data.llm || [])}`, { icon: "🧠" });
+  }
+  return section("数据源健康", `${diagnosticsRangeControl("source-range", ranges.sources)}<p class="hint-text">汇总所有真实任务（含历史维护）的数据源请求；查看不会发送探针请求。</p>${healthTable("source-health", "source", data.sources || [])}`, { icon: "🌐" });
+}
+
+function diagnosticsContentMarkup(data, ranges) {
+  return `<div id="diagnostics-runs-panel">${diagnosticsPanelMarkup("runs", data.runs, ranges)}</div>${divider()}<div id="diagnostics-llm-panel">${diagnosticsPanelMarkup("llm", data.llm, ranges)}</div>${divider()}<div id="diagnostics-sources-panel">${diagnosticsPanelMarkup("sources", data.sources, ranges)}</div>`;
+}
+
+function bindDiagnosticsRange(root, key, token) {
+  const selectors = { runs: "#diagnostics-range", llm: "#llm-range", sources: "#source-range" };
+  $(selectors[key], root)?.addEventListener("change", (event) => {
+    state.pageData.diagnosticsRanges = { ...diagnosticsRanges(), [key]: event.target.value };
+    runLocalRefresh(refreshDiagnosticsPanel($("#page-root"), key, token));
+  });
+}
+
+function bindDiagnosticsRanges(root, token) {
+  ["runs", "llm", "sources"].forEach((key) => bindDiagnosticsRange(root, key, token));
+}
+
+async function refreshDiagnosticsPanel(root, key, token = state.renderToken) {
+  const panel = $(`#diagnostics-${key}-panel`, root);
+  if (!panel) return;
+  const requestVersion = beginLocalRequest(`diagnostics-${key}-panel`);
+  const ranges = diagnosticsRanges();
+  beginFragmentRefresh(panel, "正在读取运行诊断…");
+  try {
+    const data = await api(`/api/diagnostics?days=${encodeURIComponent(ranges[key])}`);
+    if (token !== state.renderToken || state.page !== "diagnostics" || !isCurrentLocalRequest(`diagnostics-${key}-panel`, requestVersion)) return;
+    panel.innerHTML = diagnosticsPanelMarkup(key, data, ranges);
+    bindCommon(panel);
+    bindDiagnosticsRange(panel, key, token);
+    applyLocale(panel);
+  } finally {
+    if (token === state.renderToken && state.page === "diagnostics" && isCurrentLocalRequest(`diagnostics-${key}-panel`, requestVersion)) {
+      finishFragmentRefresh(panel);
+    }
+  }
+}
+
 async function refreshDiagnosticsContent(root = $("#page-root"), token = state.renderToken) {
   const host = $("#diagnostics-content", root);
   if (!host) return;
   const requestVersion = beginLocalRequest("diagnostics-content");
-  const ranges = { runs: "7", llm: "7", sources: "7", ...(state.pageData.diagnosticsRanges || {}) };
-  host.innerHTML = '<div class="loading">正在读取运行诊断…</div>';
+  const ranges = diagnosticsRanges();
+  beginFragmentRefresh(host, "正在读取运行诊断…");
   // All three panels are backed by the same aggregate.  When their ranges
   // match (the common default), share one request instead of making three
   // identical SQLite reads and serialising them behind the server worker.
@@ -3156,19 +3715,22 @@ async function refreshDiagnosticsContent(root = $("#page-root"), token = state.r
     if (!requests.has(days)) requests.set(days, api(`/api/diagnostics?days=${days}`));
     return requests.get(days);
   };
-  const [runData, llmData, sourceData] = await Promise.all([
-    loadRange(ranges.runs),
-    loadRange(ranges.llm),
-    loadRange(ranges.sources),
-  ]);
-  if (token !== state.renderToken || state.page !== "diagnostics" || !isCurrentLocalRequest("diagnostics-content", requestVersion)) return;
-  host.innerHTML = `${section("运行诊断", `${diagnosticsRangeControl("diagnostics-range", ranges.runs)}<p class="hint-text">显示所选时间范围内的每日研究与过去日报；旧历史维护任务请在“系统 → 历史维护”查看。</p>${pagedTable("operational-runs", [{ label: "任务", value: (row) => diagnosticTaskKindLabel(row.run_kind) }, { label: "状态", value: (row) => diagnosticRunStatusLabel(row.status) }, { label: "开始时间", value: (row) => formatTime(row.started_at) }, { label: "完成时间", value: (row) => formatTime(row.completed_at) }, { label: "论文数", key: "total_papers" }, { label: "问题摘要", value: (row) => row.error_summary || "—" }], runData.runs || [], { empty: "尚无每日研究或过去日报运行记录。" })}`, { icon: "🩺" })}${divider()}${section("LLM 健康", `${diagnosticsRangeControl("llm-range", ranges.llm)}<p class="hint-text">汇总所有真实任务（含历史维护）的 LLM 调用；查看不会发送探针请求，也不会额外消耗 Token。</p>${healthTable("llm-health", "llm", llmData.llm || [])}`, { icon: "🧠" })}${divider()}${section("数据源健康", `${diagnosticsRangeControl("source-range", ranges.sources)}<p class="hint-text">汇总所有真实任务（含历史维护）的数据源请求；查看不会发送探针请求。</p>${healthTable("source-health", "source", sourceData.sources || [])}`, { icon: "🌐" })}`;
-  bindCommon(host);
-  [["#diagnostics-range", "runs"], ["#llm-range", "llm"], ["#source-range", "sources"]].forEach(([selector, key]) => $(selector, host).addEventListener("change", (event) => {
-    state.pageData.diagnosticsRanges = { ...ranges, [key]: event.target.value };
-    runLocalRefresh(refreshDiagnosticsContent(root, token));
-  }));
-  applyLocale(host);
+  try {
+    const [runData, llmData, sourceData] = await Promise.all([
+      loadRange(ranges.runs),
+      loadRange(ranges.llm),
+      loadRange(ranges.sources),
+    ]);
+    if (token !== state.renderToken || state.page !== "diagnostics" || !isCurrentLocalRequest("diagnostics-content", requestVersion)) return;
+    host.innerHTML = diagnosticsContentMarkup({ runs: runData, llm: llmData, sources: sourceData }, ranges);
+    bindCommon(host);
+    bindDiagnosticsRanges(host, token);
+    applyLocale(host);
+  } finally {
+    if (token === state.renderToken && state.page === "diagnostics" && isCurrentLocalRequest("diagnostics-content", requestVersion)) {
+      finishFragmentRefresh(host);
+    }
+  }
 }
 
 async function renderDiagnostics(token) {
@@ -3341,9 +3903,57 @@ function usageSummaryTable(summary) {
   return `<div class="table-wrap usage-summary-table"><table><thead><tr>${metrics.map(([label]) => `<th scope="col">${escapeHtml(label)}</th>`).join("")}</tr></thead><tbody><tr>${metrics.map(([, value]) => `<td>${escapeHtml(value)}</td>`).join("")}</tr></tbody></table></div>`;
 }
 
+function analyticsFragments(data, values) {
+  const summary = data.summary || { prompt: 0, completion: 0, total: 0, runs: 0 };
+  const hasUsage = Boolean(data.available && ((data.series || []).length || Number(summary.runs) > 0));
+  const usage = hasUsage
+    ? usageSummaryTable(summary)
+    : '<p class="empty-state">所选时间段内暂无用量数据。完成任一涉及 LLM 的任务后，这里会出现统计。</p>';
+  const trend = hasUsage
+    ? tokenTrendChart(data.series || [], data.window || {})
+    : '<p class="empty-state">所选时间段内没有可绘制的 Token 使用趋势。</p>';
+  const heatmap = (data.heatmap_daily || []).length
+    ? tokenHeatmap(data.heatmap_daily || [])
+    : '<p class="report-empty-state">暂无历史 Token 使用记录。</p>';
+  const modelTable = pagedTable("analytics-models", [
+    { label: "模型", key: "model" },
+    { label: "输入 Token", value: (row) => formatNumber(row.prompt) },
+    { label: "输出 Token", value: (row) => formatNumber(row.completion) },
+    { label: "总 Token", value: (row) => formatNumber(row.total) },
+  ], data.models || [], { empty: "所选时间段内暂无模型使用记录。" });
+  return {
+    heatmap,
+    summary: `${analyticsRangeControl(values)}${usage}`,
+    trend,
+    models: modelTable,
+  };
+}
+
+function analyticsMarkup(fragments) {
+  return `<section class="section-card analytics-statistics-card"><div id="analytics-heatmap">${fragments.heatmap}</div><div id="analytics-summary" class="analytics-statistics-block">${fragments.summary}</div><div id="analytics-trend" class="analytics-statistics-block trend-chart-block">${fragments.trend}</div><div id="analytics-models" class="analytics-statistics-block">${fragments.models}</div></section>`;
+}
+
+function bindAnalyticsControls(host, root, token, values) {
+  $$('[data-analytics-range]', host).forEach((button) => button.addEventListener("click", () => {
+    state.pageData.analytics = { ...values, range: button.dataset.analyticsRange };
+    runLocalRefresh(refreshAnalyticsContent(root, token));
+  }));
+  $("#analytics-custom-apply", host)?.addEventListener("click", () => {
+    const dateFrom = $("#analytics-from", host).value;
+    const dateTo = $("#analytics-to", host).value;
+    if (!dateFrom || !dateTo || dateFrom > dateTo) {
+      toast("请填写有效的开始和结束日期。", "error");
+      return;
+    }
+    state.pageData.analytics = { ...values, date_from: dateFrom, date_to: dateTo };
+    runLocalRefresh(refreshAnalyticsContent(root, token));
+  });
+}
+
 async function refreshAnalyticsContent(root = $("#page-root"), token = state.renderToken) {
   const host = $("#analytics-content", root);
   if (!host) return;
+  host.classList.add("refresh-region");
   const requestVersion = beginLocalRequest("analytics-content");
   const hasRenderedContent = Boolean($(".analytics-statistics-card", host));
   const fallback = { range: "7d", date_from: relativeLocalDateKey(-6), date_to: relativeLocalDateKey(0) };
@@ -3364,41 +3974,19 @@ async function refreshAnalyticsContent(root = $("#page-root"), token = state.ren
   try {
     const data = await api(`/api/analytics?${params.toString()}`);
     if (token !== state.renderToken || state.page !== "analytics" || !isCurrentLocalRequest("analytics-content", requestVersion)) return;
-    const control = analyticsRangeControl(values);
-    const summary = data.summary || { prompt: 0, completion: 0, total: 0, runs: 0 };
-    const hasUsage = Boolean(data.available && ((data.series || []).length || Number(summary.runs) > 0));
-    const usage = hasUsage
-      ? usageSummaryTable(summary)
-      : '<p class="empty-state">所选时间段内暂无用量数据。完成任一涉及 LLM 的任务后，这里会出现统计。</p>';
-    const trend = hasUsage
-      ? tokenTrendChart(data.series || [], data.window || {})
-      : '<p class="empty-state">所选时间段内没有可绘制的 Token 使用趋势。</p>';
-    const heatmap = (data.heatmap_daily || []).length
-      ? tokenHeatmap(data.heatmap_daily || [])
-      : '<p class="report-empty-state">暂无历史 Token 使用记录。</p>';
-    const modelTable = pagedTable("analytics-models", [
-      { label: "模型", key: "model" },
-      { label: "输入 Token", value: (row) => formatNumber(row.prompt) },
-      { label: "输出 Token", value: (row) => formatNumber(row.completion) },
-      { label: "总 Token", value: (row) => formatNumber(row.total) },
-    ], data.models || [], { empty: "所选时间段内暂无模型使用记录。" });
-    host.innerHTML = `<section class="section-card analytics-statistics-card">${heatmap}<div class="analytics-statistics-block">${control}${usage}</div><div class="analytics-statistics-block trend-chart-block">${trend}</div><div class="analytics-statistics-block">${modelTable}</div></section>`;
-    bindCommon(host);
-    $$('[data-analytics-range]', host).forEach((button) => button.addEventListener("click", () => {
-      state.pageData.analytics = { ...values, range: button.dataset.analyticsRange };
-      runLocalRefresh(refreshAnalyticsContent(root, token));
-    }));
-    $("#analytics-custom-apply", host)?.addEventListener("click", () => {
-      const dateFrom = $("#analytics-from", host).value;
-      const dateTo = $("#analytics-to", host).value;
-      if (!dateFrom || !dateTo || dateFrom > dateTo) {
-        toast("请填写有效的开始和结束日期。", "error");
-        return;
-      }
-      state.pageData.analytics = { ...values, date_from: dateFrom, date_to: dateTo };
-      runLocalRefresh(refreshAnalyticsContent(root, token));
-    });
-    applyLocale(host);
+    const fragments = analyticsFragments(data, values);
+    if (!hasRenderedContent) {
+      host.innerHTML = analyticsMarkup(fragments);
+      bindCommon(host);
+      bindAnalyticsControls(host, root, token, values);
+      ["heatmap", "summary", "trend", "models"].forEach((key) => rememberMarkup($(`#analytics-${key}`, host), fragments[key]));
+      applyLocale(host);
+      return;
+    }
+    const changed = ["heatmap", "summary", "trend", "models"].filter((key) => replaceMarkupIfChanged($(`#analytics-${key}`, host), fragments[key]));
+    if (changed.includes("summary")) bindAnalyticsControls($("#analytics-summary", host), root, token, values);
+    if (changed.includes("models")) bindPagers($("#analytics-models", host));
+    changed.forEach((key) => applyLocale($(`#analytics-${key}`, host)));
   } finally {
     if (token === state.renderToken && state.page === "analytics" && isCurrentLocalRequest("analytics-content", requestVersion)) {
       host.classList.remove("is-refreshing");
@@ -3652,11 +4240,21 @@ function normalizeForSave() {
 async function saveAll(showMessage = true) {
   if (!state.settings) return null;
   try {
+    const submittedEnv = { ...state.draft.env };
     const result = await api("/api/settings", { method: "PUT", body: { config: normalizeForSave(), env: state.draft.env, clear_env: Array.from(state.draft.clearEnv) } });
     state.settings = result;
     state.draft = { config: {}, env: {}, clearEnv: new Set() };
     state.configurationDirty = false;
     state.pageData.sources = undefined;
+    // A successfully saved credential must not remain in a live input.  Hide
+    // it immediately and show the same clear, localized replacement hint the
+    // operator sees after a page reload.
+    $$('[data-secret]').forEach((input) => {
+      const key = input.dataset.field;
+      if (!Object.prototype.hasOwnProperty.call(submittedEnv, key) || !secretConfigured(key)) return;
+      input.value = "";
+      input.placeholder = localizedString("已配置；留空则保持不变");
+    });
     updateConfigurationDirtyIndicator();
     if (showMessage) toast("配置已保存。", "success");
     return result;
@@ -3721,6 +4319,11 @@ const PAGE_RENDERERS = {
 async function renderPage(options = {}) {
   const preserveScroll = Boolean(options.preserveScroll);
   const scrollTop = preserveScroll ? window.scrollY : 0;
+  // A page render owns all of its GET requests.  Abort the prior owner before
+  // changing views so a slow SQLite read, report list, or status poll cannot
+  // keep consuming the browser connection after the operator has moved on.
+  state.pageRequestController?.abort();
+  state.pageRequestController = new AbortController();
   clearTimers();
   state.pagedRenderers.clear();
   if (state.page !== "reports") {

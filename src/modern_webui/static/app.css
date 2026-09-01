@@ -120,9 +120,10 @@ h3 { margin: 0 0 14px; font-size: .92rem; line-height: 1.45; }
   padding: 15px max(32px, calc((100vw - 1360px) / 2));
   overflow-x: auto;
   border-bottom: 1px solid var(--line);
-  background: rgba(255, 255, 255, .82);
+  /* An opaque sticky bar avoids the continuous GPU compositing cost of a
+     backdrop blur while scrolling long report and diagnostic pages. */
+  background: rgba(255, 255, 255, .97);
   box-shadow: 0 1px 0 rgba(255, 255, 255, .7);
-  backdrop-filter: blur(14px);
 }
 .top-tab {
   flex: 0 0 auto;
@@ -179,6 +180,9 @@ h3 { margin: 0 0 14px; font-size: .92rem; line-height: 1.45; }
 .section-divider { height: 1px; margin: 22px 3px; background: linear-gradient(90deg, transparent, var(--line-strong) 8%, var(--line-strong) 92%, transparent); }
 .save-hint { margin: 20px 0 0; color: var(--muted); font-size: .72rem; line-height: 1.5; text-align: right; }
 .loading, .empty-state { padding: 26px; border: 1px dashed #cdd5e3; border-radius: 12px; background: rgba(255, 255, 255, .6); color: var(--muted); text-align: center; font-size: .85rem; line-height: 1.6; }
+.refresh-region { position: relative; }
+.refresh-region.is-refreshing > * { pointer-events: none; opacity: .62; }
+.refresh-region.is-refreshing::after { position: absolute; top: 22px; right: 22px; width: 17px; height: 17px; border: 2px solid rgba(70, 95, 213, .2); border-top-color: var(--brand); border-radius: 50%; content: ""; animation: analytics-spin .7s linear infinite; }
 .report-empty-state { margin: 24px 0 0; padding: 23px 8px; color: var(--muted); text-align: center; font-size: .84rem; line-height: 1.6; }
 .error-message { color: var(--danger); line-height: 1.58; }
 .info-box, .issue-box { margin: 14px 0; padding: 12px 14px; border-radius: 10px; font-size: .83rem; line-height: 1.6; }
@@ -525,9 +529,6 @@ select::-ms-expand { display: none; }
 .analytics-statistics-block { display: grid; gap: 20px; }
 .analytics-range-control { display: grid; gap: 10px; }
 .analytics-range-control button:disabled { cursor: progress; }
-#analytics-content { position: relative; }
-#analytics-content.is-refreshing .analytics-statistics-card { pointer-events: none; opacity: .6; }
-#analytics-content.is-refreshing::after { position: absolute; top: 22px; right: 22px; width: 17px; height: 17px; border: 2px solid rgba(70, 95, 213, .2); border-top-color: var(--brand); border-radius: 50%; content: ""; animation: analytics-spin .7s linear infinite; }
 .analytics-range-label { color: var(--text-secondary); font-size: .79rem; font-weight: 750; }
 .segmented-control { display: flex; flex-wrap: wrap; gap: 6px; width: fit-content; max-width: 100%; padding: 5px; border: 1px solid var(--line); border-radius: 12px; background: var(--card-soft); }
 .segmented-button { min-height: 34px; padding: 0 12px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--muted); font-size: .76rem; font-weight: 700; transition: background .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease; }
@@ -596,7 +597,7 @@ select::-ms-expand { display: none; }
 }
 
 :root[data-theme="dark"] .sidebar { background: rgba(19, 28, 44, .94); }
-:root[data-theme="dark"] .top-tabs { background: rgba(17, 24, 39, .86); box-shadow: 0 1px 0 rgba(255, 255, 255, .03); }
+:root[data-theme="dark"] .top-tabs { background: rgba(17, 24, 39, .97); box-shadow: 0 1px 0 rgba(255, 255, 255, .03); }
 :root[data-theme="dark"] .group-button:hover,
 :root[data-theme="dark"] .top-tab:hover { background: #202d42; }
 :root[data-theme="dark"] .group-button.is-active { color: #c9d4ff; }
@@ -695,6 +696,9 @@ select::-ms-expand { display: none; }
 
 @keyframes pulse { 50% { opacity: .58; transform: scale(.88); } }
 @keyframes analytics-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
 @media (max-width: 1020px) {
   .report-grid, .log-selector-grid { grid-template-columns: 1fr; }
   .form-grid.three { grid-template-columns: repeat(2, minmax(0, 1fr)); }

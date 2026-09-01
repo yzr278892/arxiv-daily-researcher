@@ -193,7 +193,7 @@ Docker 用户也可以先启动 WebUI，在浏览器中完成配置：
 docker compose up -d --build
 ~~~
 
-打开 <http://127.0.0.1:8501>，填写 LLM、数据源、关键词、评分、通知和运行时间。WebUI 默认绑定本机地址，适合配合 VPN 或带认证的反向代理访问。
+打开 <http://127.0.0.1:8501>，填写 LLM、数据源、关键词、评分、通知和运行时间。Docker WebUI 默认发布 <code>8501:8501</code>，也可从 LAN 或 Tailscale 使用 <code>http://&lt;宿主机&gt;:8501</code> 访问；请保留 WebUI 登录验证。
 
 Docker 会以 `.env` 中的 `PUID` / `PGID` 写入 `data`、`logs`、`configs`、`runtime` 和 `.env`，避免 NAS 挂载目录出现 root 所有文件。升级自旧镜像且已有 root 所有文件时，可临时加入 `ADR_REPAIR_OWNERSHIP=true` 启动一次，确认权限恢复后删除该项。
 
@@ -320,19 +320,19 @@ uvicorn src.modern_webui.app:app --host 127.0.0.1 --port 8501
 docker compose up -d config-panel
 ~~~
 
-Docker 与本地面板地址：<http://127.0.0.1:8501>
+Docker 本地面板地址：<http://127.0.0.1:8501>。远程开发时打开 `http://<宿主机 LAN 或 Tailscale 地址>:8501`。
 
-默认只监听本机。若仅需从可信 Tailscale 网络访问，可在 `.env` 填入本机的 Tailscale IPv4 后重建 WebUI：
+Compose 显式发布 `8501:8501`，不再绑定某个 Tailscale IP。如需更换对外端口，在 `.env` 设置后重建 WebUI：
 
 ~~~env
-ADR_WEBUI_BIND_HOST=100.x.y.z
+ADR_WEBUI_PORT=8501
 ~~~
 
 ~~~bash
 docker compose up -d --no-deps --force-recreate config-panel
 ~~~
 
-随后打开 `http://100.x.y.z:8501`。此方式保持 Docker 的宿主机网络语义，不需要 `ports:` 映射；请勿设为 `0.0.0.0`，并应先完成 WebUI 管理员账户初始化。
+访问面板前请先完成管理员账户初始化，并只在可信 LAN / Tailnet 或配置好防火墙的网络中暴露此端口。
 
 WebUI 与 worker 共享 <code>.env</code>、<code>configs/</code>、<code>data/</code> 和 <code>logs/</code>。左侧一级导航分为运行、内容、配置、系统；二级页面保留在顶部，避免在长配置页中丢失上下文。保存后的配置会在下一次任务加载；修改运行时间后可通过侧栏按钮重启 worker 以重装 cron。
 
@@ -475,7 +475,7 @@ WebUI 通过共享卷写入任务触发请求，worker 监听触发队列并启�
 | <code>SETUP_WIZARD</code>          | <code>auto</code> | 首次部署时检查并启动配置向导                                |
 | <code>ADR_WORKER_IMAGE</code>      | 本地 worker 镜像 | 指定 GHCR worker 镜像                                       |
 | <code>ADR_WEBUI_IMAGE</code>       | 本地 WebUI 镜像  | 指定 GHCR WebUI 镜像                                        |
-| <code>ADR_WEBUI_BIND_HOST</code>   | <code>127.0.0.1</code> | WebUI 监听地址；可信 Tailnet 直连可填本机 Tailscale IPv4，勿设为 <code>0.0.0.0</code> |
+| <code>ADR_WEBUI_PORT</code>        | <code>8501</code>      | WebUI 发布到宿主机的端口（Compose 映射 <code>8501:8501</code>） |
 
 </details>
 
@@ -490,7 +490,7 @@ CHEAP_LLM__BASE_URL=http://127.0.0.1:11434/v1
 CHEAP_LLM__MODEL_NAME=qwen2.5:7b
 ~~~
 
-worker 与 WebUI 都使用宿主机网络，以相同方式访问宿主机上的本地 LLM、代理和 DNS。面板默认绑定 <code>127.0.0.1:8501</code>；反向代理、VPN 或本地服务地址应按部署网络拓扑配置。
+worker 保持宿主机网络，因此本地 LLM、代理和 DNS 可直接使用回环地址。WebUI 使用 bridge 网络并通过 <code>8501:8501</code> 对外发布；面板内测试宿主机服务时请使用 <code>host.docker.internal</code>。
 
 </details>
 
@@ -824,7 +824,7 @@ worker 使用宿主机网络，Linux/NAS 上的本地 OpenAI 兼容服务可使�
 CHEAP_LLM__BASE_URL=http://127.0.0.1:11434/v1
 ~~~
 
-请让模型服务的监听地址、反向代理规则和防火墙策略与部署拓扑一致。worker 与 WebUI 共享宿主机网络语义；外部 API 地址建议先通过“配置 → API → 测试连接”验证。
+请让模型服务的监听地址、反向代理规则和防火墙策略与部署拓扑一致。worker 使用宿主机网络；WebUI 为了显式端口映射使用 bridge 网络，面板内测试宿主机模型服务时请填写 <code>host.docker.internal</code>。外部 API 地址建议先通过“配置 → API → 测试连接”验证。
 </details>
 
 <details>

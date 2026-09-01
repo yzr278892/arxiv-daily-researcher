@@ -75,17 +75,21 @@ services:
     container_name: arxiv-daily-researcher-config-panel
     restart: unless-stopped
 
-    # Match the worker's localhost semantics so WebUI connection tests can
-    # reach host-side proxies and local LLM services exactly as scheduled jobs
-    # do. Keep the browser service on loopback by default. A trusted Tailnet
-    # deployment may set ADR_WEBUI_BIND_HOST to this host's Tailscale IPv4;
-    # do not use 0.0.0.0 without a deliberately configured access boundary.
-    network_mode: host
+    # Publish the browser service explicitly. This keeps remote development
+    # simple (LAN/Tailscale clients use <host>:8501) without hard-coding one
+    # particular host address in the listener.
+    ports:
+      - "${ADR_WEBUI_PORT:-8501}:8501"
+    # The Worker deliberately remains on host networking for local LLM and
+    # proxy semantics. The WebUI itself only needs this stable host alias for
+    # an optional connection test against a host-side service.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     command:
       - uvicorn
       - src.modern_webui.app:app
       - --host
-      - ${ADR_WEBUI_BIND_HOST:-127.0.0.1}
+      - 0.0.0.0
       - --port
       - "8501"
 
@@ -110,7 +114,7 @@ services:
           memory: 64M
 
     healthcheck:
-      test: [ "CMD", "python", "/app/src/utils/container_health.py", "webui", "--url", "http://${ADR_WEBUI_BIND_HOST:-127.0.0.1}:8501/api/health" ]
+      test: [ "CMD", "python", "/app/src/utils/container_health.py", "webui", "--url", "http://127.0.0.1:8501/api/health" ]
       interval: 30s
       timeout: 15s
       retries: 3

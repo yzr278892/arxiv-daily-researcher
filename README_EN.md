@@ -193,7 +193,7 @@ Docker users can also start the WebUI and configure the system in a browser:
 docker compose up -d --build
 ~~~
 
-Open <http://127.0.0.1:8501> and configure LLMs, sources, keywords, scoring, notifications, and the run time. The WebUI binds to the local host, which works well with a VPN or an authenticated reverse proxy.
+Open <http://127.0.0.1:8501> and configure LLMs, sources, keywords, scoring, notifications, and the run time. Docker publishes the WebUI as <code>8501:8501</code>, so LAN and Tailscale clients can use <code>http://&lt;host&gt;:8501</code>; keep WebUI authentication enabled.
 
 Docker writes `data`, `logs`, `configs`, `runtime`, and `.env` as the `PUID` / `PGID` in `.env`, preventing root-owned files on NAS bind mounts. When upgrading from an old root-running image, set `ADR_REPAIR_OWNERSHIP=true` for one start, verify ownership, then remove it.
 
@@ -320,19 +320,19 @@ uvicorn src.modern_webui.app:app --host 127.0.0.1 --port 8501
 docker compose up -d config-panel
 ~~~
 
-Docker and local panel: <http://127.0.0.1:8501>
+Docker local panel: <http://127.0.0.1:8501>. For remote development, open `http://<host LAN or Tailscale address>:8501`.
 
-The default listener is local-only. For direct access from a trusted Tailscale network, set this host's Tailscale IPv4 in `.env`, then recreate only the WebUI:
+Compose explicitly publishes `8501:8501`; it no longer binds the panel to one particular Tailscale IP. To change the public port, set this value in `.env` and recreate only the WebUI:
 
 ~~~env
-ADR_WEBUI_BIND_HOST=100.x.y.z
+ADR_WEBUI_PORT=8501
 ~~~
 
 ~~~bash
 docker compose up -d --no-deps --force-recreate config-panel
 ~~~
 
-Then open `http://100.x.y.z:8501`. This keeps Docker's host-network semantics, so no `ports:` mapping is needed. Do not use `0.0.0.0`, and initialize a WebUI administrator account before sharing access.
+Initialize the administrator account before accessing the panel, and expose this port only on a trusted LAN/Tailnet or behind an appropriate firewall.
 
 The WebUI and worker share <code>.env</code>, <code>configs/</code>, <code>data/</code>, and <code>logs/</code>. The primary sidebar groups pages as Run, Content, Configuration, and System; the secondary pages remain in the top bar, retaining context on long configuration pages. A saved configuration is loaded by the next task. After changing the run time, use the sidebar worker-restart control to reinstall cron.
 
@@ -475,7 +475,7 @@ The WebUI writes task requests through shared volumes, and the worker watches th
 | <code>SETUP_WIZARD</code> | <code>auto</code> | Check and start the setup wizard during first deployment |
 | <code>ADR_WORKER_IMAGE</code> | local worker image | Select a GHCR worker image |
 | <code>ADR_WEBUI_IMAGE</code> | local WebUI image | Select a GHCR WebUI image |
-| <code>ADR_WEBUI_BIND_HOST</code> | <code>127.0.0.1</code> | WebUI listener; a trusted Tailnet may use this host's Tailscale IPv4. Do not set <code>0.0.0.0</code>. |
+| <code>ADR_WEBUI_PORT</code> | <code>8501</code> | Host port for the WebUI (Compose mapping <code>8501:8501</code>) |
 
 </details>
 
@@ -490,7 +490,7 @@ CHEAP_LLM__BASE_URL=http://127.0.0.1:11434/v1
 CHEAP_LLM__MODEL_NAME=qwen2.5:7b
 ~~~
 
-The worker and WebUI both use host-network semantics, so they reach host-local LLMs, proxies, and DNS through the same addresses. The panel listens on <code>127.0.0.1:8501</code> by default; configure reverse proxies and VPN access for the deployment topology.
+The worker remains on the host network, so host-local LLMs, proxies, and DNS can use loopback addresses. The WebUI uses a bridge network and publishes <code>8501:8501</code>; use <code>host.docker.internal</code> when testing a host-side service from the panel.
 
 </details>
 
@@ -824,7 +824,7 @@ The worker uses the host network, so a local Linux/NAS OpenAI-compatible service
 CHEAP_LLM__BASE_URL=http://127.0.0.1:11434/v1
 ~~~
 
-Align model-service listening addresses, reverse-proxy rules, and firewall policy with the deployment topology. The WebUI and worker share host-network semantics; verify external API addresses with **Configuration → API → Test Connection**.
+Align model-service listening addresses, reverse-proxy rules, and firewall policy with the deployment topology. The worker uses host networking; the bridge-networked WebUI should use <code>host.docker.internal</code> when testing a host-side model service. Verify external API addresses with **Configuration → API → Test Connection**.
 </details>
 
 <details>

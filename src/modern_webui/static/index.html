@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#f7f9fc" />
     <title>ArXiv Daily Researcher</title>
-    <link rel="stylesheet" href="/assets/app.css" />
+    <link rel="stylesheet" href="/assets/app.css?v=__ASSET_VERSION__" />
   </head>
   <body>
     <div id="app" class="app-shell" hidden>
@@ -45,13 +45,13 @@
         <form id="login-form" class="stack-form" hidden>
           <label>用户名<input id="login-username" autocomplete="username" required /></label>
           <label>密码<input id="login-password" type="password" autocomplete="current-password" required /></label>
-          <button class="primary-button" type="submit">登录 <span>→</span></button>
+          <button class="primary-button" type="submit">登录</button>
         </form>
         <form id="setup-form" class="stack-form" hidden>
           <label>管理员用户名<input id="setup-username" autocomplete="username" required /></label>
           <label>密码（至少 6 个字符）<input id="setup-password" type="password" autocomplete="new-password" required /></label>
           <label>确认密码<input id="setup-password-confirmation" type="password" autocomplete="new-password" required /></label>
-          <button class="primary-button" type="submit">创建管理员账户 <span>→</span></button>
+          <button class="primary-button" type="submit">创建管理员账户</button>
           <button id="skip-auth-button" class="secondary-button" type="button">仅内网使用，跳过登录</button>
         </form>
         <p id="auth-error" class="error-message" role="alert"></p>
@@ -59,6 +59,6 @@
     </div>
 
     <div id="toast" class="toast" hidden role="status"></div>
-    <script src="/assets/app.js" defer></script>
+    <script src="/assets/app.js?v=__ASSET_VERSION__" defer></script>
   </body>
 </html>

@@ -178,8 +178,9 @@ class ModernWebUIAppTests(unittest.TestCase):
         self.assertIn('host.setAttribute("aria-busy", "true");', refresh)
         self.assertIn("button.disabled = false", refresh)
         self.assertIn("if (hasRenderedContent) {", refresh)
-        self.assertIn("#analytics-content.is-refreshing .analytics-statistics-card", stylesheet)
-        self.assertIn("#analytics-content.is-refreshing::after", stylesheet)
+        self.assertIn('host.classList.add("refresh-region");', refresh)
+        self.assertIn(".refresh-region.is-refreshing > *", stylesheet)
+        self.assertIn(".refresh-region.is-refreshing::after", stylesheet)
 
     def test_proxy_exclusions_use_chip_editor_and_save_a_compatible_value(self) -> None:
         script = self.client.get("/assets/app.js").text
@@ -229,6 +230,28 @@ class ModernWebUIAppTests(unittest.TestCase):
         preview_end = script.index("async function renderFavorites", preview_start)
         self.assertIn("applyLocale(preview);", script[preview_start:preview_end])
 
+    def test_dynamic_worker_states_and_api_errors_have_english_fallbacks(self) -> None:
+        """Runtime transitions must not revert an English UI to Chinese."""
+        script = self.client.get("/assets/app.js").text
+
+        self.assertIn("const DYNAMIC_EN_TRANSLATIONS", script)
+        expected_translations = {
+            "等待工作进程的请求已过期": "The request waiting for the worker has expired",
+            "正在运行，等待进度写入": "Running; waiting for a progress update",
+            "工作进程正在接手任务": "The worker is claiming the task",
+            "等待后端空闲": "Waiting for the worker to become idle",
+            "请查看问题摘要后重试": "Review the issue summary, then retry",
+            "Docker 部署请保留请求并检查或重启研究容器。": "On Docker, keep the request and check or restart the research container.",
+            "测试通知未发送：": "Test notification was not sent: ",
+        }
+        for chinese, english in expected_translations.items():
+            self.assertIn(f'"{chinese}": "{english}"', script)
+
+        localized_start = script.index("function localizedString")
+        localized_end = script.index("function localizedError", localized_start)
+        localized = script[localized_start:localized_end]
+        self.assertIn("DYNAMIC_EN_TRANSLATIONS[text]", localized)
+
     def test_extracted_keywords_use_a_paged_table_with_group_spacing(self) -> None:
         script = self.client.get("/assets/app.js").text
         stylesheet = self.client.get("/assets/app.css").text
@@ -273,6 +296,8 @@ class ModernWebUIAppTests(unittest.TestCase):
         )
         self.assertNotIn("<span>→</span>", script)
         self.assertNotIn("后一天 →", script)
+        document = self.client.get("/").text
+        self.assertNotIn("<span>→</span>", document)
         self.assertNotIn("运行方式修改后，请使用顶部", script)
 
     def test_native_selects_share_the_source_chevron_treatment(self) -> None:

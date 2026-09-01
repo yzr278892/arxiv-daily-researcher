@@ -328,7 +328,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
     "pagination_page_size": {"zh": "每页显示", "en": "Rows per page"},
     "pagination_page_size_value": {"zh": "{size} 条", "en": "{size} rows"},
     "pagination_previous": {"zh": "← 上一页", "en": "← Previous"},
-    "pagination_next": {"zh": "下一页 →", "en": "Next →"},
+    "pagination_next": {"zh": "下一页", "en": "Next"},
     "pagination_info": {
         "zh": "第 {page} / {pages} 页 · {start}–{end} / 共 {total} 条",
         "en": "Page {page} of {pages} · {start}–{end} of {total}",
@@ -512,7 +512,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
     },
     # ── reports.py 导航按钞 ──
     "report_prev_day": {"zh": "← 前一天", "en": "← Prev Day"},
-    "report_next_day": {"zh": "后一天 →", "en": "Next Day →"},
+    "report_next_day": {"zh": "后一天", "en": "Next Day"},
     "report_show_non_arxiv": {"zh": "显示非 ArXiv 来源", "en": "Show non-ArXiv sources"},
     "report_no_prev": {"zh": "已是最早的报告", "en": "No earlier reports"},
     "report_no_next": {"zh": "已是最新的报告", "en": "No newer reports"},
@@ -1676,7 +1676,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
     "ps_link_abs": {"zh": "论文页", "en": "Abstract"},
     "ps_link_pdf": {"zh": "PDF", "en": "PDF"},
     "ps_prev_page": {"zh": "← 上一页", "en": "← Previous"},
-    "ps_next_page": {"zh": "下一页 →", "en": "Next →"},
+    "ps_next_page": {"zh": "下一页", "en": "Next"},
     "ps_page_info": {"zh": "第 {page} / {pages} 页", "en": "Page {page} of {pages}"},
     "sh_title": {"zh": "数据源健康", "en": "Source Health"},
     "sh_no_data": {"zh": "暂无数据库，运行一次每日研究后可见。", "en": "No database yet; visible after the first daily research run."},
