@@ -97,6 +97,18 @@ class WorkerEntrypointLayoutTests(unittest.TestCase):
             self.assertIn(directory, entrypoint)
             self.assertIn(directory, dockerfile)
 
+    def test_webui_trigger_uses_importable_module_path(self):
+        project_root = Path(__file__).resolve().parents[1]
+        entrypoint = (project_root / "docker" / "entrypoint.sh").read_text(encoding="utf-8")
+
+        self.assertIn(
+            "adr_run_as_user env PYTHONPATH=/app/src /usr/local/bin/python -m utils.webui_trigger",
+            entrypoint,
+        )
+        self.assertNotIn("python /app/src/utils/webui_trigger.py", entrypoint)
+        self.assertEqual(entrypoint.count("python -m utils.webui_trigger"), 1)
+        self.assertIn('webui_trigger "$CLAIMED_FILE" --pid-file "$PID_FILE"', entrypoint)
+
 
 if __name__ == "__main__":
     unittest.main()

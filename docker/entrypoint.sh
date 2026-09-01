@@ -199,10 +199,18 @@ PID_FILE="/app/data/run/webui_triggered.pid"
 adr_run_as_user mkdir -p "$TRIGGER_DIR/status"
 WATCHER_HEARTBEAT="$TRIGGER_DIR/.watcher-heartbeat"
 adr_run_as_user touch "$WATCHER_HEARTBEAT"
+
+# This module imports siblings from /app/src. Execute it as a module with an
+# explicit path instead of relying on Python's script-directory behaviour.
+# Keeping the environment scoped to this helper avoids leaking it into cron.
+webui_trigger() {
+    adr_run_as_user env PYTHONPATH=/app/src /usr/local/bin/python -m utils.webui_trigger "$@"
+}
+
 # Status receipts and archived restart markers are bounded operational audit
 # data. Run a startup pass so stale files are cleaned even when no new WebUI
 # request is submitted for a while.
-adr_run_as_user python /app/src/utils/webui_trigger.py \
+webui_trigger \
     --maintain-trigger-files --data-dir /app/data \
     || echo "[trigger-watcher] Trigger-file maintenance failed; will retry on the next startup/request"
 
@@ -236,7 +244,7 @@ trigger_watcher() {
                 RESTART_ARCHIVE_SUFFIX=$((RESTART_ARCHIVE_SUFFIX + 1))
             done
             if adr_run_as_user mv "$RESTART_MARKER" "$RESTART_ARCHIVE" 2>/dev/null; then
-                adr_run_as_user python /app/src/utils/webui_trigger.py \
+                webui_trigger \
                     --maintain-trigger-files --data-dir /app/data \
                     || echo "[trigger-watcher] Trigger-file maintenance failed after restart request"
                 echo "[trigger-watcher] WebUI restart request: restarting container..."
@@ -251,7 +259,7 @@ trigger_watcher() {
         # selector also applies the saved idle/time-window policy before a
         # history request is claimed, so it never blocks this watcher merely
         # by being the lexicographically first JSON file.
-        REQUEST_FILE=$(adr_run_as_user python /app/src/utils/webui_trigger.py \
+        REQUEST_FILE=$(webui_trigger \
             --next-eligible-request --data-dir /app/data) || \
             echo "[trigger-watcher] Eligible-request selection failed; will retry"
         if [ -n "$REQUEST_FILE" ]; then
@@ -267,9 +275,8 @@ trigger_watcher() {
                 # failed manual request from terminating the watcher loop (and
                 # therefore the otherwise healthy cron container).
                 RESULT=0
-                adr_run_as_user bash -c \
-                    'exec python /app/src/utils/webui_trigger.py "$1" --pid-file "$2" >> "$3" 2>&1' \
-                    _ "$CLAIMED_FILE" "$PID_FILE" "$LOG_FILE" || RESULT=$?
+                webui_trigger "$CLAIMED_FILE" --pid-file "$PID_FILE" \
+                    >> "$LOG_FILE" 2>&1 || RESULT=$?
                 echo "[trigger-watcher] Request finished with exit=$RESULT"
             fi
         fi
