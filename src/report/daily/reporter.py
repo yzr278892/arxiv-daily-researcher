@@ -81,6 +81,13 @@ class Reporter:
 
     def __init__(self):
         self.report_base_dir = settings.REPORTS_DIR / "daily_research"
+        # Supplements are a distinct deliverable rather than another daily
+        # batch.  Keeping them under ``other_reports`` prevents report
+        # browsers, backups and manual archive browsing from conflating the
+        # two kinds of work.
+        self.supplement_report_base_dir = (
+            settings.REPORTS_DIR / "other_reports" / "supplement"
+        )
 
         # 加载模板
         self.basic_template = settings.load_report_template("basic_report_template.json")
@@ -90,6 +97,28 @@ class Reporter:
         admonition_style = self.basic_template.get("global", {}).get("admonition_style", "mkdocs")
         self.format_helper = FormatHelper(admonition_style)
         self.renderer_factory = ModuleRendererFactory(self.format_helper, self.deep_template)
+
+    def _report_directory(self, report_kind: str, report_format: str, source: str) -> Path:
+        """Return the output directory for one report artifact.
+
+        Daily and past-date reports preserve the existing
+        ``daily_research`` layout.  Supplement reports always keep a source
+        directory: their shared filename intentionally omits the source so
+        the new ``Supplement_Report_<timestamp>`` convention remains stable
+        without risking collisions between enabled sources.
+        """
+        if report_kind == "supplement":
+            return self.supplement_report_base_dir / report_format / source
+        if settings.REPORTS_BY_SOURCE:
+            return self.report_base_dir / report_format / source
+        return self.report_base_dir / report_format
+
+    @staticmethod
+    def _report_filename(source: str, timestamp: str, suffix: str, report_kind: str) -> str:
+        """Return the archive filename for a generated report artifact."""
+        if report_kind == "supplement":
+            return f"Supplement_Report_{timestamp}{suffix}"
+        return f"{source.upper()}_Report_{timestamp}{suffix}"
 
     def get_source_display_name(self, source: str) -> str:
         """获取数据源的显示名称"""
@@ -196,11 +225,10 @@ class Reporter:
 
             # Markdown 报告（如果启用）
             if settings.ENABLE_MARKDOWN_REPORT:
-                if settings.REPORTS_BY_SOURCE:
-                    md_dir = self.report_base_dir / "markdown" / source
-                else:
-                    md_dir = self.report_base_dir / "markdown"
-                filepath = md_dir / f"{source.upper()}_Report_{timestamp}.md"
+                md_dir = self._report_directory(report_kind, "markdown", source)
+                filepath = md_dir / self._report_filename(
+                    source, timestamp, ".md", report_kind
+                )
                 try:
                     report_paths[source] = self._generate_single_source_report(
                         filepath=filepath,
@@ -227,12 +255,10 @@ class Reporter:
 
             # 生成 HTML 报告（如果启用）
             if settings.ENABLE_HTML_REPORT:
-                # HTML 报告目录: reports/html/[source]/
-                if settings.REPORTS_BY_SOURCE:
-                    html_dir = self.report_base_dir / "html" / source
-                else:
-                    html_dir = self.report_base_dir / "html"
-                html_filepath = html_dir / f"{source.upper()}_Report_{timestamp}.html"
+                html_dir = self._report_directory(report_kind, "html", source)
+                html_filepath = html_dir / self._report_filename(
+                    source, timestamp, ".html", report_kind
+                )
                 try:
                     report_paths[f"{source}_html"] = self._generate_html_report(
                         filepath=html_filepath,

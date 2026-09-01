@@ -7,13 +7,17 @@ developer's real ``.env`` file.
 
 from __future__ import annotations
 
+import json
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from starlette.testclient import TestClient
 
 from modern_webui import app as modern_app
 from modern_webui import auth as modern_auth
+from utils.daily_research_store import DailyResearchStore
 
 
 class ModernWebUIAppTests(unittest.TestCase):
@@ -102,6 +106,22 @@ class ModernWebUIAppTests(unittest.TestCase):
         self.assertNotIn("new Set(sameSource.map((item) => item.date))", navigation)
         self.assertIn("← 上一份报告", script)
         self.assertIn("下一份报告", script)
+
+    def test_report_browser_groups_keywords_and_supplements_under_other_reports(self) -> None:
+        script = self.client.get("/assets/app.js").text
+        start = script.index("function reportDirectoryMarkup")
+        end = script.index("function updateReportPickerSelection", start)
+        directory = script[start:end]
+        preview_start = script.index("async function loadReportPreview")
+        preview_end = script.index("async function renderFavorites", preview_start)
+        preview = script[preview_start:preview_end]
+
+        self.assertIn('reports.other', directory)
+        self.assertIn('localeText("其他报告", "Other Reports")', directory)
+        self.assertNotIn("reports.keyword_trend", directory)
+        self.assertIn('supplement: localeText("补充报告", "Supplement Report")', script)
+        self.assertIn('["daily", "supplement"].includes(report.type)', preview)
+        self.assertIn('item.type === "supplement"', preview)
 
     def test_favorite_papers_use_the_shared_paged_table(self) -> None:
         response = self.client.get("/assets/app.js")
@@ -306,11 +326,286 @@ class ModernWebUIAppTests(unittest.TestCase):
             '<button id="history-omission" class="secondary-button compact-button"',
             history_actions,
         )
+        self.assertIn('id="history-migrate-supplements"', history_actions)
         self.assertNotIn("<span>→</span>", script)
         self.assertNotIn("后一天 →", script)
         document = self.client.get("/").text
         self.assertNotIn("<span>→</span>", document)
         self.assertNotIn("运行方式修改后，请使用顶部", script)
+
+    def test_supplement_report_migration_requires_a_session_and_forwards_result(self) -> None:
+        self.assertEqual(
+            self.client.post("/api/history/supplement-reports/migrate", json={}).status_code,
+            503,
+        )
+        self.assertEqual(
+            self.client.post(
+                "/api/auth/setup",
+                json={
+                    "username": "migration_admin",
+                    "password": "secret6",
+                    "password_confirmation": "secret6",
+                },
+            ).status_code,
+            200,
+        )
+        expected = {
+            "ok": True,
+            "html_moved": 2,
+            "markdown_moved": 2,
+            "database_runs": 1,
+            "database_deliveries": 4,
+        }
+        with patch.object(
+            modern_app.backend, "migrate_supplement_reports", return_value=expected
+        ) as migrate:
+            response = self.client.post("/api/history/supplement-reports/migrate", json={})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), expected)
+        migrate.assert_called_once_with()
+
+    def test_migration_button_reorganizes_v42_supplement_reports_end_to_end(self) -> None:
+        """Exercise the authenticated button endpoint against a v4.2 archive copy.
+
+        v4.2 wrote supplements beside daily reports with the usual
+        ``<SOURCE>_Report_<timestamp>`` filenames.  This fixture uses its
+        actual HTML and Markdown title markers, the source-directory layout,
+        a normal daily report that must remain untouched, and SQLite paths
+        from the worker container.  It keeps the entire archive in a temporary
+        directory so the test cannot modify an operator's data.
+        """
+        self.assertEqual(
+            self.client.post(
+                "/api/auth/setup",
+                json={
+                    "username": "v42_migration_admin",
+                    "password": "secret6",
+                    "password_confirmation": "secret6",
+                },
+            ).status_code,
+            200,
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            data_dir = Path(directory) / "data"
+            reports_dir = data_dir / "reports"
+            stamp = "2026-08-30_23-10-08_123456"
+            old_html = (
+                reports_dir
+                / "daily_research"
+                / "html"
+                / "arxiv"
+                / f"ARXIV_Report_{stamp}.html"
+            )
+            old_markdown = (
+                reports_dir
+                / "daily_research"
+                / "markdown"
+                / "arxiv"
+                / f"ARXIV_Report_{stamp}.md"
+            )
+            normal_daily = (
+                reports_dir
+                / "daily_research"
+                / "html"
+                / "arxiv"
+                / "ARXIV_Report_2026-08-30_08-00-00_000000.html"
+            )
+            flat_stamp = "2026-08-31_00-01-02_654321"
+            flat_html = (
+                reports_dir
+                / "daily_research"
+                / "html"
+                / f"PRL_Report_{flat_stamp}.html"
+            )
+            flat_markdown = (
+                reports_dir
+                / "daily_research"
+                / "markdown"
+                / f"PRL_Report_{flat_stamp}.md"
+            )
+            old_html.parent.mkdir(parents=True)
+            old_markdown.parent.mkdir(parents=True)
+            flat_html.parent.mkdir(parents=True, exist_ok=True)
+            flat_markdown.parent.mkdir(parents=True, exist_ok=True)
+            old_html.write_text(
+                """<!DOCTYPE html><html lang=\"zh-CN\"><head>
+                <title>arXiv Report 2026-08-30 Supplement Report</title>
+                </head><body><h1>arXiv 补充报告 (Supplement Report)</h1>
+                <div class=\"card pass\"><div class=\"card-title\"><a href=\"https://arxiv.org/abs/2608.12345v2\">1. v4.2 supplement paper</a></div>
+                <span class=\"badge pass\">Pass</span>
+                <div class=\"field\"><span class=\"field-label\">Authors:</span> Alice</div>
+                <div class=\"field\"><span class=\"field-label\">Version:</span> v2</div></div>
+                </body></html>""",
+                encoding="utf-8",
+            )
+            old_markdown.write_text(
+                "# 📊 arXiv 研究报告 (2026-08-30) · 补充报告\n\n"
+                f"> 生成时间: {stamp}\n",
+                encoding="utf-8",
+            )
+            normal_daily.write_text(
+                "<title>arXiv Report 2026-08-30</title>"
+                "<h1>arXiv Research Report</h1>",
+                encoding="utf-8",
+            )
+            flat_html.write_text(
+                "<title>PRL Report 2026-08-31 Supplement Report</title>"
+                "<h1>PRL 补充报告 (Supplement Report)</h1>",
+                encoding="utf-8",
+            )
+            flat_markdown.write_text(
+                "# 📊 PRL 研究报告 (2026-08-31) · 补充报告\n",
+                encoding="utf-8",
+            )
+
+            store = DailyResearchStore(
+                data_dir / "daily_research" / "daily_research.db"
+            )
+            run_id = store.start_run(1, run_kind="supplement")
+            old_html_reference = f"/app/data/reports/daily_research/html/arxiv/ARXIV_Report_{stamp}.html"
+            old_markdown_reference = f"/app/data/reports/daily_research/markdown/arxiv/ARXIV_Report_{stamp}.md"
+            store.complete_run(
+                run_id,
+                {
+                    "arxiv_html": old_html_reference,
+                    "arxiv": old_markdown_reference,
+                },
+            )
+            with store._connect() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO paper_deliveries(
+                        run_id, source, paper_id, canonical_id, version,
+                        report_path, delivered_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        run_id,
+                        "arxiv",
+                        "2608.12345v2",
+                        "2608.12345",
+                        2,
+                        old_html_reference,
+                        "2026-08-30T23:10:08",
+                    ),
+                )
+
+            with patch.object(
+                modern_app.backend, "flat_config", return_value={}
+            ), patch.object(
+                modern_app.backend, "configured_reports_dir", return_value=reports_dir
+            ), patch.object(
+                modern_app.backend, "configured_data_dir", return_value=data_dir
+            ), patch.object(modern_app.backend, "open_store", return_value=store):
+                response = self.client.post(
+                    "/api/history/supplement-reports/migrate", json={}
+                )
+                repeated = self.client.post(
+                    "/api/history/supplement-reports/migrate", json={}
+                )
+                report_groups = modern_app.backend.list_reports(show_non_arxiv=True)
+                supplement = next(
+                    row
+                    for row in report_groups["other"]
+                    if row["type"] == "supplement" and row["source"] == "arxiv"
+                )
+                report_papers = modern_app.backend.report_papers(supplement["id"])
+
+            new_html = (
+                reports_dir
+                / "other_reports"
+                / "supplement"
+                / "html"
+                / "arxiv"
+                / f"Supplement_Report_{stamp}.html"
+            )
+            new_markdown = (
+                reports_dir
+                / "other_reports"
+                / "supplement"
+                / "markdown"
+                / "arxiv"
+                / f"Supplement_Report_{stamp}.md"
+            )
+            self.assertEqual(
+                response.json(),
+                {
+                    "ok": True,
+                    "html_moved": 2,
+                    "markdown_moved": 2,
+                    "database_runs": 1,
+                    "database_deliveries": 1,
+                },
+            )
+            self.assertEqual(
+                repeated.json(),
+                {
+                    "ok": True,
+                    "html_moved": 0,
+                    "markdown_moved": 0,
+                    "database_runs": 0,
+                    "database_deliveries": 0,
+                },
+            )
+            self.assertFalse(old_html.exists())
+            self.assertFalse(old_markdown.exists())
+            self.assertTrue(new_html.is_file())
+            self.assertTrue(new_markdown.is_file())
+            self.assertFalse(flat_html.exists())
+            self.assertFalse(flat_markdown.exists())
+            self.assertTrue(
+                (
+                    reports_dir
+                    / "other_reports"
+                    / "supplement"
+                    / "html"
+                    / "prl"
+                    / f"Supplement_Report_{flat_stamp}.html"
+                ).is_file()
+            )
+            self.assertTrue(
+                (
+                    reports_dir
+                    / "other_reports"
+                    / "supplement"
+                    / "markdown"
+                    / "prl"
+                    / f"Supplement_Report_{flat_stamp}.md"
+                ).is_file()
+            )
+            self.assertTrue(normal_daily.is_file())
+            self.assertEqual([row["name"] for row in report_groups["daily"]], [normal_daily.name])
+            self.assertEqual(
+                {
+                    (row["type"], row["source"])
+                    for row in report_groups["other"]
+                },
+                {("supplement", "arxiv"), ("supplement", "prl")},
+            )
+            self.assertEqual(supplement["name"], new_html.name)
+            self.assertEqual(report_papers[0]["paper_id"], "2608.12345v2")
+
+            with store._connect() as conn:
+                saved_paths = json.loads(
+                    conn.execute(
+                        "SELECT report_paths_json FROM daily_runs WHERE run_id = ?",
+                        (run_id,),
+                    ).fetchone()["report_paths_json"]
+                )
+                delivery_path = conn.execute(
+                    "SELECT report_path FROM paper_deliveries WHERE run_id = ?",
+                    (run_id,),
+                ).fetchone()["report_path"]
+            self.assertEqual(
+                saved_paths["arxiv_html"],
+                f"/app/data/reports/other_reports/supplement/html/arxiv/Supplement_Report_{stamp}.html",
+            )
+            self.assertEqual(
+                saved_paths["arxiv"],
+                f"/app/data/reports/other_reports/supplement/markdown/arxiv/Supplement_Report_{stamp}.md",
+            )
+            self.assertEqual(delivery_path, saved_paths["arxiv_html"])
 
     def test_native_selects_share_the_source_chevron_treatment(self) -> None:
         stylesheet = self.client.get("/assets/app.css").text

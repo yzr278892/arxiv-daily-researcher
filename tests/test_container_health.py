@@ -93,7 +93,12 @@ class WorkerEntrypointLayoutTests(unittest.TestCase):
         entrypoint = (project_root / "docker" / "entrypoint.sh").read_text(encoding="utf-8")
         dockerfile = (project_root / "docker" / "Dockerfile").read_text(encoding="utf-8")
 
-        for directory in ("/app/data/daily_research", "/app/data/keywords"):
+        for directory in (
+            "/app/data/daily_research",
+            "/app/data/keywords",
+            "/app/data/reports/other_reports/supplement/markdown",
+            "/app/data/reports/other_reports/supplement/html",
+        ):
             self.assertIn(directory, entrypoint)
             self.assertIn(directory, dockerfile)
 

@@ -20,7 +20,7 @@
 
 ArXiv Daily Researcher collects papers from ArXiv and optional extensions, evaluates them against a research profile, produces translated summaries and PDF analysis, and delivers Markdown, HTML, and notification results.
 
-v4.3 stores candidates, processing stages, report delivery, notification outbox rows, favourite preferences, history-maintenance backlog, and past-date report queues in SQLite. Workflows resume from completed stages, while live configuration is kept separate from source code for durable deployments, upgrades, and recovery. The Docker Worker reliably consumes history-maintenance requests submitted by the WebUI.
+v4.3 stores candidates, processing stages, report delivery, notification outbox rows, favourite preferences, history-maintenance backlog, and past-date report queues in SQLite. Supplement reports have a separate archive, and legacy supplement artifacts plus their SQLite paths can be migrated together. Workflows resume from completed stages, while live configuration is kept separate from source code for durable deployments, upgrades, and recovery. The Docker Worker reliably consumes history-maintenance requests submitted by the WebUI.
 
 ---
 
@@ -55,7 +55,7 @@ Candidates enter SQLite before downstream processing. Failed stages remain retry
 
 ### 📄 Reports, Favourites, and Search
 
-Daily, supplement, past-date, trend, and keyword-trend reports support HTML and Markdown. The viewer moves through actual report batches, so multiple reports from one day are not skipped. Favourites, preferences, and full-text search are backed by SQLite.
+Daily, supplement, past-date, trend, and keyword-trend reports support HTML and Markdown. Supplements and keyword trends appear under Other Reports; daily and supplement reports both move through actual batches. Favourites, preferences, and full-text search are backed by SQLite.
 
 </td>
 </tr>
@@ -238,9 +238,9 @@ Docker deployments provide the panel through `config-panel`. The WebUI and worke
       <sub>Local backups and WebDAV</sub>
     </td>
     <td align="center" width="33%">
-      <img src="assets/webui_history_import_v4.png" alt="History maintenance schedule" width="100%" />
+      <img src="assets/webui_history_import_v4.png" alt="History maintenance and supplement-report migration" width="100%" />
       <br />
-      <sub>History maintenance and run mode</sub>
+      <sub>History maintenance, run mode, and supplement migration</sub>
     </td>
   </tr>
 </table>
@@ -348,11 +348,13 @@ Daily research scans sources completely before it writes candidates to SQLite. T
 
 History maintenance defaults to idle execution. It can instead be limited to a daily window, defaulting to `00:00–06:00`. Its per-run paper cap is separate from the daily-research cap.
 
+The Legacy History Import card can move existing supplement reports into the new archive. It renames them as `Supplement_Report_<timestamp>` and updates SQLite run and paper-delivery paths; migration is rejected while a task is running.
+
 ### 📄 Reports, Favourites, and Search
 
-- Daily, supplement, and past-date reports live under `data/reports/daily_research/`; trend and keyword-trend reports use their corresponding directories.
-- Daily reports are ordered by filename timestamp. **Previous Report / Next Report** follows actual report batches, so every same-day report remains reachable.
-- 👍 / 👎 markers in previews are stored in SQLite without changing the archived HTML. The Favourites page can automatically save future qualifying papers and scan existing qualifying papers.
+- Daily and past-date reports live under `data/reports/daily_research/`; supplement reports live under `data/reports/other_reports/supplement/`; trend and keyword-trend reports use their corresponding directories.
+- Other Reports contains keyword trends and supplement reports. Daily and supplement navigation is independent by source, type, and filename timestamp.
+- 👍 / 👎 markers in daily and supplement previews are stored in SQLite without changing the archived HTML. The Favourites page can automatically save future qualifying papers and scan existing qualifying papers.
 - Search filters the archive by title, author, abstract, TLDR, keyword, source, date, score, and favourite state.
 
 ### 🔔 Notifications, Backups, and Recovery
@@ -469,7 +471,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the full history.
 
 | Version | Date | Summary |
 | :--- | :--- | :--- |
-| **v4.3** | 2026-09-01 | Fixes the Docker Worker module path used to consume WebUI history-maintenance queues. |
+| **v4.3** | 2026-09-01 | Fixes history-maintenance queue consumption; adds independent supplement archives, browsing, and SQLite path migration. |
 | **v4.2** | 2026-09-01 | Runtime-config migration, history scheduling, automatic favourites, notification tests, report-batch navigation, local WebUI refreshes, and separate user/test Compose files. |
 | **v4.1** | 2026-08-30 | Modern WebUI, history maintenance, multi-source merging, diagnostics, and token usage. |
 | **v4.0** | 2026-08-25 | SQLite history and queues, complete scanning, scoring, supplement reports, past-date reports, backups, and dual-architecture GHCR images. |

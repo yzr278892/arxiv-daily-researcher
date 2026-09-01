@@ -29,6 +29,8 @@ for APP_DIRECTORY in \
     /app/data/reports/trend_research/html \
     /app/data/reports/keyword_trend/markdown \
     /app/data/reports/keyword_trend/html \
+    /app/data/reports/other_reports/supplement/markdown \
+    /app/data/reports/other_reports/supplement/html \
     /app/data/history \
     /app/data/reference_pdfs \
     /app/data/downloaded_pdfs \

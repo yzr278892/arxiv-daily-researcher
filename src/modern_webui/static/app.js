@@ -31,7 +31,7 @@ const PAGE_META = {
   daily_research: ["运行 / 每日研究", "每日研究", "扫描、筛选、分析并生成报告。"],
   past_daily: ["运行 / 过去日报", "过去日报", "按日期补跑日报。"],
   trend_tasks: ["运行 / 趋势任务", "趋势任务", "按关键词和时间段生成趋势报告。"],
-  reports: ["内容 / 报告查看", "报告查看", "查看日报与趋势报告。"],
+  reports: ["内容 / 报告查看", "报告查看", "查看日报、趋势与其他报告。"],
   favorites: ["内容 / 收藏", "收藏", "管理收藏论文与偏好。"],
   paper_search: ["内容 / 论文检索", "论文检索", "检索已处理论文。"],
   keywords: ["配置 / 关键词", "关键词", "设置研究背景、关键词与参考文献提取。"],
@@ -105,6 +105,7 @@ const MODERN_EN_TRANSLATIONS = Object.freeze({
   "对指定关键词和时间段执行独立趋势研究。": "Run independent trend research for selected keywords and a date range.",
   "内容 / 报告查看": "Content / Reports",
   "报告查看": "Reports",
+  "查看日报、趋势与其他报告。": "Browse daily, trend, and other reports.",
   "浏览日报、趋势研究和关键词趋势报告。": "Browse daily, trend-research, and keyword-trend reports.",
   "内容 / 收藏": "Content / Favorites",
   "收藏": "Favorites",
@@ -170,6 +171,7 @@ const MODERN_EN_TRANSLATIONS = Object.freeze({
   "指定时间段运行": "Run in a time window",
   "指定时段开始": "Window start",
   "指定时段结束": "Window end",
+  "迁移已有补充报告": "Migrate Existing Supplement Reports",
   "选择过去日期范围后开始运行。系统会按天把任务写入持久化队列，并与其他研究任务安全互斥。": "Choose a past date range and start the run. Jobs are stored in a durable per-day queue and safely interlocked with other research tasks.",
   "开始日期": "Start date",
   "结束日期": "End date",
@@ -787,6 +789,14 @@ const DYNAMIC_EN_TRANSLATIONS = Object.freeze({
   "测试通知参数格式无效。": "Test-notification parameter format is invalid.",
   "测试通知参数长度无效。": "A test-notification parameter has an invalid length.",
   "测试通知未发送：": "Test notification was not sent: ",
+  "有运行中的任务正在使用数据库，请等待任务完成后再迁移补充报告。": "An active task is using the database. Wait for it to finish before migrating supplement reports.",
+  "补充报告迁移目标重复，请先检查旧报告文件。": "Supplement report migration has duplicate destinations. Check the legacy report files first.",
+  "补充报告迁移目标已存在，未移动任何文件。": "A supplement report migration destination already exists. No files were moved.",
+  "补充报告迁移失败，已回滚文件。": "Supplement report migration failed and its files were rolled back.",
+  "补充报告迁移失败，部分文件未能自动回滚，请查看系统日志。": "Supplement report migration failed and some files could not be rolled back automatically. Check the system log.",
+  "补充报告路径不在报告目录内。": "The supplement report path is outside the reports directory.",
+  "补充报告不在旧日报目录中。": "The supplement report is not in the legacy daily-report directory.",
+  "补充报告格式无效。": "The supplement report format is invalid.",
   "请检查渠道配置和网络。": "Check the channel configuration and network.",
   "日志标识无效。": "Log identifier is invalid.",
   "日志路径无效。": "Log path is invalid.",
@@ -2022,7 +2032,12 @@ async function refreshTrendStatus(root = $("#page-root"), token = state.renderTo
 }
 
 function reportTypeLabel(type) {
-  return ({ daily: "每日研究", trend: "趋势研究", keyword_trend: "关键词趋势" })[type] || type;
+  return ({
+    daily: localeText("每日研究", "Daily Research"),
+    trend: localeText("趋势研究", "Trend Research"),
+    keyword_trend: localeText("关键词趋势", "Keyword Trend"),
+    supplement: localeText("补充报告", "Supplement Report"),
+  })[type] || type;
 }
 
 function reportGroupKey(type, source) {
@@ -2038,25 +2053,36 @@ function scrollSelect({ id, rows, selected, label, placeholder = "—", optionAt
   return `<details class="scroll-select" data-scroll-select="${escapeAttribute(id)}"><summary><span>${escapeHtml(selectedLabel)}</span><i class="dropdown-chevron" aria-hidden="true"></i></summary><div class="scroll-select-options" role="listbox">${rows.map((item) => `<button type="button" role="option" aria-selected="${item.id === selected ? "true" : "false"}" class="${item.id === selected ? "is-selected" : ""}" ${escapeAttribute(optionAttribute)}="${escapeAttribute(id)}" ${escapeAttribute(valueAttribute)}="${escapeAttribute(item.id)}">${escapeHtml(label(item))}</button>`).join("")}</div></details>`;
 }
 
-function reportPicker(title, icon, type, rows, selected) {
+function reportPicker(title, icon, category, rows, selected) {
   if (!rows.length) {
     return `<div class="report-picker"><h3>${escapeHtml(icon)} ${escapeHtml(title)}</h3><p class="report-count">${reportCountLabel(0)}</p><p class="muted">${localeText("暂无报告", "No reports")}</p></div>`;
   }
   const groups = new Map();
   rows.forEach((row) => {
     const source = String(row.source || "unknown");
-    if (!groups.has(source)) groups.set(source, []);
-    groups.get(source).push(row);
+    const groupKey = reportGroupKey(row.type, source);
+    if (!groups.has(groupKey)) groups.set(groupKey, []);
+    groups.get(groupKey).push(row);
   });
   const selections = state.pageData.reportSelections || {};
-  const body = [...groups.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([source, groupRows]) => {
-    const groupKey = reportGroupKey(type, source);
+  const body = [...groups.entries()].sort(([, leftRows], [, rightRows]) => {
+    const left = `${reportTypeLabel(leftRows[0].type)}:${leftRows[0].source_label || leftRows[0].source}`;
+    const right = `${reportTypeLabel(rightRows[0].type)}:${rightRows[0].source_label || rightRows[0].source}`;
+    return left.localeCompare(right);
+  }).map(([groupKey, groupRows]) => {
     const saved = selections[groupKey];
     const selectedHere = groupRows.some((item) => item.id === selected) ? selected : (groupRows.some((item) => item.id === saved) ? saved : groupRows[0].id);
-    const sourceLabel = type === "keyword_trend"
-      ? "关键词趋势"
-      : String(groupRows[0].source_label || source);
-    return `<div class="report-picker-group"><div class="report-select-field"><span>${escapeHtml(sourceLabel)} <small>(${groupRows.length})</small></span>${scrollSelect({ id: groupKey, rows: groupRows, selected: selectedHere, label: (item) => item.label, optionAttribute: "data-report-select-option", valueAttribute: "data-report-id" })}</div><button class="secondary-button compact-button report-preview-button" data-preview-group="${escapeAttribute(groupKey)}">${localeText("预览", "Preview")}</button></div>`;
+    const reportType = String(groupRows[0].type || "");
+    const baseSourceLabel = reportType === "keyword_trend"
+      ? reportTypeLabel(reportType)
+      : String(groupRows[0].source_label || groupRows[0].source || "unknown");
+    const sourceLabel = category === "other" && reportType !== "keyword_trend"
+      ? `${reportTypeLabel(reportType)} · ${baseSourceLabel}`
+      : baseSourceLabel;
+    const optionLabel = (item) => category === "other"
+      ? `${reportTypeLabel(item.type)} · ${item.label}`
+      : item.label;
+    return `<div class="report-picker-group"><div class="report-select-field"><span>${escapeHtml(sourceLabel)} <small>(${groupRows.length})</small></span>${scrollSelect({ id: groupKey, rows: groupRows, selected: selectedHere, label: optionLabel, optionAttribute: "data-report-select-option", valueAttribute: "data-report-id" })}</div><button class="secondary-button compact-button report-preview-button" data-preview-group="${escapeAttribute(groupKey)}">${localeText("预览", "Preview")}</button></div>`;
   }).join("");
   return `<div class="report-picker"><h3>${escapeHtml(icon)} ${escapeHtml(title)}</h3><p class="report-count">${reportCountLabel(rows.length)}</p>${body}</div>`;
 }
@@ -2069,9 +2095,9 @@ function formatReportSize(bytes) {
 function findAdjacentDailyReport(report, rows, relation) {
   if (!report?.id) return null;
   // ``list_reports`` returns each source newest first. A calendar day is
-  // not a report identity: historical runs and supplement runs can create
-  // several independent batches on the same day. Move through the actual
-  // ordered report rows so every batch remains reachable.
+  // not a report identity: daily and supplement workflows can create several
+  // independent batches on the same day. Move through actual report rows so
+  // every batch remains reachable.
   const sameSource = rows.filter((item) => item.source === report.source);
   const current = sameSource.findIndex((item) => item.id === report.id);
   if (current < 0) return null;
@@ -2137,7 +2163,8 @@ async function fetchReportHtml(reportId) {
 }
 
 function reportDirectoryMarkup(reports, selected, showNonArxiv) {
-  const browser = section("报告浏览", `<div class="toolbar"><label class="toggle-field"><span>显示非 arXiv 来源报告</span><input id="report-non-arxiv" type="checkbox" ${showNonArxiv ? "checked" : ""}/><i></i></label><button id="reports-refresh" class="secondary-button">刷新列表</button></div><div class="report-grid">${reportPicker("每日研究", "📅", "daily", reports.daily, selected)}${reportPicker("趋势研究", "🔬", "trend", reports.trend, selected)}${reportPicker("关键词趋势", "📈", "keyword_trend", reports.keyword_trend, selected)}</div>`, { icon: "📚" });
+  const otherReports = Array.isArray(reports.other) ? reports.other : [];
+  const browser = section("报告浏览", `<div class="toolbar"><label class="toggle-field"><span>显示非 arXiv 来源报告</span><input id="report-non-arxiv" type="checkbox" ${showNonArxiv ? "checked" : ""}/><i></i></label><button id="reports-refresh" class="secondary-button">刷新列表</button></div><div class="report-grid">${reportPicker(localeText("每日研究", "Daily Research"), "📅", "daily", reports.daily, selected)}${reportPicker(localeText("趋势研究", "Trend Research"), "🔬", "trend", reports.trend, selected)}${reportPicker(localeText("其他报告", "Other Reports"), "🗂", "other", otherReports, selected)}</div>`, { icon: "📚" });
   return `${browser}${selected ? '<div id="report-preview" class="loading">正在加载报告预览…</div>' : section("报告预览", '<p class="report-empty-state">尚未生成可查看的报告。</p>')}`;
 }
 
@@ -2158,7 +2185,7 @@ function updateReportPickerSelection(root, report) {
 }
 
 function bindReportDirectory(root, reports, token) {
-  const all = [...reports.daily, ...reports.trend, ...reports.keyword_trend];
+  const all = [...reports.daily, ...reports.trend, ...(reports.other || [])];
   const chooseReport = (reportId) => {
     const report = all.find((item) => item.id === reportId);
     if (!report) return;
@@ -2208,7 +2235,7 @@ async function refreshReportsDirectory(root = $("#page-root"), token = state.ren
   try {
     const reports = await api(`/api/reports?non_arxiv=${showNonArxiv ? "1" : "0"}`);
     if (token !== state.renderToken || state.page !== "reports" || !isCurrentLocalRequest("reports-directory", requestVersion)) return;
-    const all = [...reports.daily, ...reports.trend, ...reports.keyword_trend];
+    const all = [...reports.daily, ...reports.trend, ...(reports.other || [])];
     let selected = state.pageData.selectedReport;
     if (!selected || !all.some((item) => item.id === selected)) selected = all[0]?.id || "";
     state.pageData.selectedReport = selected;
@@ -2243,15 +2270,18 @@ async function loadReportPreview(report, reports, token, chooseReport) {
   try {
     const [html, paperResponse] = await Promise.all([
       fetchReportHtml(report.id),
-      report.type === "daily"
+      ["daily", "supplement"].includes(report.type)
         ? api(`/api/reports/${encodeURIComponent(report.id)}/papers`).catch(() => ({ items: [] }))
         : Promise.resolve({ items: [] }),
     ]);
     if (token !== state.renderToken || state.pageData.selectedReport !== report.id || !isCurrentLocalRequest("report-preview", requestVersion)) return;
     const marked = buildMarkedReportHtml(html, paperResponse.items || []);
-    const previous = report.type === "daily" ? findAdjacentDailyReport(report, reports.daily, "previous") : null;
-    const next = report.type === "daily" ? findAdjacentDailyReport(report, reports.daily, "next") : null;
-    const navigation = report.type === "daily" ? `<div class="report-navigation"><button class="secondary-button compact-button" data-report-nav="${previous ? escapeAttribute(previous.id) : ""}" ${previous ? "" : "disabled"}>← 上一份报告</button><button class="secondary-button compact-button" data-report-nav="${next ? escapeAttribute(next.id) : ""}" ${next ? "" : "disabled"}>下一份报告</button></div>` : "";
+    const navigableRows = report.type === "daily"
+      ? reports.daily
+      : (report.type === "supplement" ? (reports.other || []).filter((item) => item.type === "supplement") : []);
+    const previous = navigableRows.length ? findAdjacentDailyReport(report, navigableRows, "previous") : null;
+    const next = navigableRows.length ? findAdjacentDailyReport(report, navigableRows, "next") : null;
+    const navigation = navigableRows.length ? `<div class="report-navigation"><button class="secondary-button compact-button" data-report-nav="${previous ? escapeAttribute(previous.id) : ""}" ${previous ? "" : "disabled"}>← 上一份报告</button><button class="secondary-button compact-button" data-report-nav="${next ? escapeAttribute(next.id) : ""}" ${next ? "" : "disabled"}>下一份报告</button></div>` : "";
     // ``#report-preview`` starts as a loading placeholder.  Drop that class
     // once real content arrives; retaining it wraps the full preview card in
     // a second, oversized dashed border.
@@ -2263,7 +2293,7 @@ async function loadReportPreview(report, reports, token, chooseReport) {
       if (button.dataset.reportNav) chooseReport(button.dataset.reportNav);
     }));
     applyLocale(preview);
-    if (report.type === "daily" && marked.injected) {
+    if (["daily", "supplement"].includes(report.type) && marked.injected) {
       const markAbortController = new AbortController();
       state.reportMarkAbortController = markAbortController;
       window.addEventListener("message", async function onReportMark(event) {
@@ -3466,7 +3496,7 @@ function historyActions(data) {
   const fullRepair = Boolean(configValue("legacy_import_full_repair_enabled", false));
   const runMode = String(configValue("history_maintenance_run_mode", "idle")) === "time_window" ? "time_window" : "idle";
   const scheduleFields = `<div class="history-schedule-settings">${field({ label: "历史维护每次最多处理论文数（0 不限）", key: "history_maintenance_max_papers_per_run", type: "number", min: 0, max: 100000, step: 1, fallback: 200 })}${field({ label: "历史维护运行方式", key: "history_maintenance_run_mode", type: "select", fallback: "idle", choices: [{ value: "idle", label: "闲时运行" }, { value: "time_window", label: "指定时间段运行" }] })}<div id="history-time-window" class="form-grid two history-time-window" ${runMode === "time_window" ? "" : "hidden"}>${field({ label: "指定时段开始", key: "history_maintenance_time_window_start", type: "time", fallback: "00:00" })}${field({ label: "指定时段结束", key: "history_maintenance_time_window_end", type: "time", fallback: "06:00" })}</div></div>`;
-  return `${field({ label: "启用完整补全流程", key: "legacy_import_full_repair_enabled", type: "checkbox", fallback: false })}<p id="history-full-repair-hint" class="hint-text">${historyFullRepairHint(fullRepair)}</p><div class="action-row history-maintenance-actions"><button id="history-import" class="primary-button" ${pendingModes.has("legacy_import") ? "disabled" : ""}>读取旧历史</button><button id="history-repair" class="secondary-button compact-button" ${pendingModes.has("history_data_repair") ? "disabled" : ""}>补全历史数据</button><button id="history-omission" class="secondary-button compact-button" ${pendingModes.has("history_omission_scan") ? "disabled" : ""}>扫描历史遗漏</button></div><h3>运行设置</h3>${scheduleFields}`;
+  return `${field({ label: "启用完整补全流程", key: "legacy_import_full_repair_enabled", type: "checkbox", fallback: false })}<p id="history-full-repair-hint" class="hint-text">${historyFullRepairHint(fullRepair)}</p><div class="action-row history-maintenance-actions"><button id="history-import" class="primary-button" ${pendingModes.has("legacy_import") ? "disabled" : ""}>读取旧历史</button><button id="history-repair" class="secondary-button compact-button" ${pendingModes.has("history_data_repair") ? "disabled" : ""}>补全历史数据</button><button id="history-omission" class="secondary-button compact-button" ${pendingModes.has("history_omission_scan") ? "disabled" : ""}>扫描历史遗漏</button></div><h3>运行设置</h3>${scheduleFields}<div class="action-row"><button id="history-migrate-supplements" class="secondary-button">迁移已有补充报告</button></div>`;
 }
 
 function historyStatusPanel(data) {
@@ -3496,6 +3526,28 @@ function bindHistoryLaunchers(root) {
   });
   $("#history-omission", root)?.addEventListener("click", async () => {
     try { if (!requireSavedHistorySchedule()) return; await api("/api/tasks/history_omission_scan", { method: "POST", body: { args: {} } }); toast(historyQueueMessage(), "success"); await refreshHistoryStatus(root); } catch (error) { toast(error.message, "error"); }
+  });
+  $("#history-migrate-supplements", root)?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+      const result = await api("/api/history/supplement-reports/migrate", { method: "POST", body: {} });
+      const htmlMoved = Number(result.html_moved || 0);
+      const markdownMoved = Number(result.markdown_moved || 0);
+      if (!htmlMoved && !markdownMoved) {
+        toast(localeText("未发现需要迁移的补充报告。", "No legacy supplement reports need migration."));
+      } else {
+        toast(localeText(
+          `已迁移 ${htmlMoved} 份 HTML、${markdownMoved} 份 Markdown 补充报告。`,
+          `Moved ${htmlMoved} HTML and ${markdownMoved} Markdown supplement reports.`
+        ), "success");
+      }
+      await refreshHistoryStatus(root);
+    } catch (error) {
+      toast(localizedError(error), "error");
+    } finally {
+      button.disabled = false;
+    }
   });
 }
 
