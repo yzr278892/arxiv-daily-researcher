@@ -12,6 +12,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from modern_webui import backend
+from utils.daily_research_store import DailyResearchStore
 from utils.webui_trigger import enqueue_trigger, trigger_status_directory
 
 
@@ -292,13 +293,200 @@ class ModernBackendTests(unittest.TestCase):
             daily_root = root / "daily_research" / "html"
             legacy = daily_root / "arxiv_Report_2026-08-01_12-00-00.html"
             nested = daily_root / "openalex" / "OpenAlex_Report_2026-08-02_12-00-00.html"
+            supplement = (
+                root
+                / "other_reports"
+                / "supplement"
+                / "html"
+                / "prl"
+                / "Supplement_Report_2026-08-03_12-00-00.html"
+            )
             nested.parent.mkdir(parents=True)
             legacy.parent.mkdir(parents=True, exist_ok=True)
+            supplement.parent.mkdir(parents=True)
             legacy.touch()
             nested.touch()
+            supplement.touch()
 
             self.assertEqual(backend._daily_report_source(legacy, root), "arxiv")
             self.assertEqual(backend._daily_report_source(nested, root), "openalex")
+            self.assertEqual(backend._daily_report_source(supplement, root), "prl")
+
+    def test_report_list_separates_legacy_and_new_supplements_from_daily_reports(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "reports"
+            daily = root / "daily_research" / "html" / "arxiv" / "ARXIV_Report_2026-09-01_12-00-00.html"
+            legacy_supplement = root / "daily_research" / "html" / "arxiv" / "ARXIV_Report_2026-09-01_13-00-00.html"
+            keyword = root / "keyword_trend" / "html" / "Keyword_Trend_2026-09-01.html"
+            supplement = root / "other_reports" / "supplement" / "html" / "arxiv" / "Supplement_Report_2026-09-01_14-00-00.html"
+            for path in (daily, legacy_supplement, keyword, supplement):
+                path.parent.mkdir(parents=True, exist_ok=True)
+            daily.write_text("<html><title>Daily report</title></html>", encoding="utf-8")
+            legacy_supplement.write_text(
+                "<html><title>arXiv Report Supplement Report</title><h1>arXiv 补充报告 (Supplement Report)</h1></html>",
+                encoding="utf-8",
+            )
+            keyword.write_text("<html><title>Keyword trend</title></html>", encoding="utf-8")
+            supplement.write_text(
+                "<html><title>arXiv Report Supplement Report</title><h1>arXiv 补充报告 (Supplement Report)</h1></html>",
+                encoding="utf-8",
+            )
+
+            with patch.object(backend, "configured_reports_dir", return_value=root), patch.object(
+                backend, "open_store", return_value=None
+            ), patch.object(backend, "_report_source_labels", return_value={"arxiv": "arXiv"}):
+                groups = backend.list_reports(show_non_arxiv=True)
+
+        self.assertEqual(set(groups), {"daily", "trend", "other"})
+        self.assertEqual([row["name"] for row in groups["daily"]], [daily.name])
+        self.assertEqual(
+            {row["type"] for row in groups["other"]}, {"keyword_trend", "supplement"}
+        )
+        self.assertEqual(
+            {row["name"] for row in groups["other"] if row["type"] == "supplement"},
+            {legacy_supplement.name, supplement.name},
+        )
+
+    def test_migrate_legacy_supplements_moves_artifacts_and_rewrites_sqlite_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            data_dir = Path(directory) / "data"
+            root = data_dir / "reports"
+            old_html = (
+                root
+                / "daily_research"
+                / "html"
+                / "arxiv"
+                / "ARXIV_Report_2026-09-01_13-14-15_123456.html"
+            )
+            old_markdown = (
+                root
+                / "daily_research"
+                / "markdown"
+                / "arxiv"
+                / "ARXIV_Report_2026-09-01_13-14-15_123456.md"
+            )
+            old_html.parent.mkdir(parents=True)
+            old_markdown.parent.mkdir(parents=True)
+            old_html.write_text(
+                "<html><title>arXiv Report Supplement Report</title><h1>arXiv 补充报告 (Supplement Report)</h1></html>",
+                encoding="utf-8",
+            )
+            old_markdown.write_text("# arXiv · 补充报告\n", encoding="utf-8")
+
+            store = DailyResearchStore(data_dir / "daily_research" / "daily_research.db")
+            run_id = store.start_run(1, run_kind="supplement")
+            old_html_reference = "/app/data/reports/daily_research/html/arxiv/ARXIV_Report_2026-09-01_13-14-15_123456.html"
+            old_markdown_reference = "/app/data/reports/daily_research/markdown/arxiv/ARXIV_Report_2026-09-01_13-14-15_123456.md"
+            store.complete_run(
+                run_id,
+                {"arxiv_html": old_html_reference, "arxiv": old_markdown_reference},
+            )
+            with store._connect() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO paper_deliveries(
+                        run_id, source, paper_id, canonical_id, version,
+                        report_path, delivered_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        run_id,
+                        "arxiv",
+                        "2609.00001v1",
+                        "2609.00001",
+                        1,
+                        old_html_reference,
+                        "2026-09-01T13:14:15",
+                    ),
+                )
+
+            with patch.object(backend, "flat_config", return_value={}), patch.object(
+                backend, "configured_reports_dir", return_value=root
+            ), patch.object(backend, "configured_data_dir", return_value=data_dir), patch.object(
+                backend, "open_store", return_value=store
+            ):
+                result = backend.migrate_supplement_reports()
+
+                repeated = backend.migrate_supplement_reports()
+
+            new_html = (
+                root
+                / "other_reports"
+                / "supplement"
+                / "html"
+                / "arxiv"
+                / "Supplement_Report_2026-09-01_13-14-15_123456.html"
+            )
+            new_markdown = (
+                root
+                / "other_reports"
+                / "supplement"
+                / "markdown"
+                / "arxiv"
+                / "Supplement_Report_2026-09-01_13-14-15_123456.md"
+            )
+            expected_html_reference = "/app/data/reports/other_reports/supplement/html/arxiv/Supplement_Report_2026-09-01_13-14-15_123456.html"
+            expected_markdown_reference = "/app/data/reports/other_reports/supplement/markdown/arxiv/Supplement_Report_2026-09-01_13-14-15_123456.md"
+
+            self.assertEqual(
+                result,
+                {
+                    "ok": True,
+                    "html_moved": 1,
+                    "markdown_moved": 1,
+                    "database_runs": 1,
+                    "database_deliveries": 1,
+                },
+            )
+            self.assertEqual(
+                repeated,
+                {
+                    "ok": True,
+                    "html_moved": 0,
+                    "markdown_moved": 0,
+                    "database_runs": 0,
+                    "database_deliveries": 0,
+                },
+            )
+            self.assertFalse(old_html.exists())
+            self.assertFalse(old_markdown.exists())
+            self.assertTrue(new_html.is_file())
+            self.assertTrue(new_markdown.is_file())
+            self.assertEqual(
+                store.report_paths_for_paper("arxiv", "2609.00001v1"),
+                [expected_html_reference, expected_markdown_reference],
+            )
+            with store._connect() as conn:
+                persisted = json.loads(
+                    conn.execute(
+                        "SELECT report_paths_json FROM daily_runs WHERE run_id = ?", (run_id,)
+                    ).fetchone()["report_paths_json"]
+                )
+            self.assertEqual(persisted["arxiv_html"], expected_html_reference)
+            self.assertEqual(persisted["arxiv"], expected_markdown_reference)
+
+    def test_migrate_legacy_supplements_rejects_an_active_worker_before_moving_files(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            data_dir = Path(directory) / "data"
+            root = data_dir / "reports"
+            old_html = root / "daily_research" / "html" / "arxiv" / "ARXIV_Report_2026-09-01_13-14-15.html"
+            old_html.parent.mkdir(parents=True)
+            old_html.write_text(
+                "<html><title>arXiv Report Supplement Report</title></html>",
+                encoding="utf-8",
+            )
+
+            with patch.object(backend, "flat_config", return_value={}), patch.object(
+                backend, "configured_reports_dir", return_value=root
+            ), patch.object(backend, "configured_data_dir", return_value=data_dir), patch.object(
+                backend,
+                "database_restore_activity_gate",
+                side_effect=backend.DatabaseRestoreBusyError("busy"),
+            ):
+                with self.assertRaisesRegex(backend.ModernWebUIError, "运行中的任务"):
+                    backend.migrate_supplement_reports()
+
+            self.assertTrue(old_html.is_file())
 
     def test_report_rows_use_streamlit_friendly_labels_and_disambiguate_runs(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -1123,10 +1123,10 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
     # ── reports.py ────────────────────────────────────────────────────────
     "reports_title": {"zh": "报告查看", "en": "Report Viewer"},
     "reports_hint": {
-        "zh": "浏览并在线预览所有已生成的 HTML 报告，包括每日研究报告、趋势分析报告和关键词趋势报告。",
+        "zh": "浏览并在线预览所有已生成的 HTML 报告，包括每日研究、趋势分析、关键词趋势和补充报告。",
         "en": (
             "Browse and preview all generated HTML reports: daily research, trend "
-            "analysis, and keyword trend."
+            "analysis, keyword trend, and supplement reports."
         ),
     },
     "reports_refresh": {"zh": "刷新文件列表", "en": "Refresh File List"},
@@ -1141,6 +1141,8 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
     "rtype_daily": {"zh": "每日研究", "en": "Daily Research"},
     "rtype_trend": {"zh": "趋势分析", "en": "Trend Analysis"},
     "rtype_keyword_trend": {"zh": "关键词趋势", "en": "Keyword Trend"},
+    "rtype_supplement": {"zh": "补充报告", "en": "Supplement Report"},
+    "rtype_other": {"zh": "其他报告", "en": "Other Reports"},
     "reports_meta_expander": {"zh": "运行参数", "en": "Run Parameters"},
     "meta_keyword": {"zh": "关键词", "en": "Keyword"},
     "meta_date_range": {"zh": "日期范围", "en": "Date Range"},

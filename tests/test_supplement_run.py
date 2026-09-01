@@ -429,7 +429,7 @@ class ReporterSupplementKindTests(unittest.TestCase):
                 "score_response": agent_score,
             }
             overrides = {
-                "ENABLE_MARKDOWN_REPORT": False,
+                "ENABLE_MARKDOWN_REPORT": True,
                 "ENABLE_HTML_REPORT": True,
                 "INCLUDE_ALL_IN_REPORT": True,
                 "REPORTS_DIR": root,
@@ -446,7 +446,22 @@ class ReporterSupplementKindTests(unittest.TestCase):
                     report_timestamp=datetime(2026, 3, 15, 14, 23, 5),
                 )
             html_path = paths["arxiv_html"]
-            self.assertIn("2026-03-15_14-23-05", html_path.name)
+            markdown_path = paths["arxiv"]
+            expected_relative_base = Path("other_reports") / "supplement"
+            self.assertEqual(
+                html_path.relative_to(root),
+                expected_relative_base
+                / "html"
+                / "arxiv"
+                / "Supplement_Report_2026-03-15_14-23-05_000000.html",
+            )
+            self.assertEqual(
+                markdown_path.relative_to(root),
+                expected_relative_base
+                / "markdown"
+                / "arxiv"
+                / "Supplement_Report_2026-03-15_14-23-05_000000.md",
+            )
             content = html_path.read_text(encoding="utf-8")
             self.assertIn("补充报告 (Supplement Report)", content)
             self.assertIn("Generated: 2026-03-15 14:23:05", content)

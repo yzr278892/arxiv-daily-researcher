@@ -15,6 +15,7 @@ import logging
 import mimetypes
 import os
 import re
+import sqlite3
 import tempfile
 import time
 from datetime import datetime, timedelta, timezone
@@ -1691,24 +1692,258 @@ def _report_path(token: str, root: Path) -> Path:
     return candidate
 
 
+_REPORT_TIMESTAMP_RE = re.compile(
+    r"(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}(?:_\d+)?)"
+)
+_SUPPLEMENT_HTML_MARKER_RE = re.compile(
+    r"<(?:title|h1)\b[^>]*>[^<]*(?:Supplement\s+Report|补充报告)",
+    re.IGNORECASE,
+)
+_SUPPLEMENT_MARKDOWN_MARKER_RE = re.compile(
+    r"(?m)^#\s+.*(?:Supplement\s+Report|补充报告)", re.IGNORECASE
+)
+
+
+def _safe_report_source(value: object, *, fallback: str = "arxiv") -> str:
+    """Return a source key safe for the source-specific report directory."""
+    source = str(value or "").strip().lower()
+    if re.fullmatch(r"[a-z0-9][a-z0-9_.-]{0,127}", source):
+        return source
+    return fallback
+
+
+def _report_source(path: Path, root: Path) -> str:
+    """Recover the source key for daily and supplement report artifacts."""
+    artifact_roots = (
+        root / "daily_research" / "html",
+        root / "daily_research" / "markdown",
+        root / "other_reports" / "supplement" / "html",
+        root / "other_reports" / "supplement" / "markdown",
+    )
+    for artifact_root in artifact_roots:
+        try:
+            relative = path.resolve().relative_to(artifact_root.resolve())
+        except ValueError:
+            continue
+        if len(relative.parts) > 1:
+            return _safe_report_source(relative.parts[0])
+        break
+    match = re.match(r"(.+?)_Report_", path.stem, re.IGNORECASE)
+    return _safe_report_source(match.group(1) if match else "arxiv")
+
+
+def _legacy_supplement_content(path: Path) -> bool:
+    """Identify an old supplement from its generated title, not a filename."""
+    try:
+        text = path.read_bytes()[:131_072].decode("utf-8", errors="replace")
+    except OSError:
+        return False
+    if path.suffix.lower() == ".html":
+        return bool(_SUPPLEMENT_HTML_MARKER_RE.search(text))
+    return bool(_SUPPLEMENT_MARKDOWN_MARKER_RE.search(text))
+
+
+def _legacy_supplement_paths(
+    root: Path, *, known_references: set[str] | None = None
+) -> list[Path]:
+    """Return supplement artifacts still stored in the legacy daily folder.
+
+    SQLite's ``run_kind`` is authoritative when it is available.  Generated
+    HTML/Markdown titles provide a portable fallback for archives created
+    before the report-path ledger existed.  A detected HTML report brings its
+    matching Markdown sibling along even when Markdown metadata was not saved.
+    """
+    known = {item.casefold() for item in (known_references or set()) if item}
+    daily_base = root / "daily_research"
+    html_root = daily_base / "html"
+    markdown_root = daily_base / "markdown"
+    selected: set[Path] = set()
+
+    def is_known_or_marked(path: Path) -> bool:
+        try:
+            relative = path.relative_to(root).as_posix()
+        except ValueError:
+            return False
+        return relative.casefold() in known or _legacy_supplement_content(path)
+
+    if html_root.is_dir():
+        for html_path in html_root.rglob("*.html"):
+            if not html_path.is_file() or not is_known_or_marked(html_path):
+                continue
+            selected.add(html_path)
+            try:
+                markdown_relative = html_path.relative_to(html_root).with_suffix(".md")
+            except ValueError:
+                continue
+            markdown_path = markdown_root / markdown_relative
+            if markdown_path.is_file():
+                selected.add(markdown_path)
+
+    if markdown_root.is_dir():
+        for markdown_path in markdown_root.rglob("*.md"):
+            if markdown_path.is_file() and is_known_or_marked(markdown_path):
+                selected.add(markdown_path)
+
+    return sorted(selected, key=lambda item: item.as_posix())
+
+
+def _supplement_filename_timestamp(path: Path) -> str:
+    """Keep the old report's batch timestamp when normalising its filename."""
+    match = _REPORT_TIMESTAMP_RE.search(path.stem)
+    if match:
+        return match.group(1)
+    try:
+        return datetime.fromtimestamp(path.stat().st_mtime).strftime(
+            "%Y-%m-%d_%H-%M-%S_%f"
+        )
+    except OSError:
+        return datetime.now().strftime("%Y-%m-%d_%H-%M-%S_%f")
+
+
+def _supplement_migration_target(path: Path, root: Path) -> Path:
+    """Build the normalised destination for one old supplement artifact."""
+    try:
+        relative = path.relative_to(root)
+    except ValueError as exc:
+        raise ModernWebUIError("补充报告路径不在报告目录内。") from exc
+    if len(relative.parts) < 3 or relative.parts[0] != "daily_research":
+        raise ModernWebUIError("补充报告不在旧日报目录中。")
+    report_format = relative.parts[1]
+    if report_format not in {"html", "markdown"}:
+        raise ModernWebUIError("补充报告格式无效。")
+    source = _report_source(path, root)
+    suffix = ".html" if report_format == "html" else ".md"
+    filename = f"Supplement_Report_{_supplement_filename_timestamp(path)}{suffix}"
+    return root / "other_reports" / "supplement" / report_format / source / filename
+
+
+def _rollback_report_moves(moved: list[tuple[Path, Path]]) -> bool:
+    """Best-effort rollback used only before SQLite references are updated."""
+    complete = True
+    for old_path, new_path in reversed(moved):
+        try:
+            if new_path.is_file() and not old_path.exists():
+                os.replace(new_path, old_path)
+        except OSError:
+            complete = False
+            logger.exception("无法回滚补充报告迁移")
+    return complete
+
+
+def migrate_supplement_reports() -> dict[str, int | bool]:
+    """Move old supplement files and atomically synchronise SQLite paths.
+
+    A WebUI request takes the same exclusive activity gate as a database
+    restore.  Any active Worker run therefore causes an immediate, safe
+    rejection instead of racing report delivery or history repair.
+    """
+    settings = flat_config()
+    root = configured_reports_dir(settings)
+    data_dir = configured_data_dir(settings)
+    try:
+        with database_restore_activity_gate(
+            exclusive=True,
+            nonblocking=True,
+            data_dir=data_dir,
+        ):
+            store = open_store(settings)
+            known_references: set[str] = set()
+            if store is not None:
+                try:
+                    known_references = {
+                        DailyResearchStore.normalize_report_reference(value)
+                        for value in store.supplement_report_paths()
+                    }
+                except (OSError, ValueError, json.JSONDecodeError):
+                    logger.warning("无法读取补充报告 SQLite 路径；将使用报告标题识别旧文件")
+
+            sources = _legacy_supplement_paths(root, known_references=known_references)
+            if not sources:
+                return {
+                    "ok": True,
+                    "html_moved": 0,
+                    "markdown_moved": 0,
+                    "database_runs": 0,
+                    "database_deliveries": 0,
+                }
+
+            plan: list[tuple[Path, Path]] = [
+                (path, _supplement_migration_target(path, root)) for path in sources
+            ]
+            target_keys = [target.as_posix() for _source, target in plan]
+            if len(target_keys) != len(set(target_keys)):
+                raise ModernWebUIError("补充报告迁移目标重复，请先检查旧报告文件。")
+            conflicts = [target for _source, target in plan if target.exists()]
+            if conflicts:
+                raise ModernWebUIError("补充报告迁移目标已存在，未移动任何文件。")
+
+            path_map = {
+                source.relative_to(root).as_posix(): target.relative_to(root).as_posix()
+                for source, target in plan
+            }
+            moved: list[tuple[Path, Path]] = []
+            try:
+                for source, target in plan:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    os.replace(source, target)
+                    moved.append((source, target))
+                database_updates = (
+                    store.relocate_report_paths(path_map)
+                    if store is not None
+                    else {"runs": 0, "deliveries": 0}
+                )
+            except (OSError, ValueError, sqlite3.Error) as exc:
+                if _rollback_report_moves(moved):
+                    raise ModernWebUIError("补充报告迁移失败，已回滚文件。") from exc
+                raise ModernWebUIError(
+                    "补充报告迁移失败，部分文件未能自动回滚，请查看系统日志。"
+                ) from exc
+
+            return {
+                "ok": True,
+                "html_moved": sum(1 for source, _target in plan if source.suffix.lower() == ".html"),
+                "markdown_moved": sum(1 for source, _target in plan if source.suffix.lower() == ".md"),
+                "database_runs": int(database_updates["runs"]),
+                "database_deliveries": int(database_updates["deliveries"]),
+            }
+    except DatabaseRestoreBusyError as exc:
+        raise ModernWebUIError("有运行中的任务正在使用数据库，请等待任务完成后再迁移补充报告。") from exc
+
+
 def list_reports(show_non_arxiv: bool = False) -> dict[str, list[dict[str, Any]]]:
     root = configured_reports_dir()
-    groups: dict[str, list[dict[str, Any]]] = {"daily": [], "trend": [], "keyword_trend": []}
+    groups: dict[str, list[dict[str, Any]]] = {"daily": [], "trend": [], "other": []}
     if not root.is_dir():
         return groups
     # Loading config.json (JSON5) once is significant on small NAS devices;
     # source labels are shared by every report row in this response.
     labels = _report_source_labels()
+    store = open_store()
+    known_references: set[str] = set()
+    if store is not None:
+        try:
+            known_references = {
+                DailyResearchStore.normalize_report_reference(value)
+                for value in store.supplement_report_paths()
+            }
+        except (OSError, ValueError, json.JSONDecodeError):
+            logger.warning("无法读取补充报告 SQLite 路径；将使用报告标题识别旧文件")
+    legacy_supplements = set(
+        _legacy_supplement_paths(root, known_references=known_references)
+    )
     daily_root = root / "daily_research" / "html"
     if daily_root.is_dir():
         for path in daily_root.rglob("*.html"):
             if not path.is_file():
                 continue
-            relative = path.relative_to(daily_root)
-            source = relative.parts[0].lower() if len(relative.parts) > 1 else (re.match(r"(.+?)_Report_", path.stem, re.I).group(1).lower() if re.match(r"(.+?)_Report_", path.stem, re.I) else "unknown")
+            source = _report_source(path, root)
             if not show_non_arxiv and source != "arxiv":
                 continue
-            groups["daily"].append(_report_row(path, root, "daily", source, labels=labels))
+            target_group = "other" if path in legacy_supplements else "daily"
+            report_type = "supplement" if target_group == "other" else "daily"
+            groups[target_group].append(
+                _report_row(path, root, report_type, source, labels=labels)
+            )
     trend_root = root / "trend_research" / "html"
     if trend_root.is_dir():
         for path in trend_root.rglob("*.html"):
@@ -1720,9 +1955,20 @@ def list_reports(show_non_arxiv: bool = False) -> dict[str, list[dict[str, Any]]
     if keyword_root.is_dir():
         for path in keyword_root.glob("*.html"):
             if path.is_file():
-                groups["keyword_trend"].append(
+                groups["other"].append(
                     _report_row(path, root, "keyword_trend", "keyword_trend", labels=labels)
                 )
+    supplement_root = root / "other_reports" / "supplement" / "html"
+    if supplement_root.is_dir():
+        for path in supplement_root.rglob("*.html"):
+            if not path.is_file():
+                continue
+            source = _report_source(path, root)
+            if not show_non_arxiv and source != "arxiv":
+                continue
+            groups["other"].append(
+                _report_row(path, root, "supplement", source, labels=labels)
+            )
     for name, values in groups.items():
         values.sort(key=lambda item: item["sort_key"], reverse=True)
         _disambiguate_report_labels(values)
@@ -1790,6 +2036,12 @@ def _report_label(path: Path, report_type: str) -> str:
         match = re.search(r"(\d{4}-\d{2}-\d{2})$", stem)
         if match:
             return match.group(1)
+    elif report_type == "supplement":
+        match = re.search(
+            r"(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})(?:_(\d+))?$", stem
+        )
+        if match:
+            return f"{match.group(1)}  {match.group(2).replace('-', ':')}"
     return stem
 
 
@@ -1841,22 +2093,8 @@ def _trend_report_metadata(path: Path) -> dict[str, Any] | None:
 
 
 def _daily_report_source(path: Path, root: Path) -> str:
-    """Recover the source used by a daily-report card.
-
-    New reports may be nested below a source directory while v3/v4 arXiv
-    reports sit directly in ``daily_research/html``.  Preference records must
-    use the same source key as the SQLite delivery ledger, rather than the
-    literal ``html`` directory name of an older report.
-    """
-    daily_root = root / "daily_research" / "html"
-    try:
-        relative = path.resolve().relative_to(daily_root.resolve())
-    except ValueError:
-        return "arxiv"
-    if len(relative.parts) > 1:
-        return relative.parts[0].strip().lower() or "arxiv"
-    match = re.match(r"(.+?)_Report_", path.stem, re.IGNORECASE)
-    return (match.group(1).strip().lower() if match else "arxiv") or "arxiv"
+    """Backward-compatible name for the shared daily/supplement resolver."""
+    return _report_source(path, root)
 
 
 def report_file(token: str) -> tuple[Path, str]:
@@ -1866,9 +2104,9 @@ def report_file(token: str) -> tuple[Path, str]:
 
 
 def report_papers(token: str) -> list[dict[str, Any]]:
-    """Expose daily-card identities and their stored preference state."""
+    """Expose daily or supplement card identities and preference state."""
     path, _ = report_file(token)
-    source = _daily_report_source(path, configured_reports_dir())
+    source = _report_source(path, configured_reports_dir())
     try:
         from utils.legacy_history import parse_legacy_report_file
 

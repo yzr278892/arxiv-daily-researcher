@@ -1271,6 +1271,9 @@ class Settings(BaseSettings):
         self.REPORTS_DIR.mkdir(parents=True, exist_ok=True)
         self.RESEARCH_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
         (self.REPORTS_DIR / "keyword_trend").mkdir(parents=True, exist_ok=True)
+        (self.REPORTS_DIR / "other_reports" / "supplement").mkdir(
+            parents=True, exist_ok=True
+        )
         self.DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
         self.HISTORY_DIR.mkdir(parents=True, exist_ok=True)
         self.DAILY_RESEARCH_DB_PATH.parent.mkdir(parents=True, exist_ok=True)

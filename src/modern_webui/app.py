@@ -427,6 +427,14 @@ async def history_retry(request: Request) -> JSONResponse:
         raise _safe_error(exc) from exc
 
 
+async def migrate_supplement_reports(request: Request) -> JSONResponse:
+    _require_session(request)
+    try:
+        return JSONResponse(await _blocking_call(backend.migrate_supplement_reports))
+    except Exception as exc:
+        raise _safe_error(exc) from exc
+
+
 async def papers_get(request: Request) -> JSONResponse:
     _require_session(request)
     filters = {key: value for key, value in request.query_params.items()}
@@ -839,6 +847,7 @@ app = Starlette(
         Route("/api/daily/run", daily_start, methods=["POST"]),
         Route("/api/history", history_get, methods=["GET"]),
         Route("/api/history/{request_id:str}/retry", history_retry, methods=["POST"]),
+        Route("/api/history/supplement-reports/migrate", migrate_supplement_reports, methods=["POST"]),
         Route("/api/papers", papers_get, methods=["GET"]),
         Route("/api/favorites", favorites_get, methods=["GET"]),
         Route("/api/favorites/collect", favorites_collect, methods=["POST"]),

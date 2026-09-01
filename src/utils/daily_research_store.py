@@ -2499,6 +2499,165 @@ class DailyResearchStore:
         unique.sort(key=lambda value: (0 if value.lower().endswith(".html") else 1, value))
         return unique
 
+    @staticmethod
+    def normalize_report_reference(value: object) -> str:
+        """Return a portable path below ``reports`` for archive relocation.
+
+        Worker and WebUI containers persist paths such as
+        ``/app/data/reports/...`` while a host-side process can use a project
+        path or a relative ``data/reports/...`` path.  Migration needs a
+        stable comparison key without assuming either deployment layout.
+        """
+        raw = str(value or "").strip().replace("\\", "/")
+        if not raw:
+            return ""
+        lowered = raw.casefold()
+        marker = "/reports/"
+        marker_index = lowered.rfind(marker)
+        if marker_index >= 0:
+            return raw[marker_index + len(marker) :].lstrip("/")
+        if lowered.startswith("reports/"):
+            return raw[len("reports/") :].lstrip("/")
+        return raw.lstrip("./")
+
+    @classmethod
+    def _relocate_report_reference(
+        cls, value: object, replacements: Dict[str, str]
+    ) -> tuple[object, bool]:
+        """Replace one saved report path while preserving its deployment prefix."""
+        if not isinstance(value, str):
+            return value, False
+        raw = value.strip()
+        key = cls.normalize_report_reference(raw)
+        replacement = replacements.get(key.casefold())
+        if not replacement:
+            return value, False
+
+        normalized = raw.replace("\\", "/")
+        lowered = normalized.casefold()
+        report_marker = "/reports/"
+        report_index = lowered.rfind(report_marker)
+        if report_index >= 0:
+            return normalized[: report_index + len(report_marker)] + replacement, True
+        if lowered.startswith("reports/"):
+            return "reports/" + replacement, True
+        if lowered == key.casefold():
+            return replacement, True
+        suffix = "/" + key.casefold()
+        if lowered.endswith(suffix):
+            return normalized[: -len(key)] + replacement, True
+        return value, False
+
+    @classmethod
+    def _relocate_report_value(
+        cls, value: object, replacements: Dict[str, str]
+    ) -> tuple[object, int]:
+        """Recursively update report-path JSON while retaining unknown values."""
+        if isinstance(value, str):
+            replaced, changed = cls._relocate_report_reference(value, replacements)
+            return replaced, int(changed)
+        if isinstance(value, list):
+            changed = 0
+            updated = []
+            for item in value:
+                replacement, item_changed = cls._relocate_report_value(item, replacements)
+                updated.append(replacement)
+                changed += item_changed
+            return updated, changed
+        if isinstance(value, dict):
+            changed = 0
+            updated: Dict[str, Any] = {}
+            for key, item in value.items():
+                replacement, item_changed = cls._relocate_report_value(item, replacements)
+                updated[key] = replacement
+                changed += item_changed
+            return updated, changed
+        return value, 0
+
+    def supplement_report_paths(self) -> list[str]:
+        """Return artifacts recorded by durable supplement runs.
+
+        The result includes both HTML and Markdown paths and intentionally
+        preserves their stored spelling.  Callers can normalise each value for
+        the current host/container layout with :meth:`normalize_report_reference`.
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT report_paths_json FROM daily_runs WHERE run_kind = 'supplement'"
+            ).fetchall()
+        paths: list[str] = []
+        for row in rows:
+            try:
+                report_paths = json.loads(row["report_paths_json"] or "{}")
+            except (TypeError, ValueError, json.JSONDecodeError):
+                continue
+
+            def collect(item: object) -> None:
+                if isinstance(item, str) and item.strip():
+                    paths.append(item.strip())
+                elif isinstance(item, dict):
+                    for nested in item.values():
+                        collect(nested)
+                elif isinstance(item, list):
+                    for nested in item:
+                        collect(nested)
+
+            collect(report_paths)
+        return list(dict.fromkeys(paths))
+
+    def relocate_report_paths(self, path_map: Dict[str, str]) -> Dict[str, int]:
+        """Synchronise report references after a safe archive-file relocation.
+
+        ``path_map`` uses paths relative to ``data/reports``.  The method
+        updates both run artifacts and paper deliveries in one SQLite
+        transaction, retaining each stored path's host/container prefix.
+        """
+        replacements: Dict[str, str] = {}
+        for old, new in path_map.items():
+            old_key = self.normalize_report_reference(old)
+            new_key = self.normalize_report_reference(new)
+            if not old_key or not new_key:
+                raise ValueError("报告迁移路径不能为空")
+            replacements[old_key.casefold()] = new_key
+        if not replacements:
+            return {"runs": 0, "deliveries": 0}
+
+        updated_runs = 0
+        updated_deliveries = 0
+        with self._lock, self._connect() as conn:
+            run_rows = conn.execute(
+                "SELECT run_id, report_paths_json FROM daily_runs WHERE report_paths_json IS NOT NULL"
+            ).fetchall()
+            for row in run_rows:
+                try:
+                    parsed = json.loads(row["report_paths_json"] or "{}")
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    continue
+                relocated, changed = self._relocate_report_value(parsed, replacements)
+                if not changed:
+                    continue
+                conn.execute(
+                    "UPDATE daily_runs SET report_paths_json = ? WHERE run_id = ?",
+                    (json.dumps(relocated, ensure_ascii=False), row["run_id"]),
+                )
+                updated_runs += 1
+
+            delivery_rows = conn.execute(
+                "SELECT delivery_id, report_path FROM paper_deliveries WHERE report_path IS NOT NULL"
+            ).fetchall()
+            for row in delivery_rows:
+                relocated, changed = self._relocate_report_reference(
+                    row["report_path"], replacements
+                )
+                if not changed:
+                    continue
+                conn.execute(
+                    "UPDATE paper_deliveries SET report_path = ? WHERE delivery_id = ?",
+                    (relocated, row["delivery_id"]),
+                )
+                updated_deliveries += 1
+        return {"runs": updated_runs, "deliveries": updated_deliveries}
+
     def set_history_report_repair_status(
         self,
         source: str,
