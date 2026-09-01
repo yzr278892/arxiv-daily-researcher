@@ -214,6 +214,54 @@ class ModernWebUIAppTests(unittest.TestCase):
         self.assertIn(".refresh-region.is-refreshing > *", stylesheet)
         self.assertIn(".refresh-region.is-refreshing::after", stylesheet)
 
+    def test_historical_token_import_endpoint_requires_a_session_and_forwards_result(self) -> None:
+        self.assertEqual(
+            self.client.post("/api/analytics/import-history", json={}).status_code, 503
+        )
+        self.assertEqual(
+            self.client.post(
+                "/api/auth/setup",
+                json={
+                    "username": "usage_import_admin",
+                    "password": "secret6",
+                    "password_confirmation": "secret6",
+                },
+            ).status_code,
+            200,
+        )
+        expected = {
+            "ok": True,
+            "reports": 4,
+            "imported": 2,
+            "updated": 0,
+            "unchanged": 1,
+            "already_recorded": 1,
+            "conflicted": 0,
+            "unreadable": 0,
+        }
+        with patch.object(
+            modern_app.backend, "import_historical_report_token_usage", return_value=expected
+        ) as import_usage:
+            response = self.client.post("/api/analytics/import-history", json={})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), expected)
+        import_usage.assert_called_once_with()
+
+    def test_analytics_history_import_uses_a_local_refresh(self) -> None:
+        script = self.client.get("/assets/app.js").text
+        stylesheet = self.client.get("/assets/app.css").text
+        start = script.index("function analyticsMarkup")
+        end = script.index("async function renderAnalytics", start)
+        analytics = script[start:end]
+
+        self.assertIn('id="analytics-import-history"', analytics)
+        self.assertIn('"/api/analytics/import-history"', analytics)
+        self.assertIn("await refreshAnalyticsContent(root, token);", analytics)
+        self.assertIn("#analytics-import-history", analytics)
+        self.assertIn("Import Historical Report Token Usage", analytics)
+        self.assertIn(".analytics-history-import", stylesheet)
+
     def test_proxy_exclusions_use_chip_editor_and_save_a_compatible_value(self) -> None:
         script = self.client.get("/assets/app.js").text
         stylesheet = self.client.get("/assets/app.css").text

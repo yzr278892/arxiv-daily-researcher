@@ -50,6 +50,44 @@ class RunTokenUsageTests(unittest.TestCase):
             days = store.get_daily_token_totals()
             self.assertEqual(days[0]["total"], 320)
 
+    def test_historical_token_upsert_uses_report_time_and_is_idempotent(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = DailyResearchStore(Path(temp_dir) / "state.db")
+            recorded_at = datetime(2024, 1, 2, 8, 30)
+
+            self.assertEqual(
+                store.upsert_historical_token_usage(
+                    "historical_report_example",
+                    {"historical_report": {"prompt": 12, "completion": 3}},
+                    mode="daily_research",
+                    recorded_at=recorded_at,
+                ),
+                "imported",
+            )
+            self.assertEqual(
+                store.upsert_historical_token_usage(
+                    "historical_report_example",
+                    {"historical_report": {"prompt": 12, "completion": 3}},
+                    mode="daily_research",
+                    recorded_at="2024-01-02T08:30:00",
+                ),
+                "unchanged",
+            )
+            self.assertEqual(
+                store.upsert_historical_token_usage(
+                    "historical_report_example",
+                    {"historical_report": {"prompt": 15, "completion": 5}},
+                    mode="daily_research",
+                    recorded_at=recorded_at,
+                ),
+                "updated",
+            )
+
+            self.assertEqual(store.get_daily_token_totals(), [{
+                "date": "2024-01-02", "prompt": 15, "completion": 5,
+                "total": 20, "runs": 1,
+            }])
+
     def test_daily_window_filters_old_rows(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             store = DailyResearchStore(Path(temp_dir) / "state.db")

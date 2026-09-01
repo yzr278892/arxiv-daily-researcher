@@ -12,6 +12,7 @@
 
 1. **补充报告独立归档** — 新生成的补充报告统一保存为 `data/reports/other_reports/supplement/<格式>/<来源>/Supplement_Report_<timestamp>`，不再混入每日研究目录。报告查看将关键词趋势和补充报告归入“其他报告”，下拉选择与预览明确显示报告类型；补充报告支持独立批次导航和 👍 / 👎 偏好标记。
 2. **旧补充报告安全迁移** — 历史维护的“旧版本历史导入”卡片新增迁移入口。它识别旧目录中的补充 HTML/Markdown、统一重命名、同步 `daily_runs.report_paths_json` 与 `paper_deliveries.report_path`，并在任何 Worker 任务运行时拒绝操作以避免并发写入。
+3. **历史 Token 用量导入** — 用量统计页可从归档 Markdown/HTML 按报告批次导入 Token 用量。跨来源副本、HTML/Markdown 对和已有 SQLite 运行均会去重；重复导入只更新变更后的报告数据，不重复累计。
 
 ### 🐛 修复与优化
 

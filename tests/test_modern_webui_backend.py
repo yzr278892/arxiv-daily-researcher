@@ -39,6 +39,135 @@ class ModernBackendTests(unittest.TestCase):
         self.assertEqual(bucket, "day")
         self.assertEqual(key, "custom")
 
+    def test_historical_token_import_groups_reports_and_preserves_report_time(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            data_dir = Path(directory) / "data"
+            reports_dir = data_dir / "reports"
+            store = DailyResearchStore(data_dir / "daily_research" / "daily_research.db")
+            stamp = "2024-01-02_08-30-00"
+            daily_report = (
+                reports_dir
+                / "daily_research"
+                / "markdown"
+                / "arxiv"
+                / f"ARXIV_Report_{stamp}.md"
+            )
+            second_source = (
+                reports_dir
+                / "daily_research"
+                / "markdown"
+                / "prl"
+                / f"PRL_Report_{stamp}.md"
+            )
+            html_only = (
+                reports_dir
+                / "daily_research"
+                / "html"
+                / "arxiv"
+                / "ARXIV_Report_2024-01-03_09-45-00.html"
+            )
+            trend_report = (
+                reports_dir
+                / "trend_research"
+                / "markdown"
+                / "quantum"
+                / "2023-01-01_2024-01-04.md"
+            )
+            for path in (daily_report, second_source, html_only, trend_report):
+                path.parent.mkdir(parents=True, exist_ok=True)
+            daily_text = """## Token 消耗统计
+
+- **总计**: 18 tokens（输入 10 / 输出 8）
+
+| 模型 | 输入 | 输出 | 合计 |
+|------|------|------|------|
+| cheap | 4 | 2 | 6 |
+| smart | 6 | 6 | 12 |
+"""
+            daily_report.write_text(daily_text, encoding="utf-8")
+            second_source.write_text(daily_text, encoding="utf-8")
+            html_only.write_text(
+                "<p>Token 消耗: <strong>12</strong> tokens（输入 8 / 输出 4）</p>",
+                encoding="utf-8",
+            )
+            trend_report.write_text(
+                """## Token 消耗统计
+
+- **总计**: 9 tokens（输入 3 / 输出 6）
+
+*本报告由 ArXiv Daily Researcher 研究趋势模式生成 | 2024-01-04 10:15:00*
+""",
+                encoding="utf-8",
+            )
+
+            with patch.object(backend, "flat_config", return_value={}), patch.object(
+                backend, "configured_reports_dir", return_value=reports_dir
+            ), patch.object(backend, "configured_data_dir", return_value=data_dir), patch.object(
+                backend, "open_store", return_value=store
+            ):
+                first = backend.import_historical_report_token_usage()
+                second = backend.import_historical_report_token_usage()
+
+            self.assertEqual(first["reports"], 3)
+            self.assertEqual(first["imported"], 3)
+            self.assertEqual(first["conflicted"], 0)
+            self.assertEqual(second["imported"], 0)
+            self.assertEqual(second["unchanged"], 3)
+            self.assertEqual(
+                store.get_token_usage_summary(),
+                {"prompt": 21, "completion": 18, "total": 39, "runs": 3},
+            )
+            self.assertEqual(
+                store.get_token_usage_summary(
+                    start_at=datetime(2024, 1, 2), end_at=datetime(2024, 1, 3)
+                ),
+                {"prompt": 10, "completion": 8, "total": 18, "runs": 1},
+            )
+            by_model = {row["model"]: row["total"] for row in store.get_token_usage_by_model()}
+            self.assertEqual(by_model["cheap"], 6)
+            self.assertEqual(by_model["smart"], 12)
+            self.assertEqual(by_model["historical_report"], 21)
+
+    def test_historical_token_import_skips_a_report_with_native_usage(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            data_dir = Path(directory) / "data"
+            reports_dir = data_dir / "reports"
+            report = (
+                reports_dir
+                / "daily_research"
+                / "markdown"
+                / "arxiv"
+                / "ARXIV_Report_2024-01-02_08-30-00.md"
+            )
+            report.parent.mkdir(parents=True, exist_ok=True)
+            report.write_text(
+                "## Token 消耗统计\n\n- **总计**: 10 tokens（输入 6 / 输出 4）\n",
+                encoding="utf-8",
+            )
+            store = DailyResearchStore(data_dir / "daily_research" / "daily_research.db")
+            run_id = store.start_run(0)
+            store.complete_run(
+                run_id,
+                {"arxiv": "/app/data/reports/daily_research/markdown/arxiv/ARXIV_Report_2024-01-02_08-30-00.md"},
+            )
+            store.record_token_usage(
+                run_id,
+                {"native": {"prompt": 6, "completion": 4}},
+                recorded_at=datetime(2024, 1, 2, 8, 30),
+            )
+
+            with patch.object(backend, "flat_config", return_value={}), patch.object(
+                backend, "configured_reports_dir", return_value=reports_dir
+            ), patch.object(backend, "configured_data_dir", return_value=data_dir), patch.object(
+                backend, "open_store", return_value=store
+            ):
+                result = backend.import_historical_report_token_usage()
+
+            self.assertEqual(result["reports"], 1)
+            self.assertEqual(result["already_recorded"], 1)
+            self.assertEqual(result["imported"], 0)
+            self.assertEqual(store.get_token_usage_summary()["runs"], 1)
+
     def test_public_settings_never_returns_a_secret_value(self) -> None:
         with patch.object(backend, "flat_config", return_value={"daily_run_time": "12:00"}), patch.object(
             backend,

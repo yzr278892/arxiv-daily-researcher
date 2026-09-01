@@ -540,6 +540,8 @@ select::-ms-expand { display: none; }
 .usage-summary-table table { min-width: 0; }
 .usage-summary-table th { width: 25%; white-space: nowrap; }
 .usage-summary-table td { width: 25%; font-variant-numeric: tabular-nums; }
+.analytics-history-import { display: flex; justify-content: flex-start; padding-top: 2px; }
+.analytics-history-import button:disabled { cursor: progress; }
 .trend-chart-block { padding-top: 3px; }
 .trend-chart { overflow-x: auto; padding: 2px 0; }
 .trend-chart svg { display: block; width: 100%; min-width: 680px; height: auto; }

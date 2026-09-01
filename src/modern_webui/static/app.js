@@ -758,6 +758,8 @@ const DYNAMIC_EN_TRANSLATIONS = Object.freeze({
   "自定义时间段需要有效的开始和结束日期。": "Custom range requires valid start and end dates.",
   "自定义时间段的结束日期不能早于开始日期。": "The custom-range end date cannot be earlier than the start date.",
   "读取用量统计失败：": "Failed to read usage statistics: ",
+  "读取历史报告失败：": "Failed to read historical reports: ",
+  "有运行中的任务正在使用数据库，请等待任务完成后再导入历史报告用量。": "A running task is using the database. Wait for it to finish before importing historical report usage.",
   "报告标识无效。": "Report identifier is invalid.",
   "报告路径无效。": "Report path is invalid.",
   "报告文件不存在。": "Report file does not exist.",
@@ -3983,7 +3985,38 @@ function analyticsFragments(data, values) {
 }
 
 function analyticsMarkup(fragments) {
-  return `<section class="section-card analytics-statistics-card"><div id="analytics-heatmap">${fragments.heatmap}</div><div id="analytics-summary" class="analytics-statistics-block">${fragments.summary}</div><div id="analytics-trend" class="analytics-statistics-block trend-chart-block">${fragments.trend}</div><div id="analytics-models" class="analytics-statistics-block">${fragments.models}</div></section>`;
+  return `<section class="section-card analytics-statistics-card"><div id="analytics-heatmap">${fragments.heatmap}</div><div id="analytics-summary" class="analytics-statistics-block">${fragments.summary}</div><div id="analytics-trend" class="analytics-statistics-block trend-chart-block">${fragments.trend}</div><div id="analytics-models" class="analytics-statistics-block">${fragments.models}</div><div class="analytics-history-import"><button id="analytics-import-history" type="button" class="secondary-button">${localeText("导入历史报告 Token 用量", "Import Historical Report Token Usage")}</button></div></section>`;
+}
+
+function historicalTokenImportMessage(result) {
+  const imported = Number(result?.imported || 0);
+  const updated = Number(result?.updated || 0);
+  const alreadyRecorded = Number(result?.already_recorded || 0);
+  const unchanged = Number(result?.unchanged || 0);
+  const conflicted = Number(result?.conflicted || 0);
+  const unreadable = Number(result?.unreadable || 0);
+  const applied = imported + updated;
+  const issues = conflicted + unreadable;
+  if (state.language === "en") {
+    if (!applied && !issues) {
+      return alreadyRecorded || unchanged
+        ? "Historical report usage is already recorded."
+        : "No historical report usage is available to import.";
+    }
+    const parts = [];
+    if (imported) parts.push(`Imported ${imported} historical report${imported === 1 ? "" : "s"}`);
+    if (updated) parts.push(`Updated ${updated} historical report${updated === 1 ? "" : "s"}`);
+    if (issues) parts.push(`${issues} report${issues === 1 ? " needs" : "s need"} review`);
+    return `${parts.join("; ")}.`;
+  }
+  if (!applied && !issues) {
+    return alreadyRecorded || unchanged ? "历史报告用量已记录。" : "没有可导入的历史报告用量。";
+  }
+  const parts = [];
+  if (imported) parts.push(`已导入 ${imported} 份`);
+  if (updated) parts.push(`已更新 ${updated} 份`);
+  if (issues) parts.push(`${issues} 份报告需要检查`);
+  return `${parts.join("；")}历史报告用量。`;
 }
 
 function bindAnalyticsControls(host, root, token, values) {
@@ -4000,6 +4033,28 @@ function bindAnalyticsControls(host, root, token, values) {
     }
     state.pageData.analytics = { ...values, date_from: dateFrom, date_to: dateTo };
     runLocalRefresh(refreshAnalyticsContent(root, token));
+  });
+  $("#analytics-import-history", host)?.addEventListener("click", async (buttonEvent) => {
+    const button = buttonEvent.currentTarget;
+    if (button.disabled) return;
+    const label = button.textContent;
+    button.disabled = true;
+    button.textContent = localeText("正在导入…", "Importing…");
+    try {
+      const result = await api("/api/analytics/import-history", { method: "POST", body: {} });
+      if (token !== state.renderToken || state.page !== "analytics") return;
+      const applied = Number(result.imported || 0) + Number(result.updated || 0);
+      const issues = Number(result.conflicted || 0) + Number(result.unreadable || 0);
+      toast(historicalTokenImportMessage(result), issues && !applied ? "error" : "success");
+      await refreshAnalyticsContent(root, token);
+    } catch (error) {
+      if (!isAbortError(error)) toast(localizedError(error), "error");
+    } finally {
+      if (token === state.renderToken && state.page === "analytics") {
+        button.disabled = false;
+        button.textContent = label;
+      }
+    }
   });
 }
 
@@ -4019,7 +4074,7 @@ async function refreshAnalyticsContent(root = $("#page-root"), token = state.ren
   if (hasRenderedContent) {
     host.classList.add("is-refreshing");
     host.setAttribute("aria-busy", "true");
-    $$('[data-analytics-range], #analytics-custom-apply', host).forEach((button) => { button.disabled = true; });
+    $$('[data-analytics-range], #analytics-custom-apply, #analytics-import-history', host).forEach((button) => { button.disabled = true; });
   } else {
     host.innerHTML = '<div class="loading">正在读取 Token 使用记录…</div>';
     applyLocale(host);
@@ -4044,7 +4099,7 @@ async function refreshAnalyticsContent(root = $("#page-root"), token = state.ren
     if (token === state.renderToken && state.page === "analytics" && isCurrentLocalRequest("analytics-content", requestVersion)) {
       host.classList.remove("is-refreshing");
       host.removeAttribute("aria-busy");
-      $$('[data-analytics-range], #analytics-custom-apply', host).forEach((button) => { button.disabled = false; });
+      $$('[data-analytics-range], #analytics-custom-apply, #analytics-import-history', host).forEach((button) => { button.disabled = false; });
     }
   }
 }

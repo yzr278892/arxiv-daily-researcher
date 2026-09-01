@@ -199,6 +199,8 @@ uvicorn src.modern_webui.app:app --host 127.0.0.1 --port 8501
 
 Docker deployments provide the panel through `config-panel`. The WebUI and worker share `.env`, `runtime/`, `configs/`, `data/`, and `logs/`; the sidebar **Save All Changes** action writes the configuration for later tasks.
 
+Usage Statistics can import archived Markdown/HTML report token usage by report batch. Existing SQLite runs are deduplicated, repeated imports do not add to the totals, and Markdown model breakdowns are retained when available.
+
 | Group | Pages | Purpose |
 | :--- | :--- | :--- |
 | Run | Daily Research, Past Daily Reports, Trend Tasks | Start work and inspect queues, state, and logs |
@@ -216,9 +218,9 @@ Docker deployments provide the panel through `config-panel`. The WebUI and worke
       <sub>Daily research, state, and queue</sub>
     </td>
     <td align="center" width="33%">
-      <img src="assets/webui_analytics_v4.png" alt="Usage statistics and token trends" width="100%" />
+      <img src="assets/webui_analytics_v4.png" alt="Usage statistics, token trends, and history import" width="100%" />
       <br />
-      <sub>Usage statistics and time ranges</sub>
+      <sub>Usage statistics, time ranges, and history import</sub>
     </td>
     <td align="center" width="33%">
       <img src="assets/webui_scoring_v4.png" alt="Scoring policy and author preferences" width="100%" />
