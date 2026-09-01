@@ -16,6 +16,14 @@
 - 不擅自修改版本号；版本、标签、Release、镜像标签和 CHANGELOG 必须一致。
 - 处理脏工作区时只提交本任务涉及的文件，并在交付时说明未触碰的改动。
 
+## README、发行说明与截图
+
+- `README.md` 与 `README_EN.md` 必须同步维护，章节结构、链接、命令、版本号、部署语义和截图保持对应；英文不是机器直译，中文也不是英文提示词的改写。
+- 尽量保留 README 已有的信息架构、导航与排版，只重写过时内容。面向实际部署者说明当前行为、边界和可执行命令，语言简洁、严谨、务实，不使用聊天式引导、提示词腔或无依据的宣传语。
+- 根目录 `docker-compose.yml` 是用户部署文件，只引用与 Release 一致的 GHCR 镜像；本机源码构建和开发验证只能使用 `tests/docker-compose.yml`，文档必须明确区分两者。
+- 修改可见 WebUI、部署流程或核心功能时，更新相关 README 截图与说明。截图必须来自当前版本的脱敏测试数据，不得包含 API Key、密码、Webhook、邮箱、内网地址、真实报告或本机路径。
+- 发布前让 `VERSION`、CHANGELOG、README 最新版本摘要、Git 标签、Release 文案和 worker/WebUI 镜像标签描述同一版本；Release 延续既有格式，记录用户可感知的功能、部署影响、镜像和验证结果。
+
 ## 配置、隐私与可移植性
 
 - 实际运行配置为 `runtime/config.json`；仓库中的示例为 `configs/config.example.json`。`configs/config.json` 仅用于旧版本首次兼容迁移，不能重新作为运行时主配置。
