@@ -6,12 +6,14 @@ import tempfile
 import unittest
 from datetime import date, datetime, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from sources.base_source import PaperMetadata  # noqa: E402
 from utils.daily_research_store import DailyResearchStore  # noqa: E402
 from utils.legacy_range_scan import (  # noqa: E402
+    BACKLOG_WRITE_BATCH_SIZE,
     SCAN_CHUNK_DAYS,
     scan_legacy_range,
     scan_source_range,
@@ -62,6 +64,7 @@ class LegacyRangeScanTests(unittest.TestCase):
         *,
         source: str = "arxiv",
         source_date: date | None = None,
+        report_at: datetime | None = None,
     ) -> None:
         paper = _paper(pid, published) if source == "arxiv" else _journal_paper(pid, published)
         paper.source_date = source_date or paper.source_date
@@ -79,6 +82,7 @@ class LegacyRangeScanTests(unittest.TestCase):
                 "analysis_status": "not_required",
                 "completed_at": published.isoformat(),
                 "delivered_at": published.isoformat(),
+                "report_at": (report_at or published).isoformat(),
                 "delivery_run_id": run_id,
                 "report_path": "legacy.html",
             },
@@ -107,16 +111,38 @@ class LegacyRangeScanTests(unittest.TestCase):
         rows = self.store.claim_supplement_backlog(10, reasons={"missed_scan"})
         self.assertEqual([(row["source"], row["paper_id"]) for row in rows], [("prl", "10.1103/new")])
 
-    def test_source_date_defines_historical_coverage(self):
+    def test_report_batch_time_bounds_coverage_despite_an_old_paper(self):
+        """A revised 2007 paper must not create a 19-year omission scan."""
         self._record_delivered(
-            "10.1103/source-day",
-            datetime(2025, 12, 1, tzinfo=timezone.utc),
-            source="prl",
-            source_date=date(2026, 2, 3),
+            "0712.0297v6",
+            datetime(2007, 12, 3, tzinfo=timezone.utc),
+            source_date=date(2007, 12, 3),
+            report_at=datetime(2026, 3, 3, 16, 10, 8, tzinfo=timezone.utc),
+        )
+        self._record_delivered(
+            "2604.12345v1",
+            datetime(2026, 4, 24, tzinfo=timezone.utc),
+            source_date=date(2026, 4, 24),
+            report_at=datetime(2026, 4, 24, 8, 12, 48, tzinfo=timezone.utc),
         )
         self.assertEqual(
-            self.store.historical_delivery_date_range("prl"),
-            (date(2026, 2, 3), date(2026, 2, 3)),
+            self.store.historical_delivery_date_range("arxiv"),
+            (date(2026, 3, 3), date(2026, 4, 24)),
+        )
+        windows = []
+        summary = scan_legacy_range(
+            self.store,
+            history_dir=self.history_dir,
+            fetch_between=lambda start, end: windows.append((start, end)) or [],
+        )
+        self.assertEqual(summary["range_start"], "2026-03-03")
+        self.assertEqual(summary["range_end"], "2026-04-24")
+        self.assertEqual(
+            windows,
+            [
+                (date(2026, 3, 3), date(2026, 4, 2)),
+                (date(2026, 4, 3), date(2026, 4, 24)),
+            ],
         )
 
     def test_missing_history_skips_scan(self):
@@ -188,6 +214,33 @@ class LegacyRangeScanTests(unittest.TestCase):
             )
         self.assertEqual(summary["missed_found"], 0)
         self.assertEqual(self.store.supplement_backlog_summary()["pending"], 1)
+
+    def test_discoveries_are_flushed_in_bounded_backlog_batches(self):
+        self._record_delivered("2603.00001v1", datetime(2026, 3, 3, tzinfo=timezone.utc))
+        fetched = [
+            _paper(f"2603.{10000 + index:05d}v1")
+            for index in range(BACKLOG_WRITE_BATCH_SIZE * 2 + 1)
+        ]
+        batch_sizes = []
+        record_backlog = self.store.record_supplement_backlog
+
+        def record(entries):
+            batch_sizes.append(len(entries))
+            return record_backlog(entries)
+
+        with patch.object(self.store, "record_supplement_backlog", side_effect=record):
+            summary = scan_legacy_range(
+                self.store,
+                history_dir=self.history_dir,
+                fetch_between=lambda _start, _end: fetched,
+            )
+
+        self.assertEqual(summary["missed_found"], len(fetched))
+        self.assertEqual(summary["backlog_queued"], len(fetched))
+        self.assertEqual(
+            batch_sizes,
+            [BACKLOG_WRITE_BATCH_SIZE, BACKLOG_WRITE_BATCH_SIZE, 1],
+        )
 
     def test_failed_chunk_is_recorded_while_later_chunks_continue(self):
         self._record_delivered("2601.00001v1", datetime(2026, 1, 1, tzinfo=timezone.utc))

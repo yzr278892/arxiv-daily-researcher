@@ -16,6 +16,10 @@ logger = logging.getLogger(__name__)
 
 # 单次查询的时间窗口：按月分块，避免超大区间的深层分页。
 SCAN_CHUNK_DAYS = 31
+# Do not retain an archive-sized list of paper payloads while scanning.  A
+# historical range can legitimately contain many results even though normal
+# operation processes them later in small supplement batches.
+BACKLOG_WRITE_BATCH_SIZE = 250
 
 
 def _known_source_identities(store: Any, source: str) -> Set[Tuple[str, int]]:
@@ -58,7 +62,7 @@ def scan_source_range(
     idle_check: Optional[Callable[[], None]] = None,
     progress_callback: Optional[Callable[..., None]] = None,
 ) -> Dict[str, Any]:
-    """Scan one source's SQLite-covered date range and queue unknown papers.
+    """Scan one source's imported report-time range and queue unknown papers.
 
     ``fetch_between(date_from, date_to)`` returns metadata for the inclusive
     interval. The caller supplies the provider-specific implementation so the
@@ -94,8 +98,8 @@ def scan_source_range(
             log.debug("[LegacyScan] 进度回调失败: %s", exc)
 
     # ``history_dir`` is kept as a no-op compatibility argument for callers
-    # from v3.2/v4.0.  It must never become an input to the range again: the
-    # durable delivery ledger and persisted paper metadata are authoritative.
+    # from v3.2/v4.0. It must never become an input to the range again: the
+    # durable delivery ledger's imported report timestamps are authoritative.
     del history_dir
     date_range = store.historical_delivery_date_range(normalized_source)
     if date_range is None:
@@ -125,7 +129,21 @@ def scan_source_range(
         len(chunks),
     )
 
-    missed: List[Dict[str, Any]] = []
+    pending_backlog: List[Dict[str, Any]] = []
+
+    def flush_backlog() -> None:
+        """Persist discoveries incrementally so a large scan stays bounded."""
+        if not pending_backlog:
+            return
+        entries = list(pending_backlog)
+        pending_backlog.clear()
+        try:
+            summary["backlog_queued"] += store.record_supplement_backlog(entries)
+        except Exception as exc:
+            # Some earlier batches may already be durable. Stop rather than
+            # silently continuing with an incomplete set of omissions.
+            raise RuntimeError(f"遗漏论文写入积压失败: {exc}") from exc
+
     for chunk_index, (chunk_start, chunk_end) in enumerate(chunks, start=1):
         if idle_check is not None:
             idle_check()
@@ -172,7 +190,8 @@ def scan_source_range(
                 continue
             known.add((canonical, version))
             chunk_missed += 1
-            missed.append(
+            summary["missed_found"] += 1
+            pending_backlog.append(
                 {
                     "source": normalized_source,
                     "canonical_id": canonical,
@@ -183,6 +202,8 @@ def scan_source_range(
                     "paper_json": paper.to_dict(),
                 }
             )
+            if len(pending_backlog) >= BACKLOG_WRITE_BATCH_SIZE:
+                flush_backlog()
         log.info(
             "[LegacyScan][%s] 分块 %s/%s（%s~%s）: %s 篇，本块遗漏 %s 篇",
             normalized_source,
@@ -199,13 +220,7 @@ def scan_source_range(
             len(chunks),
         )
 
-    summary["missed_found"] = len(missed)
-    if missed:
-        try:
-            summary["backlog_queued"] = store.record_supplement_backlog(missed)
-        except Exception as exc:
-            log.warning("[LegacyScan] 遗漏论文写入积压失败: %s", exc)
-            summary["backlog_queued"] = 0
+    flush_backlog()
     log.info(
         "[LegacyScan][%s] 扫描完成: 成功分块 %s/%s，失败 %s；%s 篇论文中遗漏 %s 篇，新入积压 %s 篇",
         normalized_source,

@@ -1938,7 +1938,7 @@ class DailyResearchPipeline:
             # 过去日报的时间戳 = 目标日期 + 当前时刻（用户指定的补跑语义）。
             # 历史遗漏补充报告会显式传入该自然周周日 + 实际运行时刻，因而
             # 报告查看页按历史周排序，同时同周多批可由微秒时间戳安全区分。
-            effective_report_timestamp = report_timestamp
+            effective_report_timestamp = report_timestamp or datetime.now()
             if run_kind == "backfill":
                 effective_report_timestamp = datetime.combine(
                     target_date, datetime.now().time()
@@ -2010,6 +2010,7 @@ class DailyResearchPipeline:
                     delivered_papers_by_source,
                     notification_entries,
                     [maintenance_entry] if maintenance_entry is not None else [],
+                    report_at=effective_report_timestamp,
                 )
                 report_delivery_committed = True
 

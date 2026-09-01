@@ -311,8 +311,8 @@ def run_history_omission_scan(
         if settings.TOKEN_TRACKING_ENABLED:
             token_counter.reset()
 
-        progress(phase="history_omission_scan", detail="根据 SQLite 交付账本确定历史扫描范围")
-        logger.info("[HistoryOmission] 开始按 SQLite 历史范围扫描各启用来源漏项")
+        progress(phase="history_omission_scan", detail="根据已导入报告的批次时间确定历史扫描范围")
+        logger.info("[HistoryOmission] 开始按已导入报告的批次时间扫描各启用来源漏项")
         try:
             scan = _scan_sqlite_history(
                 store, run_id=run_id, progress_callback=progress

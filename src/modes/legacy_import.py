@@ -371,7 +371,7 @@ def _run_full_repair_steps(
     if supplement_code == 130:
         return 130
 
-    progress_callback(phase="history_omission_scan", detail="扫描 SQLite 历史范围中的遗漏论文")
+    progress_callback(phase="history_omission_scan", detail="扫描旧报告批次时间范围中的遗漏论文")
     omission_code, omission_run_id, omission_summary = run_history_omission_scan(
         store=store, notify=False
     )
