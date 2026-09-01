@@ -148,6 +148,8 @@ def _drop_to_runtime_user(user_name: str = "adr") -> None:
 
 
 def _check_worker_processes(runtime_user: str) -> None:
+    if os.environ.get("MODE", "cron").strip().lower() == "manual":
+        return
     _require(_process_named("cron"), "cron daemon is not running")
     try:
         account = pwd.getpwnam(runtime_user)

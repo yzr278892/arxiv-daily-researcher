@@ -110,7 +110,7 @@ fi
 # normal worker start, then the dedicated cron task below checks daily even if
 # daily research is not run.  The Python entry point observes the WebUI toggle
 # and sends a notification only when a newer release is available.
-if [ "$MODE" != "run-once" ] && [ "$RUN_ON_STARTUP" != "true" ]; then
+if [ "$MODE" = "cron" ] && [ "$RUN_ON_STARTUP" != "true" ]; then
     UPDATE_CHECK_LOG="/app/logs/update_$(date +%Y%m%d).log"
     echo "Checking published release availability in background..."
     adr_run_as_user bash -c \
@@ -130,49 +130,53 @@ if [ "$MODE" = "run-once" ]; then
     exit "$RESULT"
 fi
 
-# ==================== Cron Mode ====================
+if [ "$MODE" = "manual" ]; then
+    echo "Manual mode: cron scheduling is disabled; only WebUI-triggered tasks will run."
+else
+    # ==================== Cron Mode ====================
 
-# cron does not inherit the container's environment by default.  The worker
-# loads application settings from the mounted /app/.env, so never copy the
-# whole process environment here: that would persist API keys, webhook URLs,
-# and SMTP/WebDAV passwords in the container filesystem.  Keep only the
-# non-sensitive runtime values needed by cron-launched Python processes.
-{
-    printf 'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n'
-    printf 'PYTHONUNBUFFERED=1\n'
-    printf 'PYTHONDONTWRITEBYTECODE=1\n'
-    if [ -n "${TZ:-}" ]; then
-        printf 'TZ=%s\n' "$TZ"
-    fi
-} > /etc/environment
-chmod 0644 /etc/environment
+    # cron does not inherit the container's environment by default.  The worker
+    # loads application settings from the mounted /app/.env, so never copy the
+    # whole process environment here: that would persist API keys, webhook URLs,
+    # and SMTP/WebDAV passwords in the container filesystem.  Keep only the
+    # non-sensitive runtime values needed by cron-launched Python processes.
+    {
+        printf 'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n'
+        printf 'PYTHONUNBUFFERED=1\n'
+        printf 'PYTHONDONTWRITEBYTECODE=1\n'
+        if [ -n "${TZ:-}" ]; then
+            printf 'TZ=%s\n' "$TZ"
+        fi
+    } > /etc/environment
+    chmod 0644 /etc/environment
 
-# Create the cron job
-CRON_LOG="/app/logs/cron_\$(date +\%Y\%m\%d_\%H\%M\%S).log"
-CRON_CMD="cd /app && /usr/local/bin/python main.py >> $CRON_LOG 2>&1"
-WEBDAV_CRON_LOG="/app/logs/webdav_\$(date +\%Y\%m\%d).log"
-WEBDAV_CRON_CMD="cd /app && PYTHONPATH=/app/src /usr/local/bin/python -m utils.webdav_scheduler >> $WEBDAV_CRON_LOG 2>&1"
-# 关键词标准化/趋势报告：每天 0 点静默执行，与日报主流程解耦。
-KEYWORD_CRON_LOG="/app/logs/keyword_\$(date +\%Y\%m\%d).log"
-KEYWORD_CRON_CMD="cd /app && PYTHONPATH=/app/src /usr/local/bin/python -m modes.keyword_maintenance >> $KEYWORD_CRON_LOG 2>&1"
-UPDATE_CRON_LOG="/app/logs/update_\$(date +\%Y\%m\%d).log"
-UPDATE_CRON_CMD="cd /app && PYTHONPATH=/app/src /usr/local/bin/python -m utils.updater >> $UPDATE_CRON_LOG 2>&1"
-{
-    echo "$CRON_SCHEDULE $CRON_CMD"
-    # This lightweight tick only performs a transfer when config.json selects
-    # WebDAV's scheduled mode and its own cron expression matches.  It keeps
-    # the established cron/watcher/tail container lifecycle unchanged.
-    echo "* * * * * $WEBDAV_CRON_CMD"
-    echo "0 0 * * * $KEYWORD_CRON_CMD"
-    # Independent from daily research: update availability remains observable
-    # when the research task is disabled, queued, or otherwise not run.
-    echo "17 9 * * * $UPDATE_CRON_CMD"
-} > /etc/cron.d/arxiv-daily
-chmod 0644 /etc/cron.d/arxiv-daily
-crontab -u "$ADR_APP_USER" /etc/cron.d/arxiv-daily
+    # Create the cron job
+    CRON_LOG="/app/logs/cron_\$(date +\%Y\%m\%d_\%H\%M\%S).log"
+    CRON_CMD="cd /app && /usr/local/bin/python main.py >> $CRON_LOG 2>&1"
+    WEBDAV_CRON_LOG="/app/logs/webdav_\$(date +\%Y\%m\%d).log"
+    WEBDAV_CRON_CMD="cd /app && PYTHONPATH=/app/src /usr/local/bin/python -m utils.webdav_scheduler >> $WEBDAV_CRON_LOG 2>&1"
+    # 关键词标准化/趋势报告：每天 0 点静默执行，与日报主流程解耦。
+    KEYWORD_CRON_LOG="/app/logs/keyword_\$(date +\%Y\%m\%d).log"
+    KEYWORD_CRON_CMD="cd /app && PYTHONPATH=/app/src /usr/local/bin/python -m modes.keyword_maintenance >> $KEYWORD_CRON_LOG 2>&1"
+    UPDATE_CRON_LOG="/app/logs/update_\$(date +\%Y\%m\%d).log"
+    UPDATE_CRON_CMD="cd /app && PYTHONPATH=/app/src /usr/local/bin/python -m utils.updater >> $UPDATE_CRON_LOG 2>&1"
+    {
+        echo "$CRON_SCHEDULE $CRON_CMD"
+        # This lightweight tick only performs a transfer when config.json selects
+        # WebDAV's scheduled mode and its own cron expression matches. It keeps
+        # the established cron/watcher/tail container lifecycle unchanged.
+        echo "* * * * * $WEBDAV_CRON_CMD"
+        echo "0 0 * * * $KEYWORD_CRON_CMD"
+        # Independent from daily research: update availability remains observable
+        # when the research task is disabled, queued, or otherwise not run.
+        echo "17 9 * * * $UPDATE_CRON_CMD"
+    } > /etc/cron.d/arxiv-daily
+    chmod 0644 /etc/cron.d/arxiv-daily
+    crontab -u "$ADR_APP_USER" /etc/cron.d/arxiv-daily
 
-echo "Cron job installed:"
-crontab -u "$ADR_APP_USER" -l
+    echo "Cron job installed:"
+    crontab -u "$ADR_APP_USER" -l
+fi
 
 # Run immediately on startup if configured
 if [ "$RUN_ON_STARTUP" = "true" ]; then
@@ -275,13 +279,18 @@ trigger_watcher() {
 
 trigger_watcher &
 
-# Start cron daemon
-echo "Starting cron daemon..."
-cron
+# Start cron only for user deployments. Development containers stay available
+# for WebUI-triggered tests without silently executing the daily schedule.
+if [ "$MODE" = "cron" ]; then
+    echo "Starting cron daemon..."
+    cron
+fi
 
 # Keep container alive
-echo "Container is running. Waiting for scheduled executions..."
-echo "Schedule: $CRON_SCHEDULE"
+echo "Container is running. Waiting for worker requests..."
+if [ "$MODE" = "cron" ]; then
+    echo "Schedule: $CRON_SCHEDULE"
+fi
 echo ""
 
 # Keep the container alive by tailing the system log.

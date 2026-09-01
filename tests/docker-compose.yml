@@ -1,0 +1,91 @@
+# Local source build used only for development and verification. The root
+# docker-compose.yml is the user-facing GHCR deployment definition.
+name: arxiv-daily-researcher-test
+
+services:
+  worker:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: worker
+      network: host
+      args:
+        PIP_INDEX_URL: ${ADR_PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}
+        PIP_TRUSTED_HOST: ${ADR_PIP_TRUSTED_HOST:-mirrors.aliyun.com}
+    image: arxiv-daily-researcher-test-worker:local
+    container_name: arxiv-daily-researcher-test-worker
+    restart: unless-stopped
+
+    stdin_open: true
+    tty: true
+    network_mode: host
+
+    env_file:
+      - ../.env
+
+    environment:
+      - TZ=Asia/Shanghai
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - RUN_ON_STARTUP=false
+      - MODE=manual
+      - SETUP_WIZARD=auto
+
+    volumes:
+      - ../data:/app/data
+      - ../logs:/app/logs
+      - ../configs:/app/configs
+      - ../runtime:/app/runtime
+      - ../.env:/app/.env
+
+    healthcheck:
+      test: ["CMD", "python", "/app/src/utils/container_health.py", "worker"]
+      interval: 1m
+      timeout: 20s
+      retries: 3
+      start_period: 30s
+
+  config-panel:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: webui
+      network: host
+      args:
+        PIP_INDEX_URL: ${ADR_PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}
+        PIP_TRUSTED_HOST: ${ADR_PIP_TRUSTED_HOST:-mirrors.aliyun.com}
+    image: arxiv-daily-researcher-test-webui:local
+    container_name: arxiv-daily-researcher-test-webui
+    restart: unless-stopped
+
+    ports:
+      - "${ADR_TEST_WEBUI_PORT:-8501}:8501"
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    command:
+      - uvicorn
+      - src.modern_webui.app:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8501"
+
+    environment:
+      - TZ=Asia/Shanghai
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+
+    volumes:
+      - ../configs:/app/configs
+      - ../runtime:/app/runtime
+      - ../.env:/app/.env
+      - ../.env.example:/app/.env.example:ro
+      - ../data:/app/data
+      - ../logs:/app/logs
+
+    healthcheck:
+      test: ["CMD", "python", "/app/src/utils/container_health.py", "webui", "--url", "http://127.0.0.1:8501/api/health"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 20s
