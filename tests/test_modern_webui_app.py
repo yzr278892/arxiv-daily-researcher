@@ -91,6 +91,18 @@ class ModernWebUIAppTests(unittest.TestCase):
             response.text.count('preview.className = "report-preview-host";'), 2
         )
 
+    def test_report_navigation_follows_each_report_batch_not_calendar_dates(self) -> None:
+        script = self.client.get("/assets/app.js").text
+        start = script.index("function findAdjacentDailyReport")
+        end = script.index("function reportInfoHtml", start)
+        navigation = script[start:end]
+
+        self.assertIn("item.id === report.id", navigation)
+        self.assertIn('relation === "previous" ? 1 : -1', navigation)
+        self.assertNotIn("new Set(sameSource.map((item) => item.date))", navigation)
+        self.assertIn("← 上一份报告", script)
+        self.assertIn("下一份报告", script)
+
     def test_favorite_papers_use_the_shared_paged_table(self) -> None:
         response = self.client.get("/assets/app.js")
 

@@ -510,9 +510,9 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "zh": "点击测试可查看 Token 过期日期和剩余颟度",
         "en": "Click Test to check token expiry and remaining quota",
     },
-    # ── reports.py 导航按钞 ──
-    "report_prev_day": {"zh": "← 前一天", "en": "← Prev Day"},
-    "report_next_day": {"zh": "后一天", "en": "Next Day"},
+    # ── reports.py navigation ──
+    "report_previous_report": {"zh": "← 上一份报告", "en": "← Previous Report"},
+    "report_next_report": {"zh": "下一份报告", "en": "Next Report"},
     "report_show_non_arxiv": {"zh": "显示非 ArXiv 来源", "en": "Show non-ArXiv sources"},
     "report_no_prev": {"zh": "已是最早的报告", "en": "No earlier reports"},
     "report_no_next": {"zh": "已是最新的报告", "en": "No newer reports"},
