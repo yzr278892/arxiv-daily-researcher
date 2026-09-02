@@ -20,7 +20,7 @@
 
 ArXiv Daily Researcher 从 ArXiv 和可选扩展来源收集论文，按研究主题评分、生成摘要翻译和 PDF 分析，并交付 Markdown、HTML 报告与通知。
 
-v4.3 使用 SQLite 保存候选、处理阶段、报告交付、通知发件箱、收藏偏好、历史维护积压与过去日报队列。补充报告独立归档，可将旧目录中的补充报告连同 SQLite 路径一次迁移。任务可从已完成阶段恢复；运行配置与源码分离，便于长期部署、升级和备份恢复。Docker Worker 可可靠消费 WebUI 提交的历史维护任务。
+v4.3 使用 SQLite 保存候选、处理阶段、报告交付、通知发件箱、收藏偏好、历史维护积压与过去日报队列。补充报告独立归档，可将旧目录中的补充报告连同 SQLite 路径一次迁移。LLM 请求将稳定指令置于前缀以利用提供商缓存；Token 用量分别记录普通输入、缓存输入和输出。任务可从已完成阶段恢复；运行配置与源码分离，便于长期部署、升级和备份恢复。Docker Worker 可可靠消费 WebUI 提交的历史维护任务。
 
 ---
 
@@ -64,7 +64,7 @@ ArXiv 完整分页扫描首次提交和最后更新，记录来源扫描收据�
 
 ### 🔔 通知与可观测性
 
-支持邮件、企业微信、钉钉、Telegram、Slack 和通用 Webhook。每个渠道可发送测试通知；运行、历史维护、来源、LLM 与 Token 用量均提供状态和问题摘要。
+支持邮件、企业微信、钉钉、Telegram、Slack 和通用 Webhook。每个渠道可发送测试通知；运行、历史维护、来源、LLM 与 Token 用量均提供状态和问题摘要。用量按普通输入、缓存输入、输出和模型展示，并写入报告与通知。
 
 </td>
 <td width="50%" valign="top">
@@ -199,7 +199,7 @@ uvicorn src.modern_webui.app:app --host 127.0.0.1 --port 8501
 
 Docker 部署由 `config-panel` 提供服务。WebUI 与 worker 共享 `.env`、`runtime/`、`configs/`、`data/` 和 `logs/`；保存设置后，后续任务会读取新配置。左侧“保存所有更改”统一保存各配置页内容。
 
-“用量统计”可按报告批次从归档 Markdown/HTML 导入历史 Token 用量。导入会与 SQLite 中已有运行记录去重，重复执行不会累计；Markdown 保留的模型拆分会一并写入。
+“用量统计”可按报告批次从归档 Markdown/HTML 导入历史 Token 用量。导入会与 SQLite 中已有运行记录去重，重复执行不会累计；Markdown 保留的模型拆分和缓存输入会一并写入。旧报告未区分缓存输入时，原有输入按普通输入保存。
 
 | 分组 | 页面 | 用途 |
 | :--- | :--- | :--- |
@@ -218,9 +218,9 @@ Docker 部署由 `config-panel` 提供服务。WebUI 与 worker 共享 `.env`、
       <sub>每日研究、状态和队列</sub>
     </td>
     <td align="center" width="33%">
-      <img src="assets/webui_analytics_v4.png" alt="用量统计、Token 趋势和历史导入" width="100%" />
+      <img src="assets/webui_analytics_v4.png" alt="普通输入、缓存输入、输出 Token 与历史导入" width="100%" />
       <br />
-      <sub>用量统计、时间范围和历史导入</sub>
+      <sub>普通输入、缓存输入、趋势和历史导入</sub>
     </td>
     <td align="center" width="33%">
       <img src="assets/webui_scoring_v4.png" alt="评分策略与作者偏好" width="100%" />
@@ -473,7 +473,7 @@ arxiv-daily-researcher/
 
 | 版本 | 日期 | 摘要 |
 | :--- | :--- | :--- |
-| **v4.3** | 2026-09-01 | 修复历史维护队列消费；补充报告独立归档、浏览与 SQLite 路径迁移。 |
+| **v4.3** | 2026-09-02 | 修复历史维护队列消费；补充报告独立归档、浏览与 SQLite 路径迁移；Token 用量区分普通输入、缓存输入和输出。 |
 | **v4.2** | 2026-09-01 | 运行配置迁移、历史维护调度、自动收藏、通知测试、报告批次导航、WebUI 局部刷新与用户/测试 Compose 分层。 |
 | **v4.1** | 2026-08-30 | 现代 WebUI、历史维护、多来源归并、诊断与 Token 用量。 |
 | **v4.0** | 2026-08-25 | SQLite 历史与队列、完整扫描、评分、补充报告、过去日报、备份和 GHCR 双架构镜像。 |

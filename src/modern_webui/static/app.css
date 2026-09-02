@@ -536,10 +536,10 @@ select::-ms-expand { display: none; }
 .segmented-button.is-active { border-color: var(--brand-line); background: #fff; box-shadow: var(--shadow-xs); color: #344bb9; }
 .analytics-custom-range { margin-top: 3px; }
 .analytics-custom-action { margin-top: 0; }
-.usage-summary-table { max-width: 680px; }
+.usage-summary-table { max-width: 880px; }
 .usage-summary-table table { min-width: 0; }
-.usage-summary-table th { width: 25%; white-space: nowrap; }
-.usage-summary-table td { width: 25%; font-variant-numeric: tabular-nums; }
+.usage-summary-table th { width: 20%; white-space: nowrap; }
+.usage-summary-table td { width: 20%; font-variant-numeric: tabular-nums; }
 .analytics-history-import { display: flex; justify-content: flex-start; padding-top: 2px; }
 .analytics-history-import button:disabled { cursor: progress; }
 .trend-chart-block { padding-top: 3px; }
@@ -550,12 +550,14 @@ select::-ms-expand { display: none; }
 .trend-line { fill: none !important; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .trend-line.total { stroke: #465fd5; stroke-width: 2.35; }
 .trend-line.prompt { stroke: #5d8ee7; }
+.trend-line.cached_prompt { stroke: #b776d6; }
 .trend-line.completion { stroke: var(--success); }
 .trend-point { stroke: #fff; stroke-width: 1.1; }
 .trend-point.total { fill: #465fd5; }
 .trend-point.prompt { fill: #5d8ee7; }
+.trend-point.cached_prompt { fill: #b776d6; }
 .trend-point.completion { fill: var(--success); }
-.trend-legend .total { fill: #465fd5; }.trend-legend .prompt { fill: #5d8ee7; }.trend-legend .completion { fill: var(--success); }
+.trend-legend .total { fill: #465fd5; }.trend-legend .prompt { fill: #5d8ee7; }.trend-legend .cached_prompt { fill: #b776d6; }.trend-legend .completion { fill: var(--success); }
 .trend-labels text, .trend-legend text { fill: var(--muted); font-size: 11px; }
 
 .auth-shell { display: grid; min-height: 100vh; place-items: center; padding: 20px; background: radial-gradient(circle at 50% -10%, #e9edff 0, transparent 36rem), var(--canvas); }

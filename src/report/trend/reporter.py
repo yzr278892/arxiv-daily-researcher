@@ -184,18 +184,23 @@ class TrendReporter:
         if settings.TOKEN_TRACKING_ENABLED and token_usage and token_usage.get("has_data"):
             total = token_usage.get("total", 0)
             tp = token_usage.get("total_prompt", 0)
+            tcp = token_usage.get("total_cached_prompt", 0)
             tc = token_usage.get("total_completion", 0)
             lines.append("## Token 消耗统计")
             lines.append("")
-            lines.append(f"- **总计**: {total:,} tokens（输入 {tp:,} / 输出 {tc:,}）")
+            lines.append(
+                f"- **总计**: {total:,} tokens（普通输入 {tp:,} / "
+                f"缓存输入 {tcp:,} / 输出 {tc:,}）"
+            )
             by_model = token_usage.get("by_model", {})
             if len(by_model) > 1:
                 lines.append("")
-                lines.append("| 模型 | 输入 | 输出 | 合计 |")
-                lines.append("|------|------|------|------|")
+                lines.append("| 模型 | 普通输入 | 缓存输入 | 输出 | 合计 |")
+                lines.append("|------|----------|----------|------|------|")
                 for model, usage in by_model.items():
                     lines.append(
                         f"| {markdown_table_cell(model)} | {usage['prompt']:,} | "
+                        f"{usage.get('cached_prompt', 0):,} | "
                         f"{usage['completion']:,} | {usage['total']:,} |"
                     )
             lines.append("")
@@ -367,6 +372,7 @@ class TrendReporter:
         if settings.TOKEN_TRACKING_ENABLED and token_usage and token_usage.get("has_data"):
             total = token_usage.get("total", 0)
             tp = token_usage.get("total_prompt", 0)
+            tcp = token_usage.get("total_cached_prompt", 0)
             tc = token_usage.get("total_completion", 0)
             by_model = token_usage.get("by_model", {})
             model_rows = ""
@@ -375,6 +381,7 @@ class TrendReporter:
                     model_rows += (
                         f"<tr><td style='padding:4px 8px;color:#6b7280;'>{h(mdl)}</td>"
                         f"<td style='padding:4px 8px;text-align:right;color:#6b7280;'>{u['prompt']:,}</td>"
+                        f"<td style='padding:4px 8px;text-align:right;color:#6b7280;'>{u.get('cached_prompt', 0):,}</td>"
                         f"<td style='padding:4px 8px;text-align:right;color:#6b7280;'>{u['completion']:,}</td>"
                         f"<td style='padding:4px 8px;text-align:right;font-weight:600;color:#374151;'>{u['total']:,}</td></tr>"
                     )
@@ -382,7 +389,8 @@ class TrendReporter:
                 (
                     f"<table style='font-size:12px;border-collapse:collapse;margin-top:4px;'>"
                     f"<tr><th style='padding:4px 8px;text-align:left;color:#6b7280;border-bottom:1px solid #e5e7eb;'>模型</th>"
-                    f"<th style='padding:4px 8px;text-align:right;color:#6b7280;border-bottom:1px solid #e5e7eb;'>输入</th>"
+                    f"<th style='padding:4px 8px;text-align:right;color:#6b7280;border-bottom:1px solid #e5e7eb;'>普通输入</th>"
+                    f"<th style='padding:4px 8px;text-align:right;color:#6b7280;border-bottom:1px solid #e5e7eb;'>缓存输入</th>"
                     f"<th style='padding:4px 8px;text-align:right;color:#6b7280;border-bottom:1px solid #e5e7eb;'>输出</th>"
                     f"<th style='padding:4px 8px;text-align:right;color:#6b7280;border-bottom:1px solid #e5e7eb;'>合计</th></tr>"
                     f"{model_rows}</table>"
@@ -393,7 +401,7 @@ class TrendReporter:
             parts.append(
                 f'<p style="font-size:13px;color:#9ca3af;margin-top:24px;border-top:1px solid #e5e7eb;padding-top:12px;">'
                 f'Token 消耗: <strong style="color:#6b7280;">{total:,}</strong> tokens'
-                f"（输入 {tp:,} / 输出 {tc:,}）</p>"
+                f"（普通输入 {tp:,} / 缓存输入 {tcp:,} / 输出 {tc:,}）</p>"
                 f"{token_table}"
             )
 

@@ -1030,8 +1030,12 @@ class NotifierAgent:
             return ""
         total = token_usage.get("total", 0)
         tp = token_usage.get("total_prompt", 0)
+        tcp = token_usage.get("total_cached_prompt", 0)
         tc = token_usage.get("total_completion", 0)
-        return f"> Token 消耗: **{total:,}** tokens（输入 {tp:,} / 输出 {tc:,}）"
+        return (
+            f"> Token 消耗: **{total:,}** tokens（普通输入 {tp:,} / "
+            f"缓存输入 {tcp:,} / 输出 {tc:,}）"
+        )
 
     def _format_token_section_html(self, token_usage: Dict[str, Any]) -> str:
         """格式化 token 消耗为 HTML 行片段（tracking 未开启或无数据返回空字符串）"""
@@ -1041,12 +1045,13 @@ class NotifierAgent:
             return ""
         total = token_usage.get("total", 0)
         tp = token_usage.get("total_prompt", 0)
+        tcp = token_usage.get("total_cached_prompt", 0)
         tc = token_usage.get("total_completion", 0)
         return (
             f'<tr><td style="padding:4px 32px 16px;">'
             f'<p style="margin:0;font-size:12px;color:#9ca3af;">'
             f'Token 消耗: <strong style="color:#6b7280;">{total:,}</strong> tokens'
-            f'（输入 {tp:,} / 输出 {tc:,}）</p></td></tr>'
+            f'（普通输入 {tp:,} / 缓存输入 {tcp:,} / 输出 {tc:,}）</p></td></tr>'
         )
 
     @staticmethod
@@ -1437,13 +1442,14 @@ class NotifierAgent:
         if result.token_usage and result.token_usage.get("has_data") and self.settings.TOKEN_TRACKING_ENABLED:
             total = result.token_usage.get("total", 0)
             tp = result.token_usage.get("total_prompt", 0)
+            tcp = result.token_usage.get("total_cached_prompt", 0)
             tc = result.token_usage.get("total_completion", 0)
             sections.extend(
                 [
                     "<b>Token 消耗</b>",
                     (
                         f"<blockquote>总计 <b>{total:,}</b> tokens"
-                        f"（输入 {tp:,} / 输出 {tc:,}）</blockquote>"
+                        f"（普通输入 {tp:,} / 缓存输入 {tcp:,} / 输出 {tc:,}）</blockquote>"
                     ),
                 ]
             )
@@ -1811,13 +1817,14 @@ class NotifierAgent:
         if result.token_usage and result.token_usage.get("has_data") and self.settings.TOKEN_TRACKING_ENABLED:
             total = result.token_usage.get("total", 0)
             tp = result.token_usage.get("total_prompt", 0)
+            tcp = result.token_usage.get("total_cached_prompt", 0)
             tc = result.token_usage.get("total_completion", 0)
             sections.extend(
                 [
                     "<b>Token 消耗</b>",
                     (
                         f"<blockquote>总计 <b>{total:,}</b> tokens"
-                        f"（输入 {tp:,} / 输出 {tc:,}）</blockquote>"
+                        f"（普通输入 {tp:,} / 缓存输入 {tcp:,} / 输出 {tc:,}）</blockquote>"
                     ),
                 ]
             )

@@ -8,6 +8,7 @@ from config import settings
 from utils.llm_request_pool import call_chat_completion
 from utils.llm_resilience import build_llm_client
 from utils.llm_health import LLMHealthRecorder
+from utils.llm_usage import record_token_usage as record_llm_token_usage
 from difflib import SequenceMatcher
 
 logger = logging.getLogger(__name__)
@@ -291,12 +292,9 @@ class KeywordAgent:
                 )
                 logger.info(f"  提取文本: {pdf.name}")
 
-            # 构建提示词，要求LLM按重要性分层提取关键词
-            prompt = f"""
-你是一名研究助理。基于以下学术论文摘录，提取真正核心的技术概念和术语。
-
-论文摘录:
-{context_text}
+            # Keep reusable extraction instructions before changing PDF
+            # excerpts so compatible providers can reuse their prefix cache.
+            system_prompt = f"""你是一名研究助理。基于用户提供的学术论文摘录，提取真正核心的技术概念和术语。
 
 研究背景:
 {settings.RESEARCH_CONTEXT if settings.RESEARCH_CONTEXT else "通用学术研究"}
@@ -329,22 +327,26 @@ class KeywordAgent:
   "low_importance": []
 }}
 """
+            prompt = f"""论文摘录:
+{context_text}"""
 
             try:
                 response = call_chat_completion(
                     self.client,
                     model=settings.CHEAP_LLM.model_name,
-                    messages=[{"role": "user", "content": prompt}],
+                    messages=[
+                        {"role": "system", "content": system_prompt.strip()},
+                        {"role": "user", "content": prompt},
+                    ],
                     temperature=0.3,
                     response_format={"type": "json_object"},
                 )
-                if settings.TOKEN_TRACKING_ENABLED and response.usage:
-                    from utils.token_counter import token_counter
-
-                    token_counter.add(
+                usage = getattr(response, "usage", None)
+                if settings.TOKEN_TRACKING_ENABLED and usage:
+                    record_llm_token_usage(
                         settings.CHEAP_LLM.model_name,
-                        response.usage.prompt_tokens,
-                        response.usage.completion_tokens,
+                        usage,
+                        len(system_prompt + prompt) // 4,
                     )
                 content = response.choices[0].message.content
 

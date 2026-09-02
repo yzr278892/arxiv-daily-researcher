@@ -366,6 +366,7 @@ class DailyResearchStore:
                     mode TEXT NOT NULL DEFAULT 'daily_research',
                     model TEXT NOT NULL,
                     prompt_tokens INTEGER NOT NULL DEFAULT 0,
+                    cached_prompt_tokens INTEGER NOT NULL DEFAULT 0,
                     completion_tokens INTEGER NOT NULL DEFAULT 0,
                     total_tokens INTEGER NOT NULL DEFAULT 0,
                     recorded_at TEXT NOT NULL,
@@ -373,6 +374,7 @@ class DailyResearchStore:
                 )
                 """
             )
+            self._migrate_token_usage_cached_input(conn)
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_run_token_usage_recorded "
                 "ON run_token_usage(recorded_at)"
@@ -529,6 +531,24 @@ class DailyResearchStore:
         if "run_kind" not in columns:
             conn.execute(
                 "ALTER TABLE daily_runs ADD COLUMN run_kind TEXT NOT NULL DEFAULT 'daily'"
+            )
+
+    @staticmethod
+    def _migrate_token_usage_cached_input(conn):
+        """Add the cache-read bucket without changing historic input totals.
+
+        Before v4.3 every persisted ``prompt_tokens`` value represented all
+        input tokens. Existing rows therefore receive the new column's zero
+        default: absent cache detail is normal input, not a guessed cache hit.
+        """
+        columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(run_token_usage)").fetchall()
+        }
+        if "cached_prompt_tokens" not in columns:
+            conn.execute(
+                "ALTER TABLE run_token_usage "
+                "ADD COLUMN cached_prompt_tokens INTEGER NOT NULL DEFAULT 0"
             )
 
     @staticmethod
@@ -2094,8 +2114,9 @@ class DailyResearchStore:
         """Persist one run's per-model token usage.
 
         ``by_model`` follows TokenCounter.get_summary(): ``{model: {"prompt":
-        int, "completion": int, "total": int}}``.  Recording again for the
-        same run replaces its rows, keeping interrupted-then-retried runs
+        int, "cached_prompt": int, "completion": int, "total": int}}``.
+        ``prompt`` is ordinary/non-cached input. Recording again for the same
+        run replaces its rows, keeping interrupted-then-retried runs
         from double counting.  ``recorded_at`` is normally omitted for a live
         run; historical report imports pass the report generation timestamp so
         charts remain on the original reporting day.
@@ -2124,20 +2145,22 @@ class DailyResearchStore:
     @staticmethod
     def _token_usage_rows(
         by_model: Dict[str, Dict[str, int]], mode: str, recorded_at: str
-    ) -> list[tuple[str, int, int, int, str, str]]:
+    ) -> list[tuple[str, int, int, int, int, str, str]]:
         """Convert one token summary into stable, comparable database rows."""
-        rows: list[tuple[str, int, int, int, str, str]] = []
+        rows: list[tuple[str, int, int, int, int, str, str]] = []
         for model, usage in (by_model or {}).items():
             if not isinstance(usage, dict):
                 continue
             prompt = max(0, int(usage.get("prompt", 0) or 0))
+            cached_prompt = max(0, int(usage.get("cached_prompt", 0) or 0))
             completion = max(0, int(usage.get("completion", 0) or 0))
             rows.append(
                 (
                     str(model or "unknown").strip() or "unknown",
                     prompt,
+                    cached_prompt,
                     completion,
-                    prompt + completion,
+                    prompt + cached_prompt + completion,
                     str(mode or "daily_research"),
                     recorded_at,
                 )
@@ -2148,19 +2171,36 @@ class DailyResearchStore:
     def _replace_token_usage_rows(
         conn: sqlite3.Connection,
         run_id: str,
-        rows: list[tuple[str, int, int, int, str, str]],
+        rows: list[tuple[str, int, int, int, int, str, str]],
     ) -> None:
         conn.execute("DELETE FROM run_token_usage WHERE run_id = ?", (run_id,))
         conn.executemany(
             """
             INSERT INTO run_token_usage (
                 run_id, mode, model, prompt_tokens,
-                completion_tokens, total_tokens, recorded_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                cached_prompt_tokens, completion_tokens, total_tokens, recorded_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
-                (run_id, mode, model, prompt, completion, total, recorded_at)
-                for model, prompt, completion, total, mode, recorded_at in rows
+                (
+                    run_id,
+                    mode,
+                    model,
+                    prompt,
+                    cached_prompt,
+                    completion,
+                    total,
+                    recorded_at,
+                )
+                for (
+                    model,
+                    prompt,
+                    cached_prompt,
+                    completion,
+                    total,
+                    mode,
+                    recorded_at,
+                ) in rows
             ],
         )
 
@@ -2186,9 +2226,11 @@ class DailyResearchStore:
         with self._lock, self._connect() as conn:
             current = conn.execute(
                 """
-                SELECT model, prompt_tokens, completion_tokens, total_tokens, mode, recorded_at
+                SELECT model, prompt_tokens, cached_prompt_tokens, completion_tokens,
+                       total_tokens, mode, recorded_at
                 FROM run_token_usage WHERE run_id = ?
-                ORDER BY model, prompt_tokens, completion_tokens, total_tokens, mode, recorded_at
+                ORDER BY model, prompt_tokens, cached_prompt_tokens, completion_tokens,
+                         total_tokens, mode, recorded_at
                 """,
                 (run_id,),
             ).fetchall()
@@ -2196,6 +2238,7 @@ class DailyResearchStore:
                 (
                     str(row["model"]),
                     int(row["prompt_tokens"] or 0),
+                    int(row["cached_prompt_tokens"] or 0),
                     int(row["completion_tokens"] or 0),
                     int(row["total_tokens"] or 0),
                     str(row["mode"]),
@@ -3396,12 +3439,13 @@ class DailyResearchStore:
         """Aggregate persisted token usage by calendar day (oldest first).
 
         ``days`` limits the window to the most recent N days; None returns
-        the full history.  Each row: ``{"date", "prompt", "completion",
-        "total", "runs"}``.
+        the full history. Each row includes ordinary input as ``prompt`` and
+        cache reads as ``cached_prompt``.
         """
         query = (
             "SELECT substr(recorded_at, 1, 10) AS day, "
             "SUM(prompt_tokens) AS prompt, "
+            "SUM(cached_prompt_tokens) AS cached_prompt, "
             "SUM(completion_tokens) AS completion, "
             "SUM(total_tokens) AS total, "
             "COUNT(DISTINCT run_id) AS runs "
@@ -3419,6 +3463,7 @@ class DailyResearchStore:
             {
                 "date": row["day"],
                 "prompt": row["prompt"] or 0,
+                "cached_prompt": row["cached_prompt"] or 0,
                 "completion": row["completion"] or 0,
                 "total": row["total"] or 0,
                 "runs": row["runs"] or 0,
@@ -3430,6 +3475,7 @@ class DailyResearchStore:
         """Aggregate persisted token usage by model over the window."""
         query = (
             "SELECT model, SUM(prompt_tokens) AS prompt, "
+            "SUM(cached_prompt_tokens) AS cached_prompt, "
             "SUM(completion_tokens) AS completion, "
             "SUM(total_tokens) AS total "
             "FROM run_token_usage"
@@ -3446,6 +3492,7 @@ class DailyResearchStore:
             {
                 "model": row["model"],
                 "prompt": row["prompt"] or 0,
+                "cached_prompt": row["cached_prompt"] or 0,
                 "completion": row["completion"] or 0,
                 "total": row["total"] or 0,
             }
@@ -3496,6 +3543,7 @@ class DailyResearchStore:
         query = (
             f"SELECT {label} AS bucket, "
             "SUM(prompt_tokens) AS prompt, "
+            "SUM(cached_prompt_tokens) AS cached_prompt, "
             "SUM(completion_tokens) AS completion, "
             "SUM(total_tokens) AS total, "
             "COUNT(DISTINCT run_id) AS runs "
@@ -3508,6 +3556,7 @@ class DailyResearchStore:
             {
                 "bucket": row["bucket"],
                 "prompt": row["prompt"] or 0,
+                "cached_prompt": row["cached_prompt"] or 0,
                 "completion": row["completion"] or 0,
                 "total": row["total"] or 0,
                 "runs": row["runs"] or 0,
@@ -3526,6 +3575,7 @@ class DailyResearchStore:
         where, params = self._token_usage_time_filter(start_at, end_at)
         query = (
             "SELECT SUM(prompt_tokens) AS prompt, "
+            "SUM(cached_prompt_tokens) AS cached_prompt, "
             "SUM(completion_tokens) AS completion, "
             "SUM(total_tokens) AS total, "
             "COUNT(DISTINCT run_id) AS runs "
@@ -3536,6 +3586,7 @@ class DailyResearchStore:
             row = conn.execute(query, params).fetchone()
         return {
             "prompt": int(row["prompt"] or 0),
+            "cached_prompt": int(row["cached_prompt"] or 0),
             "completion": int(row["completion"] or 0),
             "total": int(row["total"] or 0),
             "runs": int(row["runs"] or 0),
@@ -3552,6 +3603,7 @@ class DailyResearchStore:
         where, params = self._token_usage_time_filter(start_at, end_at)
         query = (
             "SELECT model, SUM(prompt_tokens) AS prompt, "
+            "SUM(cached_prompt_tokens) AS cached_prompt, "
             "SUM(completion_tokens) AS completion, "
             "SUM(total_tokens) AS total "
             "FROM run_token_usage"
@@ -3563,6 +3615,7 @@ class DailyResearchStore:
             {
                 "model": row["model"],
                 "prompt": row["prompt"] or 0,
+                "cached_prompt": row["cached_prompt"] or 0,
                 "completion": row["completion"] or 0,
                 "total": row["total"] or 0,
             }

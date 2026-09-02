@@ -17,19 +17,37 @@ class RunTokenUsageTests(unittest.TestCase):
             store.record_token_usage(
                 run_id,
                 {
-                    "cheap-model": {"prompt": 100, "completion": 50, "total": 150},
-                    "smart-model": {"prompt": 200, "completion": 80, "total": 280},
+                    "cheap-model": {
+                        "prompt": 80,
+                        "cached_prompt": 20,
+                        "completion": 50,
+                        "total": 150,
+                    },
+                    "smart-model": {
+                        "prompt": 170,
+                        "cached_prompt": 30,
+                        "completion": 80,
+                        "total": 280,
+                    },
                 },
             )
             store.record_token_usage(
                 "trend_20260822_120000",
-                {"cheap-model": {"prompt": 10, "completion": 5, "total": 15}},
+                {
+                    "cheap-model": {
+                        "prompt": 9,
+                        "cached_prompt": 1,
+                        "completion": 5,
+                        "total": 15,
+                    }
+                },
                 mode="trend_research",
             )
 
             days = store.get_daily_token_totals()
             self.assertEqual(len(days), 1)
-            self.assertEqual(days[0]["prompt"], 310)
+            self.assertEqual(days[0]["prompt"], 259)
+            self.assertEqual(days[0]["cached_prompt"], 51)
             self.assertEqual(days[0]["completion"], 135)
             self.assertEqual(days[0]["total"], 445)
             self.assertEqual(days[0]["runs"], 2)
@@ -37,8 +55,10 @@ class RunTokenUsageTests(unittest.TestCase):
             models = store.get_token_usage_by_model()
             self.assertEqual(models[0]["model"], "smart-model")
             self.assertEqual(models[0]["total"], 280)
+            self.assertEqual(models[0]["cached_prompt"], 30)
             self.assertEqual(models[1]["model"], "cheap-model")
             self.assertEqual(models[1]["total"], 165)
+            self.assertEqual(models[1]["cached_prompt"], 21)
 
     def test_rerecording_same_run_replaces_rows(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -84,8 +104,8 @@ class RunTokenUsageTests(unittest.TestCase):
             )
 
             self.assertEqual(store.get_daily_token_totals(), [{
-                "date": "2024-01-02", "prompt": 15, "completion": 5,
-                "total": 20, "runs": 1,
+                "date": "2024-01-02", "prompt": 15, "cached_prompt": 0,
+                "completion": 5, "total": 20, "runs": 1,
             }])
 
     def test_daily_window_filters_old_rows(self):
@@ -131,12 +151,52 @@ class RunTokenUsageTests(unittest.TestCase):
             self.assertEqual(series[0]["total"], 120)
             self.assertEqual(series[1]["total"], 50)
             self.assertEqual(store.get_token_usage_summary(start_at=start, end_at=end), {
-                "prompt": 140, "completion": 30, "total": 170, "runs": 2,
+                "prompt": 140, "cached_prompt": 0, "completion": 30,
+                "total": 170, "runs": 2,
             })
             self.assertEqual(
                 [row["model"] for row in store.get_token_usage_by_model_range(start_at=start, end_at=end)],
                 ["cheap", "smart"],
             )
+
+    def test_old_schema_migrates_cached_input_to_zero(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "state.db"
+            import sqlite3
+
+            with sqlite3.connect(db_path) as conn:
+                conn.execute(
+                    """
+                    CREATE TABLE run_token_usage (
+                        run_id TEXT NOT NULL,
+                        mode TEXT NOT NULL DEFAULT 'daily_research',
+                        model TEXT NOT NULL,
+                        prompt_tokens INTEGER NOT NULL DEFAULT 0,
+                        completion_tokens INTEGER NOT NULL DEFAULT 0,
+                        total_tokens INTEGER NOT NULL DEFAULT 0,
+                        recorded_at TEXT NOT NULL,
+                        PRIMARY KEY (run_id, model)
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    INSERT INTO run_token_usage(
+                        run_id, mode, model, prompt_tokens, completion_tokens,
+                        total_tokens, recorded_at
+                    ) VALUES ('old-run', 'daily_research', 'legacy-model', 40, 10, 50,
+                              '2024-01-02T08:30:00')
+                    """
+                )
+
+            store = DailyResearchStore(db_path)
+            self.assertEqual(store.get_token_usage_summary(), {
+                "prompt": 40,
+                "cached_prompt": 0,
+                "completion": 10,
+                "total": 50,
+                "runs": 1,
+            })
 
 
 if __name__ == "__main__":

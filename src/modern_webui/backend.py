@@ -1615,7 +1615,13 @@ def analytics(
             "available": False,
             "series": [],
             "models": [],
-            "summary": {"prompt": 0, "completion": 0, "total": 0, "runs": 0},
+            "summary": {
+                "prompt": 0,
+                "cached_prompt": 0,
+                "completion": 0,
+                "total": 0,
+                "runs": 0,
+            },
             "window": {
                 "range": normalized_key,
                 "start": start_at.isoformat(),
@@ -1713,16 +1719,23 @@ _HISTORY_TOKEN_SUMMARY_RE = re.compile(
     r"(?:输出|output)\s*(?P<completion>[\d,，\s]+)\s*[）)]",
     re.IGNORECASE,
 )
+_HISTORY_TOKEN_SUMMARY_WITH_CACHE_RE = re.compile(
+    r"(?:"
+    r"(?:\*\*\s*)?(?:总计|total)(?:\s*\*\*)?\s*[:：]"
+    r"|Token\s*(?:消耗(?:统计)?|usage(?:\s+statistics)?)\s*[:：]"
+    r")\s*(?P<total>[\d,，\s]+)\s*tokens?\s*[（(]\s*"
+    r"(?:普通|常规|正常|非缓存)?\s*(?:输入|input)\s*"
+    r"(?P<prompt>[\d,，\s]+)\s*/\s*"
+    r"(?:缓存输入|cached\s+input)\s*(?P<cached>[\d,，\s]+)\s*/\s*"
+    r"(?:输出|output)\s*(?P<completion>[\d,，\s]+)\s*[）)]",
+    re.IGNORECASE,
+)
 _HISTORY_TOKEN_USAGE_MARKER_RE = re.compile(
     r"(?:"
     r"(?:\*\*\s*)?(?:总计|total)(?:\s*\*\*)?\s*[:：].{0,64}?\btokens?\b"
     r"|Token\s*(?:消耗(?:统计)?|usage(?:\s+statistics)?)\s*[:：]"
     r")",
     re.IGNORECASE,
-)
-_HISTORY_TOKEN_MODEL_HEADER_RE = re.compile(
-    r"(?im)^\|\s*(?:模型|model)\s*\|\s*(?:输入|input)\s*\|\s*"
-    r"(?:输出|output)\s*\|\s*(?:合计|total)\s*\|\s*$"
 )
 _HISTORY_TOKEN_GENERATED_AT_RE = re.compile(
     r"(?:生成(?:时间)?|generated(?:\s+(?:at|on))?)\s*(?:[:：|]\s*)?"
@@ -1752,33 +1765,60 @@ def _token_number(value: object) -> int | None:
 
 
 def _historical_token_models(markdown: str) -> dict[str, dict[str, int]]:
-    """Parse the optional per-model Markdown table emitted by report writers."""
-    header = _HISTORY_TOKEN_MODEL_HEADER_RE.search(markdown)
-    if header is None:
+    """Parse old and cache-aware per-model Markdown usage tables."""
+    lines = markdown.splitlines()
+    header_index: int | None = None
+    has_cached_input = False
+    for index, line in enumerate(lines):
+        cells = [cell.strip().casefold() for cell in line.strip().strip("|").split("|")]
+        if not cells or cells[0] not in {"模型", "model"}:
+            continue
+        if len(cells) == 4 and cells[-1] in {"合计", "total"}:
+            header_index = index
+            break
+        if len(cells) == 5 and cells[-1] in {"合计", "total"}:
+            cache_header = cells[2].replace(" ", "")
+            if cache_header in {"缓存输入", "cachedinput"}:
+                header_index = index
+                has_cached_input = True
+                break
+    if header_index is None:
         return {}
+
     rows: dict[str, dict[str, int]] = {}
-    for line in markdown[header.end() :].lstrip("\r\n").splitlines():
+    for line in lines[header_index + 1 :]:
         stripped = line.strip()
         if not stripped:
             break
         if not stripped.startswith("|"):
             break
         cells = [cell.strip() for cell in stripped.strip("|").split("|")]
-        if len(cells) != 4:
+        expected_cells = 5 if has_cached_input else 4
+        if len(cells) != expected_cells:
             continue
         # The Markdown divider is intentionally not a model row.
         if all(re.fullmatch(r":?-{3,}:?", cell.replace(" ", "")) for cell in cells):
             continue
         prompt = _token_number(cells[1])
-        completion = _token_number(cells[2])
-        total = _token_number(cells[3])
+        cached_prompt = _token_number(cells[2]) if has_cached_input else 0
+        completion = _token_number(cells[3] if has_cached_input else cells[2])
+        total = _token_number(cells[4] if has_cached_input else cells[3])
         model = cells[0].replace("\\|", "|").strip(" `")
-        if not model or prompt is None or completion is None or total is None:
+        if (
+            not model
+            or prompt is None
+            or cached_prompt is None
+            or completion is None
+            or total is None
+        ):
             continue
-        if total != prompt + completion:
+        if total != prompt + cached_prompt + completion:
             continue
-        values = rows.setdefault(model, {"prompt": 0, "completion": 0})
+        values = rows.setdefault(
+            model, {"prompt": 0, "cached_prompt": 0, "completion": 0}
+        )
         values["prompt"] += prompt
+        values["cached_prompt"] += cached_prompt
         values["completion"] += completion
     return rows
 
@@ -1788,26 +1828,56 @@ def _parse_historical_token_usage(path: Path, text: str) -> dict[str, Any] | Non
     if not text:
         return None
     plain = unescape(re.sub(r"<[^>]+>", " ", text)) if path.suffix.lower() == ".html" else text
-    summary = _HISTORY_TOKEN_SUMMARY_RE.search(plain)
+    summary = _HISTORY_TOKEN_SUMMARY_WITH_CACHE_RE.search(plain)
+    has_cached_input = summary is not None
+    if summary is None:
+        summary = _HISTORY_TOKEN_SUMMARY_RE.search(plain)
     if summary is None:
         return None
     total = _token_number(summary.group("total"))
     prompt = _token_number(summary.group("prompt"))
+    cached_prompt = _token_number(summary.group("cached")) if has_cached_input else 0
     completion = _token_number(summary.group("completion"))
-    if total is None or prompt is None or completion is None or total != prompt + completion:
+    if (
+        total is None
+        or prompt is None
+        or cached_prompt is None
+        or completion is None
+        or total != prompt + cached_prompt + completion
+    ):
         return None
 
     by_model = _historical_token_models(text) if path.suffix.lower() == ".md" else {}
     if by_model:
         model_prompt = sum(values["prompt"] for values in by_model.values())
+        model_cached_prompt = sum(
+            values.get("cached_prompt", 0) for values in by_model.values()
+        )
         model_completion = sum(values["completion"] for values in by_model.values())
-        if model_prompt != prompt or model_completion != completion:
+        if (
+            model_prompt != prompt
+            or model_cached_prompt != cached_prompt
+            or model_completion != completion
+        ):
             by_model = {}
     if not by_model:
-        # Old HTML reports contain the aggregate only.  Keep that value
-        # visible without inventing an LLM name that was never recorded.
-        by_model = {"historical_report": {"prompt": prompt, "completion": completion}}
-    return {"prompt": prompt, "completion": completion, "total": total, "by_model": by_model}
+        # Old HTML reports contain the aggregate only. Older reports without
+        # a cache bucket retain all input as ordinary input; cache-aware
+        # reports preserve the explicitly recorded split.
+        by_model = {
+            "historical_report": {
+                "prompt": prompt,
+                "cached_prompt": cached_prompt,
+                "completion": completion,
+            }
+        }
+    return {
+        "prompt": prompt,
+        "cached_prompt": cached_prompt,
+        "completion": completion,
+        "total": total,
+        "by_model": by_model,
+    }
 
 
 def _historical_token_report_kind(path: Path, root: Path) -> str:
@@ -1946,7 +2016,12 @@ def import_historical_report_token_usage() -> dict[str, int | bool]:
                     key=lambda item: (item[0].suffix.lower() != ".md", item[0].as_posix()),
                 )
                 summaries = {
-                    (item[1]["prompt"], item[1]["completion"], item[1]["total"])
+                    (
+                        item[1]["prompt"],
+                        item[1].get("cached_prompt", 0),
+                        item[1]["completion"],
+                        item[1]["total"],
+                    )
                     for item in items
                 }
                 if len(summaries) != 1:

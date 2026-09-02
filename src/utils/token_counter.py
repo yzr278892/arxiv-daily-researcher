@@ -12,12 +12,17 @@ from typing import Dict, Any
 
 @dataclass
 class _ModelUsage:
+    # ``prompt_tokens`` deliberately means non-cached input.  Earlier
+    # versions only had one input bucket, so keeping this field name lets old
+    # callers and persisted summaries remain compatible while the new bucket
+    # records provider-reported prefix-cache reads separately.
     prompt_tokens: int = 0
+    cached_prompt_tokens: int = 0
     completion_tokens: int = 0
 
     @property
     def total_tokens(self) -> int:
-        return self.prompt_tokens + self.completion_tokens
+        return self.prompt_tokens + self.cached_prompt_tokens + self.completion_tokens
 
 
 class TokenCounter:
@@ -26,7 +31,12 @@ class TokenCounter:
 
     使用方式:
         from utils.token_counter import token_counter
-        token_counter.add("gpt-4o-mini", prompt_tokens=100, completion_tokens=50)
+        token_counter.add(
+            "gpt-4o-mini",
+            prompt_tokens=80,
+            cached_prompt_tokens=20,
+            completion_tokens=50,
+        )
         summary = token_counter.get_summary()
         token_counter.reset()
     """
@@ -44,14 +54,30 @@ class TokenCounter:
                     cls._instance = obj
         return cls._instance
 
-    def add(self, model: str, prompt_tokens: int, completion_tokens: int) -> None:
-        """记录一次 LLM 调用的 token 消耗。"""
+    def add(
+        self,
+        model: str,
+        prompt_tokens: int,
+        completion_tokens: int,
+        cached_prompt_tokens: int = 0,
+    ) -> None:
+        """Record non-cached input, cached input, and output tokens once.
+
+        ``prompt_tokens`` remains the ordinary/non-cached input bucket for
+        backwards-compatible callers.  Provider responses normally report
+        total input including cache reads; callers split that value before
+        passing it here.
+        """
         if not model:
             model = "unknown"
+        prompt_tokens = max(0, int(prompt_tokens or 0))
+        cached_prompt_tokens = max(0, int(cached_prompt_tokens or 0))
+        completion_tokens = max(0, int(completion_tokens or 0))
         with self._lock:
             if model not in self._usage:
                 self._usage[model] = _ModelUsage()
             self._usage[model].prompt_tokens += prompt_tokens
+            self._usage[model].cached_prompt_tokens += cached_prompt_tokens
             self._usage[model].completion_tokens += completion_tokens
 
     def get_summary(self) -> Dict[str, Any]:
@@ -61,12 +87,18 @@ class TokenCounter:
         返回格式:
             {
                 "by_model": {
-                    "model-name": {"prompt": N, "completion": M, "total": N+M},
+                    "model-name": {
+                        "prompt": N,
+                        "cached_prompt": C,
+                        "completion": M,
+                        "total": N+C+M
+                    },
                     ...
                 },
                 "total_prompt": N,
+                "total_cached_prompt": C,
                 "total_completion": M,
-                "total": N+M,
+                "total": N+C+M,
                 "has_data": bool
             }
         """
@@ -74,18 +106,23 @@ class TokenCounter:
             by_model = {
                 model: {
                     "prompt": u.prompt_tokens,
+                    "cached_prompt": u.cached_prompt_tokens,
                     "completion": u.completion_tokens,
                     "total": u.total_tokens,
                 }
                 for model, u in self._usage.items()
             }
             total_prompt = sum(u.prompt_tokens for u in self._usage.values())
+            total_cached_prompt = sum(
+                u.cached_prompt_tokens for u in self._usage.values()
+            )
             total_completion = sum(u.completion_tokens for u in self._usage.values())
             return {
                 "by_model": by_model,
                 "total_prompt": total_prompt,
+                "total_cached_prompt": total_cached_prompt,
                 "total_completion": total_completion,
-                "total": total_prompt + total_completion,
+                "total": total_prompt + total_cached_prompt + total_completion,
                 "has_data": bool(self._usage),
             }
 
@@ -103,16 +140,20 @@ class TokenCounter:
         lines = []
         lines.append(
             f"- **总计**: {summary['total']:,} tokens "
-            f"（输入 {summary['total_prompt']:,} + 输出 {summary['total_completion']:,}）"
+            f"（普通输入 {summary['total_prompt']:,} + 缓存输入 "
+            f"{summary['total_cached_prompt']:,} + 输出 "
+            f"{summary['total_completion']:,}）"
         )
 
         if len(summary["by_model"]) > 1:
             lines.append("")
-            lines.append("| 模型 | 输入 | 输出 | 合计 |")
-            lines.append("|------|------|------|------|")
+            lines.append("| 模型 | 普通输入 | 缓存输入 | 输出 | 合计 |")
+            lines.append("|------|----------|----------|------|------|")
             for model, usage in summary["by_model"].items():
                 lines.append(
-                    f"| {model} | {usage['prompt']:,} | {usage['completion']:,} | {usage['total']:,} |"
+                    f"| {model} | {usage['prompt']:,} | "
+                    f"{usage['cached_prompt']:,} | {usage['completion']:,} | "
+                    f"{usage['total']:,} |"
                 )
 
         return "\n".join(lines)
@@ -124,7 +165,9 @@ class TokenCounter:
             return "N/A"
         return (
             f"共 {summary['total']:,} tokens "
-            f"（输入 {summary['total_prompt']:,} / 输出 {summary['total_completion']:,}）"
+            f"（普通输入 {summary['total_prompt']:,} / 缓存输入 "
+            f"{summary['total_cached_prompt']:,} / 输出 "
+            f"{summary['total_completion']:,}）"
         )
 
 

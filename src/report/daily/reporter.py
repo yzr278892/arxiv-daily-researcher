@@ -428,18 +428,23 @@ class Reporter:
         if settings.TOKEN_TRACKING_ENABLED and token_usage and token_usage.get("has_data"):
             total = token_usage.get("total", 0)
             tp = token_usage.get("total_prompt", 0)
+            tcp = token_usage.get("total_cached_prompt", 0)
             tc = token_usage.get("total_completion", 0)
             by_model = token_usage.get("by_model", {})
             lines.append("## Token 消耗统计")
             lines.append("")
-            lines.append(f"- **总计**: {total:,} tokens（输入 {tp:,} / 输出 {tc:,}）")
+            lines.append(
+                f"- **总计**: {total:,} tokens（普通输入 {tp:,} / "
+                f"缓存输入 {tcp:,} / 输出 {tc:,}）"
+            )
             if len(by_model) > 1:
                 lines.append("")
-                lines.append("| 模型 | 输入 | 输出 | 合计 |")
-                lines.append("|------|------|------|------|")
+                lines.append("| 模型 | 普通输入 | 缓存输入 | 输出 | 合计 |")
+                lines.append("|------|----------|----------|------|------|")
                 for model, usage in by_model.items():
                     lines.append(
                         f"| {markdown_table_cell(model)} | {usage['prompt']:,} | "
+                        f"{usage.get('cached_prompt', 0):,} | "
                         f"{usage['completion']:,} | {usage['total']:,} |"
                     )
             lines.append("")
@@ -990,11 +995,12 @@ class Reporter:
         if settings.TOKEN_TRACKING_ENABLED and token_usage and token_usage.get("has_data"):
             total = token_usage.get("total", 0)
             tp = token_usage.get("total_prompt", 0)
+            tcp = token_usage.get("total_cached_prompt", 0)
             tc = token_usage.get("total_completion", 0)
             parts.append(
                 f'<p class="meta" style="margin-top:24px;border-top:1px solid #e5e7eb;padding-top:12px;">'
                 f"Token 消耗: <strong>{total:,}</strong> tokens"
-                f"（输入 {tp:,} / 输出 {tc:,}）</p>"
+                f"（普通输入 {tp:,} / 缓存输入 {tcp:,} / 输出 {tc:,}）</p>"
             )
 
         parts.append("</body></html>")

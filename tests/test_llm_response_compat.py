@@ -113,6 +113,32 @@ class LLMResponseCompatibilityTests(unittest.TestCase):
             {"model": settings.CHEAP_LLM.model_name, "input": "prompt"},
         )
 
+    def test_responses_fallback_uses_native_stable_instructions(self):
+        agent = AnalysisAgent.__new__(AnalysisAgent)
+        agent.cheap_client = SimpleNamespace(responses=SimpleNamespace(create=lambda **_: None))
+        response = SimpleNamespace(output_text='{"answer": "ok"}')
+        with patch.object(settings, "RETRY_MAX_ATTEMPTS", 1), patch.object(
+            settings, "TOKEN_TRACKING_ENABLED", False
+        ), patch(
+            "agents.analysis_agent.call_chat_completion",
+            return_value=_chat_response(None),
+        ), patch(
+            "agents.analysis_agent.call_responses", return_value=response
+        ) as responses_call:
+            self.assertEqual(
+                agent._call_cheap_llm(
+                    "paper-specific data", system_prompt="stable instructions"
+                ),
+                '{"answer": "ok"}',
+            )
+
+        self.assertEqual(
+            responses_call.call_args.kwargs["input"], "paper-specific data"
+        )
+        self.assertEqual(
+            responses_call.call_args.kwargs["instructions"], "stable instructions"
+        )
+
     def test_empty_provider_responses_raise_and_remain_retryable(self):
         agent = AnalysisAgent.__new__(AnalysisAgent)
         agent.cheap_client = SimpleNamespace(responses=SimpleNamespace(create=lambda **_: None))
@@ -216,14 +242,22 @@ class LLMResponseCompatibilityTests(unittest.TestCase):
             "utils.token_counter.token_counter.add"
         ) as add:
             AnalysisAgent._record_token_usage(
-                "model-a", 7, {"input_tokens": 12, "output_tokens": 4}
+                "model-a",
+                7,
+                {
+                    "input_tokens": 12,
+                    "output_tokens": 4,
+                    "input_tokens_details": {"cached_tokens": 5},
+                },
             )
             AnalysisAgent._record_token_usage(
                 "model-b", 7, SimpleNamespace(prompt_tokens=9, completion_tokens=3)
             )
 
-        self.assertEqual(add.call_args_list[0].args, ("model-a", 12, 4))
+        self.assertEqual(add.call_args_list[0].args, ("model-a", 7, 4))
+        self.assertEqual(add.call_args_list[0].kwargs, {"cached_prompt_tokens": 5})
         self.assertEqual(add.call_args_list[1].args, ("model-b", 9, 3))
+        self.assertEqual(add.call_args_list[1].kwargs, {"cached_prompt_tokens": 0})
 
     def test_deep_analysis_rejects_metadata_only_but_keeps_custom_template_fields(self):
         template = {
@@ -252,7 +286,7 @@ class LLMResponseCompatibilityTests(unittest.TestCase):
             "prompts": {},
         }
         agent._download_and_parse_pdf = lambda _url: "paper text"
-        agent._call_smart_llm = lambda _prompt: '{"provider_error": "empty output"}'
+        agent._call_smart_llm = lambda _prompt, **_kwargs: '{"provider_error": "empty output"}'
 
         self.assertIsNone(
             agent.deep_analyze(
@@ -283,9 +317,11 @@ class LLMResponseCompatibilityTests(unittest.TestCase):
         }
         agent._download_and_parse_pdf = lambda _url: "paper text"
         prompts = []
+        system_prompts = []
 
-        def _response(prompt):
+        def _response(prompt, **kwargs):
             prompts.append(prompt)
+            system_prompts.append(kwargs.get("system_prompt", ""))
             return '{"summary": "内容", "innovations": ["创新"]}'
 
         agent._call_smart_llm = _response
@@ -296,7 +332,8 @@ class LLMResponseCompatibilityTests(unittest.TestCase):
         )
 
         self.assertEqual(result["innovations"], ["创新"])
-        self.assertIn('"innovations": ["...", "..."]', prompts[0])
+        self.assertIn('"innovations": ["...", "..."]', system_prompts[0])
+        self.assertIn("论文内容", prompts[0])
 
 
 if __name__ == "__main__":

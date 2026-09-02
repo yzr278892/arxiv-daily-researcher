@@ -115,18 +115,55 @@ class ModernBackendTests(unittest.TestCase):
             self.assertEqual(second["unchanged"], 3)
             self.assertEqual(
                 store.get_token_usage_summary(),
-                {"prompt": 21, "completion": 18, "total": 39, "runs": 3},
+                {
+                    "prompt": 21,
+                    "cached_prompt": 0,
+                    "completion": 18,
+                    "total": 39,
+                    "runs": 3,
+                },
             )
             self.assertEqual(
                 store.get_token_usage_summary(
                     start_at=datetime(2024, 1, 2), end_at=datetime(2024, 1, 3)
                 ),
-                {"prompt": 10, "completion": 8, "total": 18, "runs": 1},
+                {
+                    "prompt": 10,
+                    "cached_prompt": 0,
+                    "completion": 8,
+                    "total": 18,
+                    "runs": 1,
+                },
             )
             by_model = {row["model"]: row["total"] for row in store.get_token_usage_by_model()}
             self.assertEqual(by_model["cheap"], 6)
             self.assertEqual(by_model["smart"], 12)
             self.assertEqual(by_model["historical_report"], 21)
+
+    def test_historical_token_parser_preserves_cache_or_defaults_to_ordinary_input(self) -> None:
+        cache_aware = backend._parse_historical_token_usage(
+            Path("cache-aware.md"),
+            """## Token 消耗统计
+
+- **总计**: 30 tokens（普通输入 8 / 缓存输入 15 / 输出 7）
+
+| 模型 | 普通输入 | 缓存输入 | 输出 | 合计 |
+|------|----------|----------|------|------|
+| smart | 8 | 15 | 7 | 30 |
+""",
+        )
+        self.assertEqual(cache_aware["prompt"], 8)
+        self.assertEqual(cache_aware["cached_prompt"], 15)
+        self.assertEqual(cache_aware["completion"], 7)
+        self.assertEqual(cache_aware["by_model"]["smart"]["cached_prompt"], 15)
+
+        legacy = backend._parse_historical_token_usage(
+            Path("legacy.md"),
+            "- **总计**: 30 tokens（输入 23 / 输出 7）",
+        )
+        self.assertEqual(legacy["prompt"], 23)
+        self.assertEqual(legacy["cached_prompt"], 0)
+        self.assertEqual(legacy["by_model"]["historical_report"]["cached_prompt"], 0)
 
     def test_historical_token_import_skips_a_report_with_native_usage(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

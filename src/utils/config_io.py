@@ -1772,7 +1772,13 @@ def validate_llm_connection(api_key: str, base_url: str, model_name: str) -> Tup
         # 而一次性的连通性测试也不需要并发限流。
         response = client.chat.completions.create(
             model=model_name,
-            messages=[{"role": "user", "content": "Hi"}],
+            messages=[
+                {
+                    "role": "system",
+                    "content": "This is a connection check. Reply with exactly OK.",
+                },
+                {"role": "user", "content": "Connection check."},
+            ],
             max_tokens=5,
         )
         return True, f"Connection successful! Model: {response.model}"

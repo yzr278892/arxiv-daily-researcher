@@ -20,7 +20,7 @@
 
 ArXiv Daily Researcher collects papers from ArXiv and optional extensions, evaluates them against a research profile, produces translated summaries and PDF analysis, and delivers Markdown, HTML, and notification results.
 
-v4.3 stores candidates, processing stages, report delivery, notification outbox rows, favourite preferences, history-maintenance backlog, and past-date report queues in SQLite. Supplement reports have a separate archive, and legacy supplement artifacts plus their SQLite paths can be migrated together. Workflows resume from completed stages, while live configuration is kept separate from source code for durable deployments, upgrades, and recovery. The Docker Worker reliably consumes history-maintenance requests submitted by the WebUI.
+v4.3 stores candidates, processing stages, report delivery, notification outbox rows, favourite preferences, history-maintenance backlog, and past-date report queues in SQLite. Supplement reports have a separate archive, and legacy supplement artifacts plus their SQLite paths can be migrated together. LLM requests place stable instructions in the prefix for provider cache reuse, and token usage separately records non-cached input, cached input, and output. Workflows resume from completed stages, while live configuration is kept separate from source code for durable deployments, upgrades, and recovery. The Docker Worker reliably consumes history-maintenance requests submitted by the WebUI.
 
 ---
 
@@ -64,7 +64,7 @@ Daily, supplement, past-date, trend, and keyword-trend reports support HTML and 
 
 ### 🔔 Notifications and Observability
 
-Email, WeCom, DingTalk, Telegram, Slack, and generic webhooks are supported. Every channel has a test delivery action. Run, maintenance, source, LLM, and token-use views show status and concise issue summaries.
+Email, WeCom, DingTalk, Telegram, Slack, and generic webhooks are supported. Every channel has a test delivery action. Run, maintenance, source, LLM, and token-use views show status and concise issue summaries. Usage is shown by non-cached input, cached input, output, and model in the WebUI, reports, and notifications.
 
 </td>
 <td width="50%" valign="top">
@@ -199,7 +199,7 @@ uvicorn src.modern_webui.app:app --host 127.0.0.1 --port 8501
 
 Docker deployments provide the panel through `config-panel`. The WebUI and worker share `.env`, `runtime/`, `configs/`, `data/`, and `logs/`; the sidebar **Save All Changes** action writes the configuration for later tasks.
 
-Usage Statistics can import archived Markdown/HTML report token usage by report batch. Existing SQLite runs are deduplicated, repeated imports do not add to the totals, and Markdown model breakdowns are retained when available.
+Usage Statistics can import archived Markdown/HTML report token usage by report batch. Existing SQLite runs are deduplicated, repeated imports do not add to the totals, and Markdown model breakdowns plus cached-input values are retained when available. A legacy report without a cached-input field stores its recorded input as non-cached input.
 
 | Group | Pages | Purpose |
 | :--- | :--- | :--- |
@@ -218,9 +218,9 @@ Usage Statistics can import archived Markdown/HTML report token usage by report 
       <sub>Daily research, state, and queue</sub>
     </td>
     <td align="center" width="33%">
-      <img src="assets/webui_analytics_v4.png" alt="Usage statistics, token trends, and history import" width="100%" />
+      <img src="assets/webui_analytics_v4.png" alt="Non-cached input, cached input, output tokens, and history import" width="100%" />
       <br />
-      <sub>Usage statistics, time ranges, and history import</sub>
+      <sub>Non-cached input, cached input, trends, and history import</sub>
     </td>
     <td align="center" width="33%">
       <img src="assets/webui_scoring_v4.png" alt="Scoring policy and author preferences" width="100%" />
@@ -473,7 +473,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the full history.
 
 | Version | Date | Summary |
 | :--- | :--- | :--- |
-| **v4.3** | 2026-09-01 | Fixes history-maintenance queue consumption; adds independent supplement archives, browsing, and SQLite path migration. |
+| **v4.3** | 2026-09-02 | Fixes history-maintenance queue consumption; adds independent supplement archives, browsing, and SQLite path migration; separates non-cached input, cached input, and output token usage. |
 | **v4.2** | 2026-09-01 | Runtime-config migration, history scheduling, automatic favourites, notification tests, report-batch navigation, local WebUI refreshes, and separate user/test Compose files. |
 | **v4.1** | 2026-08-30 | Modern WebUI, history maintenance, multi-source merging, diagnostics, and token usage. |
 | **v4.0** | 2026-08-25 | SQLite history and queues, complete scanning, scoring, supplement reports, past-date reports, backups, and dual-architecture GHCR images. |

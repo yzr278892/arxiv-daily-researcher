@@ -262,6 +262,20 @@ class ModernWebUIAppTests(unittest.TestCase):
         self.assertIn("Import Historical Report Token Usage", analytics)
         self.assertIn(".analytics-history-import", stylesheet)
 
+    def test_analytics_renders_cache_input_as_a_separate_metric(self) -> None:
+        script = self.client.get("/assets/app.js").text
+        stylesheet = self.client.get("/assets/app.css").text
+        start = script.index("function analyticsSeriesRows")
+        end = script.index("function analyticsMarkup", start)
+        analytics = script[start:end]
+
+        self.assertIn("cached_prompt", analytics)
+        self.assertIn("缓存输入 Token", analytics)
+        self.assertIn("Non-cached input tokens", analytics)
+        self.assertIn('linePoints("cached_prompt")', analytics)
+        self.assertIn(".trend-line.cached_prompt", stylesheet)
+        self.assertIn(".trend-point.cached_prompt", stylesheet)
+
     def test_proxy_exclusions_use_chip_editor_and_save_a_compatible_value(self) -> None:
         script = self.client.get("/assets/app.js").text
         stylesheet = self.client.get("/assets/app.css").text
