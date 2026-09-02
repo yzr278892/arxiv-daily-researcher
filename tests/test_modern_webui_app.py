@@ -276,6 +276,17 @@ class ModernWebUIAppTests(unittest.TestCase):
         self.assertIn(".trend-line.cached_prompt", stylesheet)
         self.assertIn(".trend-point.cached_prompt", stylesheet)
 
+    def test_analytics_trend_legend_reserves_width_for_cjk_labels(self) -> None:
+        script = self.client.get("/assets/app.js").text
+        start = script.index("function tokenTrendChart")
+        end = script.index("function formatCompactNumber", start)
+        chart = script[start:end]
+
+        self.assertIn("const legendTextWidth", chart)
+        self.assertIn("/[^\\x00-\\xFF]/.test(character) ? 11 : 6.2", chart)
+        self.assertIn("legendX += 29 + legendTextWidth(label);", chart)
+        self.assertNotIn("label.length * 6.2", chart)
+
     def test_proxy_exclusions_use_chip_editor_and_save_a_compatible_value(self) -> None:
         script = self.client.get("/assets/app.js").text
         stylesheet = self.client.get("/assets/app.css").text

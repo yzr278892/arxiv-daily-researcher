@@ -3948,10 +3948,13 @@ function tokenTrendChart(rows, window) {
     ["cached_prompt", localeText("缓存输入", "Cached input")],
     ["completion", localeText("输出", "Output")],
   ];
+  const legendTextWidth = (label) => Array.from(label).reduce((total, character) => (
+    total + (/[^\x00-\xFF]/.test(character) ? 11 : 6.2)
+  ), 0);
   let legendX = left;
   const legendMarkup = legend.map(([key, label]) => {
     const markup = `<rect x="${legendX}" y="6" width="11" height="11" class="${key}"/><text x="${legendX + 17}" y="15">${escapeHtml(label)}</text>`;
-    legendX += 29 + label.length * 6.2;
+    legendX += 29 + legendTextWidth(label);
     return markup;
   }).join("");
   return `<div class="trend-chart"><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeAttribute(localeText("Token 使用趋势", "Token usage trend"))}"><g class="trend-grid">${grid}</g><polyline class="trend-line total" points="${linePoints("total")}"/><polyline class="trend-line prompt" points="${linePoints("prompt")}"/><polyline class="trend-line cached_prompt" points="${linePoints("cached_prompt")}"/><polyline class="trend-line completion" points="${linePoints("completion")}"/><g class="trend-points">${points("total")}${points("prompt")}${points("cached_prompt")}${points("completion")}</g><g class="trend-labels">${labelText}</g><g class="trend-legend">${legendMarkup}</g></svg></div>`;
