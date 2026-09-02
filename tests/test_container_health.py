@@ -17,6 +17,9 @@ from utils.container_health import (  # noqa: E402
     _check_sqlite,
     _check_trigger_consumer,
     _check_writable_directory,
+    _lightweight_worker_checks,
+    _parse_args,
+    _worker_checks,
 )
 
 
@@ -27,6 +30,40 @@ class ContainerHealthTests(unittest.TestCase):
             side_effect=AssertionError("manual mode must not probe cron"),
         ):
             _check_worker_processes("adr")
+
+    def test_default_worker_health_check_uses_lightweight_liveness_checks(self):
+        with patch("utils.container_health._check_worker_processes"), patch(
+            "utils.container_health._drop_to_runtime_user"
+        ), patch("utils.container_health._lightweight_worker_checks") as lightweight:
+            _worker_checks("adr")
+
+        lightweight.assert_called_once_with()
+
+    def test_full_worker_diagnostic_remains_an_explicit_cli_option(self):
+        self.assertFalse(_parse_args(["worker"]).full)
+        self.assertTrue(_parse_args(["worker", "--full"]).full)
+
+    def test_lightweight_worker_check_keeps_runtime_paths_and_queue_healthy(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            project_root = Path(temporary)
+            data_dir = project_root / "data"
+            with patch("utils.container_health.PROJECT_ROOT", project_root), patch(
+                "utils.container_health._check_writable_directory"
+            ) as writable, patch(
+                "utils.container_health._check_trigger_consumer"
+            ) as trigger_consumer:
+                _lightweight_worker_checks()
+
+        self.assertEqual(
+            {call.args[0] for call in writable.call_args_list},
+            {
+                data_dir,
+                project_root / "logs",
+                project_root / "configs",
+                project_root / "runtime",
+            },
+        )
+        trigger_consumer.assert_called_once_with(data_dir)
 
     def test_writable_directory_uses_and_removes_probe(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -113,6 +150,21 @@ class WorkerEntrypointLayoutTests(unittest.TestCase):
         self.assertNotIn("python /app/src/utils/webui_trigger.py", entrypoint)
         self.assertEqual(entrypoint.count("python -m utils.webui_trigger"), 1)
         self.assertIn('webui_trigger "$CLAIMED_FILE" --pid-file "$PID_FILE"', entrypoint)
+
+    def test_trigger_selector_is_guarded_by_a_queued_json_check(self):
+        project_root = Path(__file__).resolve().parents[1]
+        entrypoint = (project_root / "docker" / "entrypoint.sh").read_text(encoding="utf-8")
+
+        self.assertIn("has_queued_trigger() {", entrypoint)
+        self.assertIn('for request_path in "$TRIGGER_DIR"/*.json; do', entrypoint)
+        watcher = entrypoint[entrypoint.index("trigger_watcher() {") :]
+        guard_index = watcher.index("if has_queued_trigger; then")
+        selector_index = watcher.index("REQUEST_FILE=$(webui_trigger")
+        self.assertLess(guard_index, selector_index)
+        self.assertIn(
+            "--next-eligible-request --data-dir /app/data",
+            watcher[guard_index : selector_index + 160],
+        )
 
 
 if __name__ == "__main__":

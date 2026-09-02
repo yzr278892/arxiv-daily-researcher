@@ -159,11 +159,35 @@ def _check_worker_processes(runtime_user: str) -> None:
     _require(crontab.is_file() and crontab.stat().st_size > 0, "runtime crontab is missing")
 
 
-def _worker_checks(runtime_user: str) -> None:
-    # Process/crontab state needs root visibility.  All filesystem/database
-    # checks run after dropping privileges so root cannot mask bad NAS modes.
+def _lightweight_worker_checks() -> None:
+    """Check the liveness invariants needed by Docker's frequent probe.
+
+    A Docker health check runs every minute. Importing every Worker mode and
+    scanning SQLite on each invocation only repeats startup diagnostics, while
+    making an otherwise idle container consume CPU.  The entrypoint already
+    verifies mounted paths at startup; the recurring probe only needs to prove
+    that those paths remain writable and the trigger consumer is alive.
+    """
+    data_dir = PROJECT_ROOT / "data"
+    for directory in {
+        data_dir,
+        PROJECT_ROOT / "logs",
+        PROJECT_ROOT / "configs",
+        PROJECT_ROOT / "runtime",
+    }:
+        _check_writable_directory(directory)
+    _check_trigger_consumer(data_dir)
+
+
+def _worker_checks(runtime_user: str, *, full: bool = False) -> None:
+    # Process/crontab state needs root visibility. All filesystem checks run
+    # after dropping privileges so root cannot mask bad NAS modes.
     _check_worker_processes(runtime_user)
     _drop_to_runtime_user(runtime_user)
+
+    if not full:
+        _lightweight_worker_checks()
+        return
 
     from config import settings
 
@@ -244,6 +268,11 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("mode", choices=("worker", "webui"))
     parser.add_argument("--runtime-user", default="adr")
     parser.add_argument(
+        "--full",
+        action="store_true",
+        help="run Worker imports and SQLite checks in addition to the liveness probe",
+    )
+    parser.add_argument(
         "--url",
         default="http://127.0.0.1:8501/api/health",
         help="WebUI health endpoint for webui mode",
@@ -255,7 +284,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = _parse_args(argv)
     try:
         if args.mode == "worker":
-            _worker_checks(args.runtime_user)
+            _worker_checks(args.runtime_user, full=args.full)
         else:
             _webui_checks(args.url, args.runtime_user)
     except Exception as exc:
