@@ -2,7 +2,7 @@ name: arxiv-daily-researcher
 
 services:
   arxiv-daily-researcher:
-    image: ghcr.io/yzr278892/arxiv-daily-researcher:4.3
+    image: ghcr.io/yzr278892/arxiv-daily-researcher:4.4
     container_name: arxiv-daily-researcher
     restart: unless-stopped
 
@@ -54,7 +54,7 @@ services:
         max-file: "3"
 
   config-panel:
-    image: ghcr.io/yzr278892/arxiv-daily-researcher-config-panel:4.3
+    image: ghcr.io/yzr278892/arxiv-daily-researcher-config-panel:4.4
     container_name: arxiv-daily-researcher-config-panel
     restart: unless-stopped
 

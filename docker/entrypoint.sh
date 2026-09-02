@@ -209,6 +209,16 @@ webui_trigger() {
     adr_run_as_user env PYTHONPATH=/app/src /usr/local/bin/python -m utils.webui_trigger "$@"
 }
 
+has_queued_trigger() {
+    local request_path
+    # Leave malformed requests visible to the Python selector so it can
+    # record a durable rejected status instead of silently ignoring them.
+    for request_path in "$TRIGGER_DIR"/*.json; do
+        [ -f "$request_path" ] && return 0
+    done
+    return 1
+}
+
 # Status receipts and archived restart markers are bounded operational audit
 # data. Run a startup pass so stale files are cleaned even when no new WebUI
 # request is submitted for a while.
@@ -257,29 +267,36 @@ trigger_watcher() {
                 echo "[trigger-watcher] Failed to archive WebUI restart request; leaving it queued"
             fi
         fi
-        # Normal research requests may pass queued history maintenance. The
-        # selector also applies the saved idle/time-window policy before a
-        # history request is claimed, so it never blocks this watcher merely
-        # by being the lexicographically first JSON file.
-        REQUEST_FILE=$(webui_trigger \
-            --next-eligible-request --data-dir /app/data) || \
-            echo "[trigger-watcher] Eligible-request selection failed; will retry"
-        if [ -n "$REQUEST_FILE" ]; then
-            CLAIMED_FILE="${REQUEST_FILE%.json}.running"
-            # Atomic claim prevents a future watcher implementation or a manual
-            # operator invocation from executing the same request twice.
-            if adr_run_as_user mv "$REQUEST_FILE" "$CLAIMED_FILE" 2>/dev/null; then
-                LOG_FILE="/app/logs/manual_$(date +%Y%m%d_%H%M%S).log"
-                echo "[trigger-watcher] Claimed request: $CLAIMED_FILE"
-                # Run synchronously to preserve FIFO ordering and avoid two
-                # resource-heavy WebUI requests competing in one worker.
-                # ``set -e`` applies to this shell too.  Keep a rejected or
-                # failed manual request from terminating the watcher loop (and
-                # therefore the otherwise healthy cron container).
-                RESULT=0
-                webui_trigger "$CLAIMED_FILE" --pid-file "$PID_FILE" \
-                    >> "$LOG_FILE" 2>&1 || RESULT=$?
-                echo "[trigger-watcher] Request finished with exit=$RESULT"
+        # Starting the Python selector has a meaningful import cost. A shell
+        # glob avoids it while the queue is empty, preserving the existing
+        # five-second maximum dispatch latency without changing selection or
+        # history-maintenance scheduling semantics.
+        if has_queued_trigger; then
+            # Normal research requests may pass queued history maintenance. The
+            # selector also applies the saved idle/time-window policy before a
+            # history request is claimed, so it never blocks this watcher merely
+            # by being the lexicographically first JSON file.
+            REQUEST_FILE=""
+            REQUEST_FILE=$(webui_trigger \
+                --next-eligible-request --data-dir /app/data) || \
+                echo "[trigger-watcher] Eligible-request selection failed; will retry"
+            if [ -n "$REQUEST_FILE" ]; then
+                CLAIMED_FILE="${REQUEST_FILE%.json}.running"
+                # Atomic claim prevents a future watcher implementation or a manual
+                # operator invocation from executing the same request twice.
+                if adr_run_as_user mv "$REQUEST_FILE" "$CLAIMED_FILE" 2>/dev/null; then
+                    LOG_FILE="/app/logs/manual_$(date +%Y%m%d_%H%M%S).log"
+                    echo "[trigger-watcher] Claimed request: $CLAIMED_FILE"
+                    # Run synchronously to preserve FIFO ordering and avoid two
+                    # resource-heavy WebUI requests competing in one worker.
+                    # ``set -e`` applies to this shell too.  Keep a rejected or
+                    # failed manual request from terminating the watcher loop (and
+                    # therefore the otherwise healthy cron container).
+                    RESULT=0
+                    webui_trigger "$CLAIMED_FILE" --pid-file "$PID_FILE" \
+                        >> "$LOG_FILE" 2>&1 || RESULT=$?
+                    echo "[trigger-watcher] Request finished with exit=$RESULT"
+                fi
             fi
         fi
         sleep 5

@@ -4,7 +4,7 @@
 
 **基于 LLM 的论文监控、筛选、分析、报告与研究归档系统**
 
-[![Version](https://img.shields.io/badge/version-v4.3-brightgreen.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-v4.4-brightgreen.svg)](CHANGELOG.md)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
@@ -20,7 +20,7 @@
 
 ArXiv Daily Researcher 从 ArXiv 和可选扩展来源收集论文，按研究主题评分、生成摘要翻译和 PDF 分析，并交付 Markdown、HTML 报告与通知。
 
-v4.3 使用 SQLite 保存候选、处理阶段、报告交付、通知发件箱、收藏偏好、历史维护积压与过去日报队列。补充报告独立归档，可将旧目录中的补充报告连同 SQLite 路径一次迁移。LLM 请求将稳定指令置于前缀以利用提供商缓存；Token 用量分别记录普通输入、缓存输入和输出。任务可从已完成阶段恢复；运行配置与源码分离，便于长期部署、升级和备份恢复。Docker Worker 可可靠消费 WebUI 提交的历史维护任务。
+v4.4 使用 SQLite 保存候选、处理阶段、报告交付、通知发件箱、收藏偏好、历史维护积压与过去日报队列。补充报告独立归档，可将旧目录中的补充报告连同 SQLite 路径一次迁移。LLM 请求将稳定指令置于前缀以利用提供商缓存；Token 用量分别记录普通输入、缓存输入和输出。任务可从已完成阶段恢复；运行配置与源码分离，便于长期部署、升级和备份恢复。Docker Worker 在没有 WebUI 请求时不再重复启动 Python 任务选择器，例行健康检查也只校验本地存活状态，降低待机 CPU 占用。
 
 ---
 
@@ -255,12 +255,12 @@ Docker 部署由 `config-panel` 提供服务。WebUI 与 worker 共享 `.env`、
 
 ### 用户部署：根目录 Compose <sup>推荐</sup>
 
-根目录 `docker-compose.yml` 只用于实际部署，固定引用与 v4.3 Release 对应的官方镜像：
+根目录 `docker-compose.yml` 只用于实际部署，固定引用与 v4.4 Release 对应的官方镜像：
 
 | 服务 | 镜像 | 网络与入口 |
 | :--- | :--- | :--- |
-| `arxiv-daily-researcher` | `ghcr.io/yzr278892/arxiv-daily-researcher:4.3` | 宿主机网络；cron、任务队列和 worker |
-| `config-panel` | `ghcr.io/yzr278892/arxiv-daily-researcher-config-panel:4.3` | bridge 网络；`8501:8501` WebUI |
+| `arxiv-daily-researcher` | `ghcr.io/yzr278892/arxiv-daily-researcher:4.4` | 宿主机网络；cron、任务队列和 worker |
+| `config-panel` | `ghcr.io/yzr278892/arxiv-daily-researcher-config-panel:4.4` | bridge 网络；`8501:8501` WebUI |
 
 worker 使用宿主机网络，可直接访问宿主机的本地 LLM 或代理。WebUI 使用显式端口映射；需要从 WebUI 测试宿主机服务时使用 `host.docker.internal`。
 
@@ -473,6 +473,7 @@ arxiv-daily-researcher/
 
 | 版本 | 日期 | 摘要 |
 | :--- | :--- | :--- |
+| **v4.4** | 2026-09-02 | Worker 空队列时跳过 Python 任务选择器，例行健康检查改为轻量存活校验，降低待机 CPU 占用。 |
 | **v4.3** | 2026-09-02 | 修复历史维护队列消费；补充报告独立归档、浏览与 SQLite 路径迁移；Token 用量区分普通输入、缓存输入和输出。 |
 | **v4.2** | 2026-09-01 | 运行配置迁移、历史维护调度、自动收藏、通知测试、报告批次导航、WebUI 局部刷新与用户/测试 Compose 分层。 |
 | **v4.1** | 2026-08-30 | 现代 WebUI、历史维护、多来源归并、诊断与 Token 用量。 |

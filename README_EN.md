@@ -4,7 +4,7 @@
 
 **An LLM-powered system for paper monitoring, selection, analysis, reporting, and research archiving**
 
-[![Version](https://img.shields.io/badge/version-v4.3-brightgreen.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-v4.4-brightgreen.svg)](CHANGELOG.md)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
@@ -20,7 +20,7 @@
 
 ArXiv Daily Researcher collects papers from ArXiv and optional extensions, evaluates them against a research profile, produces translated summaries and PDF analysis, and delivers Markdown, HTML, and notification results.
 
-v4.3 stores candidates, processing stages, report delivery, notification outbox rows, favourite preferences, history-maintenance backlog, and past-date report queues in SQLite. Supplement reports have a separate archive, and legacy supplement artifacts plus their SQLite paths can be migrated together. LLM requests place stable instructions in the prefix for provider cache reuse, and token usage separately records non-cached input, cached input, and output. Workflows resume from completed stages, while live configuration is kept separate from source code for durable deployments, upgrades, and recovery. The Docker Worker reliably consumes history-maintenance requests submitted by the WebUI.
+v4.4 stores candidates, processing stages, report delivery, notification outbox rows, favourite preferences, history-maintenance backlog, and past-date report queues in SQLite. Supplement reports have a separate archive, and legacy supplement artifacts plus their SQLite paths can be migrated together. LLM requests place stable instructions in the prefix for provider cache reuse, and token usage separately records non-cached input, cached input, and output. Workflows resume from completed stages, while live configuration is kept separate from source code for durable deployments, upgrades, and recovery. When no WebUI request is queued, the Docker Worker no longer repeatedly starts the Python task selector, and routine health checks only validate local liveness, reducing idle CPU use.
 
 ---
 
@@ -255,12 +255,12 @@ Screenshots use a current, sanitised test configuration. They contain no API key
 
 ### User Deployment: Root Compose <sup>Recommended</sup>
 
-The root `docker-compose.yml` is only for actual deployments. It pins the official images that match the v4.3 Release:
+The root `docker-compose.yml` is only for actual deployments. It pins the official images that match the v4.4 Release:
 
 | Service | Image | Network and entrypoint |
 | :--- | :--- | :--- |
-| `arxiv-daily-researcher` | `ghcr.io/yzr278892/arxiv-daily-researcher:4.3` | Host network; cron, task queue, and worker |
-| `config-panel` | `ghcr.io/yzr278892/arxiv-daily-researcher-config-panel:4.3` | Bridge network; `8501:8501` WebUI |
+| `arxiv-daily-researcher` | `ghcr.io/yzr278892/arxiv-daily-researcher:4.4` | Host network; cron, task queue, and worker |
+| `config-panel` | `ghcr.io/yzr278892/arxiv-daily-researcher-config-panel:4.4` | Bridge network; `8501:8501` WebUI |
 
 The worker uses host networking and can call a host-local LLM or proxy directly. The WebUI uses an explicit port map; use `host.docker.internal` when testing a host-local service from the panel.
 
@@ -473,6 +473,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the full history.
 
 | Version | Date | Summary |
 | :--- | :--- | :--- |
+| **v4.4** | 2026-09-02 | The Worker skips the Python task selector while its queue is empty, and routine health checks use a lightweight liveness probe to reduce idle CPU use. |
 | **v4.3** | 2026-09-02 | Fixes history-maintenance queue consumption; adds independent supplement archives, browsing, and SQLite path migration; separates non-cached input, cached input, and output token usage. |
 | **v4.2** | 2026-09-01 | Runtime-config migration, history scheduling, automatic favourites, notification tests, report-batch navigation, local WebUI refreshes, and separate user/test Compose files. |
 | **v4.1** | 2026-08-30 | Modern WebUI, history maintenance, multi-source merging, diagnostics, and token usage. |
