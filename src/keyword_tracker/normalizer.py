@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from config import settings
 from utils.llm_request_pool import call_chat_completion
 from utils.llm_health import LLMHealthRecorder
+from utils.llm_usage import record_token_usage as record_llm_token_usage
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +118,7 @@ class KeywordNormalizer:
         self, keywords: List[str], existing_canonical: Optional[List[str]] = None
     ) -> List[NormalizationResult]:
         """处理单个批次"""
-        prompt = self._build_prompt(keywords, existing_canonical)
+        system_prompt, prompt = self._build_prompt_parts(keywords, existing_canonical)
 
         try:
             response = call_chat_completion(
@@ -126,7 +127,7 @@ class KeywordNormalizer:
                 messages=[
                     {
                         "role": "system",
-                        "content": "你是学术关键词标准化专家。请严格按照JSON格式输出。",
+                        "content": system_prompt,
                     },
                     {"role": "user", "content": prompt},
                 ],
@@ -134,11 +135,12 @@ class KeywordNormalizer:
                 response_format={"type": "json_object"},
             )
 
-            if settings.TOKEN_TRACKING_ENABLED and response.usage:
-                from utils.token_counter import token_counter
-
-                token_counter.add(
-                    self.model, response.usage.prompt_tokens, response.usage.completion_tokens
+            usage = getattr(response, "usage", None)
+            if settings.TOKEN_TRACKING_ENABLED and usage:
+                record_llm_token_usage(
+                    self.model,
+                    usage,
+                    len(system_prompt + prompt) // 4,
                 )
             content = response.choices[0].message.content
 
@@ -186,10 +188,10 @@ class KeywordNormalizer:
             logger.error(f"LLM 调用失败: {e}")
             raise
 
-    def _build_prompt(
+    def _build_prompt_parts(
         self, keywords: List[str], existing_canonical: Optional[List[str]] = None
-    ) -> str:
-        """构建标准化提示"""
+    ) -> tuple[str, str]:
+        """Build a stable instruction prefix and one changing data message."""
         existing_str = ""
         if existing_canonical:
             existing_str = f"""
@@ -197,31 +199,40 @@ class KeywordNormalizer:
 {json.dumps(existing_canonical[:50], ensure_ascii=False, indent=2)}
 """
 
-        return f"""请对以下学术关键词进行标准化处理。
+        system_prompt = """你是学术关键词标准化专家。请严格按照 JSON 格式输出。
+
+请对用户提供的学术关键词进行标准化处理。
 
 任务：
 1. 识别同义词、缩写、拼写变体，将它们合并为规范形式
 2. 选择最规范、最常用的形式作为 canonical_form
 3. 如果可以归类，提供 category（如：quantum, machine_learning, optimization, neural_network 等）
 4. 给出归并的置信度（0.5-1.0）
-{existing_str}
-待处理关键词：
-{json.dumps(keywords, ensure_ascii=False, indent=2)}
 
 输出 JSON 格式：
-{{
+{
   "normalizations": [
-    {{
+    {
       "canonical_form": "quantum computing",
       "original_keywords": ["QC", "quantum computation", "quantum computing"],
       "category": "quantum",
       "confidence": 0.95
-    }}
+    }
   ]
-}}
+}
 
 要求：
 - 每个原始关键词必须且只能出现在一个组中
 - 保持学术术语的准确性
 - 英文关键词统一用小写（专有名词除外）
 - 如果某个关键词无法归类，单独作为一组"""
+        prompt = f"""{existing_str}
+待处理关键词：
+{json.dumps(keywords, ensure_ascii=False, indent=2)}"""
+        return system_prompt, prompt
+
+    def _build_prompt(
+        self, keywords: List[str], existing_canonical: Optional[List[str]] = None
+    ) -> str:
+        """Return the user-data segment for callers using the legacy helper."""
+        return self._build_prompt_parts(keywords, existing_canonical)[1]

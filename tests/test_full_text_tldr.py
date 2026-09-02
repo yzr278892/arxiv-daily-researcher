@@ -81,13 +81,14 @@ def _paper_data():
 
 
 class FullTextTldrProvenanceTests(unittest.TestCase):
-    def _agent(self, parsed_text, response, prompts):
+    def _agent(self, parsed_text, response, prompts, system_prompts):
         agent = AnalysisAgent.__new__(AnalysisAgent)
         agent.deep_template = _template()
         agent._download_and_parse_pdf = lambda _url: parsed_text
 
-        def _call(prompt):
+        def _call(prompt, **kwargs):
             prompts.append(prompt)
+            system_prompts.append(kwargs.get("system_prompt", ""))
             return response
 
         agent._call_smart_llm = _call
@@ -95,24 +96,29 @@ class FullTextTldrProvenanceTests(unittest.TestCase):
 
     def test_analysis_marks_pdf_and_abstract_fallback_without_asking_for_fake_full_text(self):
         pdf_prompts = []
+        pdf_system_prompts = []
         pdf_agent = self._agent(
             "parsed PDF text",
             '{"summary": "PDF summary", "full_text_tldr": "PDF-only TLDR"}',
             pdf_prompts,
+            pdf_system_prompts,
         )
         pdf_result = pdf_agent.deep_analyze("A paper", "https://example.test/paper.pdf", "Abstract")
         self.assertEqual(
             pdf_result[ANALYSIS_META_KEY][CONTENT_SOURCE_KEY], CONTENT_SOURCE_PDF
         )
-        self.assertIn("full_text_tldr", pdf_prompts[0])
+        self.assertIn("full_text_tldr", pdf_system_prompts[0])
+        self.assertIn("parsed PDF text", pdf_prompts[0])
 
         fallback_prompts = []
+        fallback_system_prompts = []
         fallback_agent = self._agent(
             None,
             # A nonconforming provider can still send the field; the renderer
             # must not trust it after a local abstract fallback.
             '{"summary": "Abstract summary", "full_text_tldr": "must stay hidden"}',
             fallback_prompts,
+            fallback_system_prompts,
         )
         fallback_result = fallback_agent.deep_analyze(
             "A paper", "https://example.test/paper.pdf", "Abstract"
@@ -121,7 +127,7 @@ class FullTextTldrProvenanceTests(unittest.TestCase):
             fallback_result[ANALYSIS_META_KEY][CONTENT_SOURCE_KEY],
             CONTENT_SOURCE_ABSTRACT_FALLBACK,
         )
-        self.assertNotIn("full_text_tldr", fallback_prompts[0])
+        self.assertNotIn("full_text_tldr", fallback_system_prompts[0])
 
     def test_markdown_renderer_only_shows_full_text_tldr_for_pdf_provenance(self):
         renderer = DeepAnalysisRenderer(FormatHelper("mkdocs"), _template())

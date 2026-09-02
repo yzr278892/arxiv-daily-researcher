@@ -27,7 +27,7 @@ def _score_payload(**overrides):
 class ScoringValidationTests(unittest.TestCase):
     def _agent_with_response(self, payload):
         agent = AnalysisAgent.__new__(AnalysisAgent)
-        agent._call_cheap_llm = lambda _prompt: payload
+        agent._call_cheap_llm = lambda _prompt, **_kwargs: payload
         return agent
 
     def test_rejects_missing_extra_and_out_of_range_keyword_scores(self):
@@ -101,7 +101,7 @@ class ScoringValidationTests(unittest.TestCase):
 
     def test_invalid_score_configuration_fails_before_an_llm_call(self):
         agent = AnalysisAgent.__new__(AnalysisAgent)
-        agent._call_cheap_llm = lambda _prompt: self.fail("LLM must not be called")
+        agent._call_cheap_llm = lambda _prompt, **_kwargs: self.fail("LLM must not be called")
         with patch.object(settings, "MAX_SCORE_PER_KEYWORD", 0):
             with self.assertRaises(ScoreValidationError):
                 agent.score_paper_with_keywords("title", ["Alice"], "abstract", {"kw": 1})

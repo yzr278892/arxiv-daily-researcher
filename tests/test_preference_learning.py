@@ -211,7 +211,7 @@ def _score_payload():
 class LearnedScoringAgentTests(unittest.TestCase):
     def _agent(self):
         agent = AnalysisAgent.__new__(AnalysisAgent)
-        agent._call_cheap_llm = lambda _prompt: _score_payload()
+        agent._call_cheap_llm = lambda _prompt, **_kwargs: _score_payload()
         return agent
 
     def test_learned_adjustment_adds_to_legacy_total(self):
@@ -267,7 +267,7 @@ class LearnedScoringAgentTests(unittest.TestCase):
 
     def test_learned_settings_validated(self):
         agent = self._agent()
-        agent._call_cheap_llm = lambda _prompt: self.fail("LLM must not be called")
+        agent._call_cheap_llm = lambda _prompt, **_kwargs: self.fail("LLM must not be called")
         from agents.analysis_agent import ScoreValidationError
 
         with patch.object(settings, "SCORE_STRATEGY", LEARNED_PREFERENCE_V1), patch.object(

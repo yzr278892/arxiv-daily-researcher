@@ -490,6 +490,10 @@ const MODERN_EN_TRANSLATIONS = Object.freeze({
   "自定义时间段": "Custom range",
   "应用时间段": "Apply range",
   "涉及运行": "Runs",
+  "普通输入": "Non-cached input",
+  "缓存输入": "Cached input",
+  "普通输入 Token": "Non-cached input tokens",
+  "缓存输入 Token": "Cached input tokens",
   "总 Token": "Total tokens",
   "Token 使用趋势": "Token usage trend",
   "所选时间段内暂无用量数据。完成任一涉及 LLM 的任务后，这里会出现统计。": "No usage data in the selected range. Statistics appear after a task that uses an LLM completes.",
@@ -3880,7 +3884,14 @@ function analyticsSeriesRows(rows, window) {
   for (let guard = 0; cursor < end && guard < 9000; guard += 1) {
     const key = analyticsBucketKey(cursor, bucket);
     const row = byBucket.get(key) || {};
-    values.push({ bucket: key, prompt: Number(row.prompt || 0), completion: Number(row.completion || 0), total: Number(row.total || 0), runs: Number(row.runs || 0) });
+    values.push({
+      bucket: key,
+      prompt: Number(row.prompt || 0),
+      cached_prompt: Number(row.cached_prompt || 0),
+      completion: Number(row.completion || 0),
+      total: Number(row.total || 0),
+      runs: Number(row.runs || 0),
+    });
     if (bucket === "hour") cursor.setHours(cursor.getHours() + 1);
     else cursor.setDate(cursor.getDate() + 1);
   }
@@ -3899,7 +3910,7 @@ function tokenTrendChart(rows, window) {
   const sampled = values.length > 366 ? values.filter((_, index) => index % Math.ceil(values.length / 366) === 0) : values;
   const width = 840; const height = 306; const left = 64; const right = 18; const top = 30; const bottom = 43;
   const plotWidth = width - left - right; const plotHeight = height - top - bottom;
-  const rawMax = Math.max(0, ...sampled.map((row) => Math.max(row.prompt, row.completion, row.total)));
+  const rawMax = Math.max(0, ...sampled.map((row) => Math.max(row.prompt, row.cached_prompt, row.completion, row.total)));
   const niceCeiling = (value) => {
     if (value <= 0) return 1;
     const exponent = Math.floor(Math.log10(value));
@@ -3914,10 +3925,12 @@ function tokenTrendChart(rows, window) {
   const linePoints = (key) => sampled.map((row, index) => `${x(index).toFixed(1)},${y(row[key]).toFixed(1)}`).join(" ");
   const points = (key) => sampled.map((row, index) => {
     const label = key === "prompt"
-      ? localeText("输入", "Input")
-      : key === "completion"
-        ? localeText("输出", "Output")
-        : localeText("合计", "Total");
+      ? localeText("普通输入", "Non-cached input")
+      : key === "cached_prompt"
+        ? localeText("缓存输入", "Cached input")
+        : key === "completion"
+          ? localeText("输出", "Output")
+          : localeText("合计", "Total");
     const unit = state.language === "en" ? "tokens" : "Token";
     const title = `${analyticsBucketLabel(row.bucket, window?.bucket)} · ${label} ${formatNumber(row[key])} ${unit}`;
     return `<circle class="trend-point ${key}" cx="${x(index).toFixed(1)}" cy="${y(row[key]).toFixed(1)}" r="${sampled.length > 90 ? "1.5" : "2.25"}"><title>${escapeHtml(title)}</title></circle>`;
@@ -3929,7 +3942,19 @@ function tokenTrendChart(rows, window) {
   const labelCount = Math.min(6, sampled.length);
   const labels = Array.from({ length: labelCount }, (_, index) => labelCount === 1 ? 0 : Math.round(index * (sampled.length - 1) / (labelCount - 1)));
   const labelText = labels.map((index) => `<text x="${x(index).toFixed(1)}" y="${height - 16}" text-anchor="middle">${escapeHtml(analyticsBucketLabel(sampled[index].bucket, window?.bucket))}</text>`).join("");
-  return `<div class="trend-chart"><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Token 使用趋势"><g class="trend-grid">${grid}</g><polyline class="trend-line total" points="${linePoints("total")}"/><polyline class="trend-line prompt" points="${linePoints("prompt")}"/><polyline class="trend-line completion" points="${linePoints("completion")}"/><g class="trend-points">${points("total")}${points("prompt")}${points("completion")}</g><g class="trend-labels">${labelText}</g><g class="trend-legend"><rect x="${left}" y="6" width="11" height="11" class="total"/><text x="${left + 17}" y="15">合计</text><rect x="${left + 74}" y="6" width="11" height="11" class="prompt"/><text x="${left + 91}" y="15">输入</text><rect x="${left + 148}" y="6" width="11" height="11" class="completion"/><text x="${left + 165}" y="15">输出</text></g></svg></div>`;
+  const legend = [
+    ["total", localeText("合计", "Total")],
+    ["prompt", localeText("普通输入", "Non-cached input")],
+    ["cached_prompt", localeText("缓存输入", "Cached input")],
+    ["completion", localeText("输出", "Output")],
+  ];
+  let legendX = left;
+  const legendMarkup = legend.map(([key, label]) => {
+    const markup = `<rect x="${legendX}" y="6" width="11" height="11" class="${key}"/><text x="${legendX + 17}" y="15">${escapeHtml(label)}</text>`;
+    legendX += 29 + label.length * 6.2;
+    return markup;
+  }).join("");
+  return `<div class="trend-chart"><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeAttribute(localeText("Token 使用趋势", "Token usage trend"))}"><g class="trend-grid">${grid}</g><polyline class="trend-line total" points="${linePoints("total")}"/><polyline class="trend-line prompt" points="${linePoints("prompt")}"/><polyline class="trend-line cached_prompt" points="${linePoints("cached_prompt")}"/><polyline class="trend-line completion" points="${linePoints("completion")}"/><g class="trend-points">${points("total")}${points("prompt")}${points("cached_prompt")}${points("completion")}</g><g class="trend-labels">${labelText}</g><g class="trend-legend">${legendMarkup}</g></svg></div>`;
 }
 
 function formatCompactNumber(value) {
@@ -3950,16 +3975,17 @@ function analyticsRangeControl(values) {
 
 function usageSummaryTable(summary) {
   const metrics = [
-    ["输入 Token", formatNumber(summary.prompt)],
-    ["输出 Token", formatNumber(summary.completion)],
-    ["合计 Token", formatNumber(summary.total)],
-    ["涉及运行", formatNumber(summary.runs)],
+    [localeText("普通输入 Token", "Non-cached input tokens"), formatNumber(summary.prompt)],
+    [localeText("缓存输入 Token", "Cached input tokens"), formatNumber(summary.cached_prompt)],
+    [localeText("输出 Token", "Output tokens"), formatNumber(summary.completion)],
+    [localeText("合计 Token", "Total tokens"), formatNumber(summary.total)],
+    [localeText("涉及运行", "Runs"), formatNumber(summary.runs)],
   ];
   return `<div class="table-wrap usage-summary-table"><table><thead><tr>${metrics.map(([label]) => `<th scope="col">${escapeHtml(label)}</th>`).join("")}</tr></thead><tbody><tr>${metrics.map(([, value]) => `<td>${escapeHtml(value)}</td>`).join("")}</tr></tbody></table></div>`;
 }
 
 function analyticsFragments(data, values) {
-  const summary = data.summary || { prompt: 0, completion: 0, total: 0, runs: 0 };
+  const summary = data.summary || { prompt: 0, cached_prompt: 0, completion: 0, total: 0, runs: 0 };
   const hasUsage = Boolean(data.available && ((data.series || []).length || Number(summary.runs) > 0));
   const usage = hasUsage
     ? usageSummaryTable(summary)
@@ -3971,11 +3997,12 @@ function analyticsFragments(data, values) {
     ? tokenHeatmap(data.heatmap_daily || [])
     : '<p class="report-empty-state">暂无历史 Token 使用记录。</p>';
   const modelTable = pagedTable("analytics-models", [
-    { label: "模型", key: "model" },
-    { label: "输入 Token", value: (row) => formatNumber(row.prompt) },
-    { label: "输出 Token", value: (row) => formatNumber(row.completion) },
-    { label: "总 Token", value: (row) => formatNumber(row.total) },
-  ], data.models || [], { empty: "所选时间段内暂无模型使用记录。" });
+    { label: localeText("模型", "Model"), key: "model" },
+    { label: localeText("普通输入 Token", "Non-cached input tokens"), value: (row) => formatNumber(row.prompt) },
+    { label: localeText("缓存输入 Token", "Cached input tokens"), value: (row) => formatNumber(row.cached_prompt) },
+    { label: localeText("输出 Token", "Output tokens"), value: (row) => formatNumber(row.completion) },
+    { label: localeText("总 Token", "Total tokens"), value: (row) => formatNumber(row.total) },
+  ], data.models || [], { empty: localeText("所选时间段内暂无模型使用记录。", "No model usage records in the selected range.") });
   return {
     heatmap,
     summary: `${analyticsRangeControl(values)}${usage}`,

@@ -17,19 +17,31 @@ from config import settings
 from utils.llm_request_pool import call_chat_completion
 from utils.llm_resilience import build_llm_client, llm_retry
 from utils.llm_health import LLMHealthRecorder
+from utils.llm_usage import record_token_usage as record_llm_token_usage
 
 logger = logging.getLogger(__name__)
 
 
 @llm_retry()
-def _llm_call_once(client, model_name: str, temperature: float, prompt: str) -> str:
+def _llm_call_once(
+    client,
+    model_name: str,
+    temperature: float,
+    prompt: str,
+    *,
+    system_prompt: Optional[str] = None,
+) -> str:
     """带自动重试的 LLM 调用（模块级，避免每次调用重建 retry 装饰器）。"""
-    estimated_prompt_tokens = len(prompt) // 4  # 用于重试失败时的近似计数
+    estimated_prompt_tokens = len((system_prompt or "") + prompt) // 4
+    messages = []
+    if isinstance(system_prompt, str) and system_prompt.strip():
+        messages.append({"role": "system", "content": system_prompt.strip()})
+    messages.append({"role": "user", "content": prompt})
     try:
         resp = call_chat_completion(
             client,
             model=model_name,
-            messages=[{"role": "user", "content": prompt}],
+            messages=messages,
             temperature=temperature,
         )
     except Exception:
@@ -39,10 +51,9 @@ def _llm_call_once(client, model_name: str, temperature: float, prompt: str) -> 
 
             token_counter.add(model_name, estimated_prompt_tokens, 0)
         raise
-    if settings.TOKEN_TRACKING_ENABLED and resp.usage:
-        from utils.token_counter import token_counter
-
-        token_counter.add(model_name, resp.usage.prompt_tokens, resp.usage.completion_tokens)
+    usage = getattr(resp, "usage", None)
+    if settings.TOKEN_TRACKING_ENABLED and usage:
+        record_llm_token_usage(model_name, usage, estimated_prompt_tokens)
     return resp.choices[0].message.content.strip()
 
 
@@ -54,10 +65,17 @@ def _llm_call_with_retry(
     *,
     role: str,
     health_recorder: Optional[LLMHealthRecorder] = None,
+    system_prompt: Optional[str] = None,
 ) -> str:
     """Retry a call, then record only its final user-visible outcome."""
     try:
-        result = _llm_call_once(client, model_name, temperature, prompt)
+        result = _llm_call_once(
+            client,
+            model_name,
+            temperature,
+            prompt,
+            system_prompt=system_prompt,
+        )
     except Exception as exc:
         if health_recorder is not None:
             health_recorder(role, model_name, False, exc)
@@ -104,7 +122,9 @@ class TrendAgent:
         """Attach optional passive observability after agent construction."""
         self._health_recorder = health_recorder
 
-    def _call_cheap_llm_plain(self, prompt: str) -> str:
+    def _call_cheap_llm_plain(
+        self, prompt: str, *, system_prompt: Optional[str] = None
+    ) -> str:
         """调用低成本LLM（纯文本模式），带自动重试。"""
         return _llm_call_with_retry(
             self.cheap_client,
@@ -113,9 +133,12 @@ class TrendAgent:
             prompt,
             role="cheap",
             health_recorder=getattr(self, "_health_recorder", None),
+            system_prompt=system_prompt,
         )
 
-    def _call_smart_llm_plain(self, prompt: str) -> str:
+    def _call_smart_llm_plain(
+        self, prompt: str, *, system_prompt: Optional[str] = None
+    ) -> str:
         """调用高性能LLM（纯文本模式），带自动重试。"""
         return _llm_call_with_retry(
             self.smart_client,
@@ -124,6 +147,7 @@ class TrendAgent:
             prompt,
             role="smart",
             health_recorder=getattr(self, "_health_recorder", None),
+            system_prompt=system_prompt,
         )
 
     # ======================================================================
@@ -149,15 +173,16 @@ class TrendAgent:
         categories_str = ", ".join(paper.categories) if paper.categories else "未分类"
         pub_date = paper.published_date.strftime("%Y-%m-%d") if paper.published_date else "未知"
 
-        prompt = f"""你是一位学术论文分析助手。请为以下 arXiv 论文生成一段简洁的中文摘要（TLDR）。
+        system_prompt = """你是一位学术论文分析助手。请为用户提供的 arXiv 论文生成一段简洁的中文摘要（TLDR）。
 
 要求：
 - 用 2-3 句话概括论文的核心贡献
 - 突出技术创新点或实验结果
 - 语言简洁、技术准确
 - 直接输出 TLDR 内容，不要加任何前缀或标记
+"""
 
-论文信息：
+        prompt = f"""论文信息：
 标题：{paper.title}
 作者：{authors_str}
 发表时间：{pub_date}
@@ -165,7 +190,7 @@ class TrendAgent:
 原始摘要：{paper.abstract}"""
 
         try:
-            tldr = self._call_cheap_llm_plain(prompt)
+            tldr = self._call_cheap_llm_plain(prompt, system_prompt=system_prompt)
             return tldr
         except Exception as e:
             logger.error(f"TLDR 生成失败 ({paper.title[:40]}...): {e}")
@@ -281,7 +306,7 @@ class TrendAgent:
         """执行单个趋势分析技能"""
         papers_json = json.dumps(papers_data, ensure_ascii=False, separators=(",", ":"))
 
-        prompt = f"""你是一位资深学术研究分析专家。以下是关键词 "{', '.join(keywords)}" 在 {date_from} ~ {date_to} 期间的 {total_count} 篇 arXiv 论文数据。
+        system_prompt = f"""你是一位资深学术研究分析专家。请根据用户提供的论文数据完成趋势分析。
 
 请根据以下技能要求进行分析：
 
@@ -289,23 +314,27 @@ class TrendAgent:
 
 {skill['instruction']}
 
-### 论文数据（JSON 格式）
-
-```json
-{papers_json}
-```
-
 重要提示：
 - 所有分析必须基于提供的论文数据，不要引用数据集以外的论文
 - 提及具体论文时请使用 arXiv ID 和标题
 - 使用 Markdown 格式输出
 - 分析应有数据支撑，避免空泛论述
 - 直接输出分析结果，不要重复技能要求"""
+        prompt = f"""任务范围：
+关键词：{', '.join(keywords)}
+日期：{date_from} ~ {date_to}
+论文数：{total_count}
+
+### 论文数据（JSON 格式）
+
+```json
+{papers_json}
+```"""
 
         try:
             logger.info(f"  正在调用 {settings.SMART_LLM.model_name} 进行「{skill['label']}」，请稍候...")
             _t0 = time.time()
-            result = self._call_smart_llm_plain(prompt)
+            result = self._call_smart_llm_plain(prompt, system_prompt=system_prompt)
             elapsed = int(time.time() - _t0)
             logger.info(f"  分析完成，用时 {elapsed} 秒")
             return result
@@ -393,16 +422,11 @@ class TrendAgent:
         for i, result in enumerate(batch_results, 1):
             batches_text += f"\n### 批次 {i} 分析结果\n\n{result}\n"
 
-        prompt = f"""你是一位资深学术研究分析专家。以下是对关键词 "{', '.join(keywords)}" 在 {date_from} ~ {date_to} 期间共 {total_count} 篇论文的分批分析结果。
-
-由于论文数量较多，之前按时间段分批进行了分析。现在请你将以下各批次的分析结果合并为一份完整、连贯的分析报告。
+        system_prompt = f"""你是一位资深学术研究分析专家。请将用户提供的分批分析结果合并为一份完整、连贯的分析报告。
 
 ### 技能：{skill['label']}
 
 {skill['instruction']}
-
-### 各批次分析结果
-{batches_text}
 
 要求：
 - 整合各批次的发现，消除重复内容
@@ -410,9 +434,16 @@ class TrendAgent:
 - 明确指出跨时间段的趋势变化
 - 使用 Markdown 格式输出
 - 直接输出合并后的分析结果"""
+        prompt = f"""任务范围：
+关键词：{', '.join(keywords)}
+日期：{date_from} ~ {date_to}
+论文总数：{total_count}
+
+### 各批次分析结果
+{batches_text}"""
 
         try:
-            return self._call_smart_llm_plain(prompt)
+            return self._call_smart_llm_plain(prompt, system_prompt=system_prompt)
         except Exception as e:
             logger.error(f"合并分析结果失败: {e}")
             # 降级：简单拼接

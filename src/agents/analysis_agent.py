@@ -26,6 +26,7 @@ from utils.llm_endpoint_capabilities import (
     record_endpoint_capability,
 )
 from utils.llm_health import LLMHealthRecorder
+from utils.llm_usage import record_token_usage as record_llm_token_usage
 from utils.safe_download import download_external_bytes
 from utils.deep_analysis_contract import (
     ANALYSIS_META_KEY,
@@ -400,14 +401,10 @@ class AnalysisAgent:
     def _record_token_usage(cls, model_name: str, estimated_prompt_tokens: int, usage: Any) -> None:
         if not settings.TOKEN_TRACKING_ENABLED or usage is None:
             return
-        from utils.token_counter import token_counter
-
-        prompt_tokens = cls._usage_value(usage, "prompt_tokens", "input_tokens")
-        completion_tokens = cls._usage_value(usage, "completion_tokens", "output_tokens")
-        token_counter.add(
+        record_llm_token_usage(
             model_name,
-            estimated_prompt_tokens if prompt_tokens is None else prompt_tokens,
-            0 if completion_tokens is None else completion_tokens,
+            usage,
+            estimated_prompt_tokens,
         )
 
     def _call_llm_with_fallback(
@@ -417,6 +414,7 @@ class AnalysisAgent:
         prompt: str,
         temperature: Optional[float],
         response_format: Optional[Dict[str, str]] = None,
+        system_prompt: Optional[str] = None,
     ) -> tuple[str, Any]:
         """Call the provider's supported endpoint without blind route fallback.
 
@@ -429,9 +427,13 @@ class AnalysisAgent:
         """
         last_error: Optional[BaseException] = None
         chat_returned_empty = False
+        messages = []
+        if isinstance(system_prompt, str) and system_prompt.strip():
+            messages.append({"role": "system", "content": system_prompt.strip()})
+        messages.append({"role": "user", "content": prompt})
         chat_kwargs = {
             "model": model,
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": messages,
         }
         if temperature is not None:
             chat_kwargs["temperature"] = temperature
@@ -492,7 +494,13 @@ class AnalysisAgent:
             and responses is not None
             and callable(getattr(responses, "create", None))
         ):
+            # ``instructions`` is the native Responses API system-instruction
+            # field. Keep ``input`` as a portable string: some compatible
+            # gateways accept Responses but do not accept Chat's message-item
+            # shape here.
             response_kwargs = {"model": model, "input": prompt}
+            if isinstance(system_prompt, str) and system_prompt.strip():
+                response_kwargs["instructions"] = system_prompt.strip()
             if temperature is not None:
                 response_kwargs["temperature"] = temperature
             if response_format is not None:
@@ -515,8 +523,15 @@ class AnalysisAgent:
                 minimal_response_kwargs = {
                     key: value
                     for key, value in response_kwargs.items()
-                    if key not in {"temperature", "text"}
+                    if key not in {"temperature", "text", "instructions"}
                 }
+                if isinstance(system_prompt, str) and system_prompt.strip():
+                    # A Responses-compatible gateway that rejects
+                    # ``instructions`` still receives the original task
+                    # semantics through the universally accepted text input.
+                    minimal_response_kwargs["input"] = (
+                        f"{system_prompt.strip()}\n\n{prompt}"
+                    )
                 if minimal_response_kwargs != response_kwargs:
                     try:
                         response = call_responses(client, **minimal_response_kwargs)
@@ -565,9 +580,11 @@ class AnalysisAgent:
             message += f"（最后错误：{detail}）"
         raise LLMResponseError(message) from last_error
 
-    def _call_cheap_llm(self, prompt: str) -> str:
+    def _call_cheap_llm(
+        self, prompt: str, *, system_prompt: Optional[str] = None
+    ) -> str:
         """调用低成本LLM（JSON模式），带自动重试。"""
-        estimated_prompt_tokens = len(prompt) // 4
+        estimated_prompt_tokens = len((system_prompt or "") + prompt) // 4
 
         @llm_retry()
         def _do_call():
@@ -578,6 +595,7 @@ class AnalysisAgent:
                     prompt,
                     settings.CHEAP_LLM.temperature,
                     {"type": "json_object"},
+                    system_prompt,
                 )
             except Exception:
                 if settings.TOKEN_TRACKING_ENABLED:
@@ -598,9 +616,11 @@ class AnalysisAgent:
         self._record_llm_health("cheap", settings.CHEAP_LLM.model_name, True)
         return result
 
-    def _call_cheap_llm_plain(self, prompt: str) -> str:
+    def _call_cheap_llm_plain(
+        self, prompt: str, *, system_prompt: Optional[str] = None
+    ) -> str:
         """调用低成本LLM（纯文本模式），带自动重试。"""
-        estimated_prompt_tokens = len(prompt) // 4
+        estimated_prompt_tokens = len((system_prompt or "") + prompt) // 4
 
         @llm_retry()
         def _do_call():
@@ -610,6 +630,7 @@ class AnalysisAgent:
                     settings.CHEAP_LLM.model_name,
                     prompt,
                     0.3,
+                    system_prompt=system_prompt,
                 )
             except Exception:
                 if settings.TOKEN_TRACKING_ENABLED:
@@ -630,9 +651,11 @@ class AnalysisAgent:
         self._record_llm_health("cheap", settings.CHEAP_LLM.model_name, True)
         return result
 
-    def _call_smart_llm(self, prompt: str) -> str:
+    def _call_smart_llm(
+        self, prompt: str, *, system_prompt: Optional[str] = None
+    ) -> str:
         """调用高性能LLM（JSON模式），带自动重试。"""
-        estimated_prompt_tokens = len(prompt) // 4
+        estimated_prompt_tokens = len((system_prompt or "") + prompt) // 4
 
         @llm_retry()
         def _do_call():
@@ -643,6 +666,7 @@ class AnalysisAgent:
                     prompt,
                     settings.SMART_LLM.temperature,
                     {"type": "json_object"},
+                    system_prompt,
                 )
             except Exception:
                 if settings.TOKEN_TRACKING_ENABLED:
@@ -935,18 +959,13 @@ class AnalysisAgent:
                     "（历史收藏与 v1 及格信号学得的关键词/作者），模型无需考虑。\n"
                 )
 
-        prompt = f"""你是一名学术论文评审专家。请基于以下关键词对论文进行相关性评分，并提取论文信息。
+        system_prompt = f"""你是一名学术论文评审专家。请基于以下关键词对论文进行相关性评分，并提取论文信息。
 
 研究背景:
 {settings.RESEARCH_CONTEXT if settings.RESEARCH_CONTEXT else "通用学术研究"}
 
 评分关键词及权重:
 {keywords_list}
-
-论文信息:
-标题: {title}
-作者: {authors_text}
-摘要: {abstract}
 
 评分任务:
 1. 理解论文的研究内容和主题
@@ -979,9 +998,14 @@ class AnalysisAgent:
 - tldr 应该是一句完整的话，包含研究问题和主要结果
 - extracted_keywords 应提取5-8个最能代表论文内容的关键词或短语
 """
+        prompt = f"""论文信息:
+标题: {title}
+作者: {authors_text}
+摘要: {abstract}
+"""
 
         try:
-            content = self._call_cheap_llm(prompt)
+            content = self._call_cheap_llm(prompt, system_prompt=system_prompt)
             content = self._clean_json_string(content)
 
             try:
@@ -1244,18 +1268,20 @@ class AnalysisAgent:
         score JSON, so repairing one omitted field does not alter the original
         qualification decision or consume a full scoring call.
         """
-        prompt = f"""请为以下学术论文写一条中文 TL;DR。
+        system_prompt = """请为学术论文写一条中文 TL;DR。
 
 要求：
 1. 只输出一句完整中文，不要标题、引号、列表或解释；
 2. 说明研究问题、方法或主要结果中的关键信息；
 3. 不要臆造摘要中未出现的实验结果。
+"""
 
+        prompt = f"""论文信息：
 论文标题：{title}
 论文摘要：{abstract or '（原始摘要缺失，请只根据标题谨慎概括）'}
 """
         try:
-            result = self._call_cheap_llm_plain(prompt)
+            result = self._call_cheap_llm_plain(prompt, system_prompt=system_prompt)
         except Exception as exc:
             logger.warning("TL;DR 补全失败 [%s]: %s", str(title)[:50], exc)
             raise RuntimeError(f"TL;DR 补全失败: {exc}") from exc
@@ -1278,18 +1304,21 @@ class AnalysisAgent:
         返回:
             str: 中文翻译，失败时返回空字符串
         """
-        prompt = f"""请将以下学术论文摘要翻译为中文。要求：
+        system_prompt = """请将学术论文摘要翻译为中文。
+
+要求：
 1. 保持学术术语的准确性
 2. 语句通顺流畅
 3. 保留专业名词的英文（可在首次出现时标注）
 
-英文摘要：
-{abstract}
-
 请直接输出中文翻译，不要添加任何说明或标记。"""
 
+        prompt = f"""英文摘要：
+{abstract}
+"""
+
         try:
-            translation = self._call_cheap_llm_plain(prompt)
+            translation = self._call_cheap_llm_plain(prompt, system_prompt=system_prompt)
             if not translation or not translation.strip():
                 raise RuntimeError("LLM 返回空摘要翻译")
             logger.info(f"摘要翻译完成 [{abstract[:30]}...]")
@@ -1383,34 +1412,34 @@ class AnalysisAgent:
         fields_str = ",\n".join(output_fields)
         field_prompts_str = "\n".join(field_prompts_lines)
 
-        # 使用模板中的系统提示词和用户提示词模板
-        system_prompt = prompts_config.get("analysis_system", "你是一名学术论文分析专家。")
+        # Put the reusable template and schema before paper-specific data.
+        # Prefix-cache providers can then reuse the instruction prefix across
+        # qualified papers without weakening the user-configurable template.
+        configured_system_prompt = prompts_config.get(
+            "analysis_system", "你是一名学术论文分析专家。"
+        )
         analysis_template = prompts_config.get("analysis_template", "")
+        research_context = (
+            settings.RESEARCH_CONTEXT if settings.RESEARCH_CONTEXT else "通用学术研究"
+        )
 
-        # 构建最终prompt
+        # Build the stable instruction prefix. Dynamic placeholders are kept
+        # as explicit references to the following user message rather than
+        # embedding variable paper text in the cacheable prefix.
         if analysis_template:
-            # 使用模板中的格式
-            prompt = analysis_template.format(
-                title=title,
-                content=pdf_text[:15000],
-                research_context=(
-                    settings.RESEARCH_CONTEXT if settings.RESEARCH_CONTEXT else "通用学术研究"
-                ),
+            instructions = analysis_template.format(
+                title="（见下方论文标题）",
+                content="（见下方论文内容）",
+                research_context=research_context,
                 field_prompts=field_prompts_str,
             )
             # The default template lists field instructions but not an actual
             # JSON shape.  Include one here so list/inline modules cannot be
             # mistaken for the old blanket string contract.
-            prompt += f"\n\n输出 JSON 对象字段示例:\n{{\n{fields_str}\n}}"
+            instructions += f"\n\n输出 JSON 对象字段示例:\n{{\n{fields_str}\n}}"
         else:
-            # 备用格式
-            prompt = f"""论文标题: {title}
-
-论文内容:
-{pdf_text[:15000]}
-
-研究背景:
-{settings.RESEARCH_CONTEXT if settings.RESEARCH_CONTEXT else "通用学术研究"}
+            instructions = f"""研究背景:
+{research_context}
 
 分析要求:
 {field_prompts_str}
@@ -1421,14 +1450,21 @@ class AnalysisAgent:
 }}
 """
 
-        if isinstance(system_prompt, str) and system_prompt.strip():
-            prompt = f"{system_prompt.strip()}\n\n{prompt}"
+        stable_parts = []
+        if isinstance(configured_system_prompt, str) and configured_system_prompt.strip():
+            stable_parts.append(configured_system_prompt.strip())
+        stable_parts.append(instructions.strip())
+        stable_parts.append(
+            str(prompts_config.get("field_output_format", "使用JSON格式输出。")).strip()
+        )
+        system_prompt = "\n\n".join(part for part in stable_parts if part)
+        prompt = f"""论文标题: {title}
 
-        # 添加输出格式说明
-        prompt += f"\n\n{prompts_config.get('field_output_format', '使用JSON格式输出。')}"
+论文内容:
+{pdf_text[:15000]}"""
 
         try:
-            content = self._call_smart_llm(prompt)
+            content = self._call_smart_llm(prompt, system_prompt=system_prompt)
             content = self._clean_json_string(content)
 
             try:
