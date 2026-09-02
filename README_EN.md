@@ -20,7 +20,7 @@
 
 ArXiv Daily Researcher collects papers from ArXiv and optional extensions, evaluates them against a research profile, produces translated summaries and PDF analysis, and delivers Markdown, HTML, and notification results.
 
-v4.4 stores candidates, processing stages, report delivery, notification outbox rows, favourite preferences, history-maintenance backlog, and past-date report queues in SQLite. Supplement reports have a separate archive, and legacy supplement artifacts plus their SQLite paths can be migrated together. LLM requests place stable instructions in the prefix for provider cache reuse, and token usage separately records non-cached input, cached input, and output. Workflows resume from completed stages, while live configuration is kept separate from source code for durable deployments, upgrades, and recovery. When no WebUI request is queued, the Docker Worker no longer repeatedly starts the Python task selector, and routine health checks only validate local liveness, reducing idle CPU use.
+v4.4 stores candidates, processing stages, report delivery, notification outbox rows, favourite preferences, history-maintenance backlog, and past-date report queues in SQLite. Supplement reports have a separate archive, and legacy supplement artifacts plus their SQLite paths can be migrated together. LLM requests place stable instructions in the prefix for provider cache reuse, and token usage separately records non-cached input, cached input, and output; trend-chart legends reserve the correct width for Chinese and English labels. Workflows resume from completed stages, while live configuration is kept separate from source code for durable deployments, upgrades, and recovery. When no WebUI request is queued, the Docker Worker no longer repeatedly starts the Python task selector, and routine health checks only validate local liveness, reducing idle CPU use.
 
 ---
 
@@ -473,7 +473,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the full history.
 
 | Version | Date | Summary |
 | :--- | :--- | :--- |
-| **v4.4** | 2026-09-02 | The Worker skips the Python task selector while its queue is empty, and routine health checks use a lightweight liveness probe to reduce idle CPU use. |
+| **v4.4** | 2026-09-02 | The Worker skips the Python task selector while its queue is empty, and routine health checks use a lightweight liveness probe to reduce idle CPU use; usage trend-chart legends no longer overlap in Chinese or English. |
 | **v4.3** | 2026-09-02 | Fixes history-maintenance queue consumption; adds independent supplement archives, browsing, and SQLite path migration; separates non-cached input, cached input, and output token usage. |
 | **v4.2** | 2026-09-01 | Runtime-config migration, history scheduling, automatic favourites, notification tests, report-batch navigation, local WebUI refreshes, and separate user/test Compose files. |
 | **v4.1** | 2026-08-30 | Modern WebUI, history maintenance, multi-source merging, diagnostics, and token usage. |
