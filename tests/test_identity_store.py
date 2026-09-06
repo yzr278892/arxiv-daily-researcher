@@ -50,6 +50,19 @@ def _hf_paper(arxiv_id: str) -> PaperMetadata:
     )
 
 
+def _doi_paper(doi: str, source: str = "prb") -> PaperMetadata:
+    return PaperMetadata(
+        paper_id=doi,
+        title="DOI paper",
+        authors=["Author"],
+        abstract="abstract",
+        published_date=datetime.now(timezone.utc),
+        url="https://example.invalid/paper",
+        source=source,
+        doi=doi,
+    )
+
+
 def _source_receipt(source: str, status: str = "succeeded") -> dict:
     return {
         "source": source,
@@ -451,6 +464,52 @@ class IdentityStoreTests(unittest.TestCase):
             previous = store.get_previous_version_record("arxiv", v2)
             self.assertEqual(previous["paper_id"], "2501.12345v1")
             self.assertEqual(previous["version"], 1)
+
+    def test_doi_identity_migration_keeps_pending_metadata_in_sync(self):
+        """A deferred DOI paper remains selectable after its identity is normalized."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "daily.db"
+            doi_url = "https://doi.org/10.1103/84nx-1r8c"
+            store = DailyResearchStore(db_path)
+            run_id = store.start_run(0)
+            store.register_paper_candidates(run_id, {"prb": [_doi_paper(doi_url)]})
+
+            # Reopening runs the migration that v4.4 performed only on the
+            # database columns.  The persisted payload must receive the same
+            # DOI form because it is reconstructed by the pending queue.
+            repaired = DailyResearchStore(db_path)
+            record = repaired.get_paper_record("prb", doi_url)
+            payload = json.loads(record["paper_json"])
+
+            self.assertEqual(record["canonical_id"], "10.1103/84nx-1r8c")
+            self.assertEqual(record["version"], 0)
+            self.assertEqual(payload["canonical_id"], "10.1103/84nx-1r8c")
+            self.assertIsNone(payload["version"])
+            selected, total = repaired.select_pending_papers(["prb"])
+            self.assertEqual(total, 1)
+            self.assertEqual(selected["prb"][0].paper_id, doi_url)
+
+    def test_doi_identity_migration_repairs_previously_normalized_columns(self):
+        """Repair v4.4 rows whose SQLite columns were fixed before their JSON."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "daily.db"
+            doi_url = "https://doi.org/10.1103/84nx-1r8c"
+            store = DailyResearchStore(db_path)
+            run_id = store.start_run(0)
+            store.register_paper_candidates(run_id, {"prb": [_doi_paper(doi_url)]})
+            with store._connect() as conn:
+                conn.execute(
+                    "UPDATE daily_papers SET canonical_id = ? "
+                    "WHERE source = ? AND paper_id = ?",
+                    ("10.1103/84nx-1r8c", "prb", doi_url),
+                )
+
+            repaired = DailyResearchStore(db_path)
+            payload = json.loads(repaired.get_paper_record("prb", doi_url)["paper_json"])
+
+            self.assertEqual(payload["canonical_id"], "10.1103/84nx-1r8c")
+            self.assertIsNone(payload["version"])
+            self.assertEqual(repaired.select_pending_papers(["prb"])[1], 1)
 
     def test_delivery_identity_migration_deduplicates_legacy_doi_aliases(self):
         """A DOI URL and bare DOI may merge after a legacy-history import."""

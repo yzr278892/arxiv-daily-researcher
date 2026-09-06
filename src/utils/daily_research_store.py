@@ -553,7 +553,15 @@ class DailyResearchStore:
 
     @staticmethod
     def _migrate_paper_identity(conn):
-        """Add identity columns to databases created by the first persistence patch."""
+        """Keep persisted paper identity columns and metadata JSON consistent.
+
+        ``daily_papers`` predates the exact source/version identity columns.
+        The JSON payload remains the durable reconstruction input for a
+        deferred paper, so normalising only the columns leaves a queue row
+        that correctly fails its later identity check.  Repair both
+        representations together whenever the original metadata still
+        identifies the same source record.
+        """
         columns = {
             row["name"]
             for row in conn.execute("PRAGMA table_info(daily_papers)").fetchall()
@@ -572,7 +580,7 @@ class DailyResearchStore:
             return
 
         rows = conn.execute(
-            "SELECT source, paper_id, canonical_id, version FROM daily_papers"
+            "SELECT source, paper_id, canonical_id, version, paper_json FROM daily_papers"
         ).fetchall()
         for row in rows:
             canonical_id, desired_version = DailyResearchStore._migration_identity(
@@ -582,11 +590,42 @@ class DailyResearchStore:
                 row["version"],
                 paper_identity,
             )
-            if row["canonical_id"] != canonical_id or row["version"] != desired_version:
+            paper_json = row["paper_json"]
+            try:
+                payload = json.loads(paper_json)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                payload = None
+            if (
+                isinstance(payload, dict)
+                and payload.get("source") == row["source"]
+                and payload.get("paper_id") == row["paper_id"]
+            ):
+                # SQLite uses zero for a source without a version; the
+                # metadata contract uses null.  A JSON zero would be rejected
+                # by PaperMetadata.from_dict on the next deferred run.
+                metadata_version = desired_version if desired_version > 0 else None
+                if (
+                    payload.get("canonical_id") != canonical_id
+                    or payload.get("version") != metadata_version
+                ):
+                    payload["canonical_id"] = canonical_id
+                    payload["version"] = metadata_version
+                    paper_json = json.dumps(payload, ensure_ascii=False)
+            if (
+                row["canonical_id"] != canonical_id
+                or row["version"] != desired_version
+                or row["paper_json"] != paper_json
+            ):
                 conn.execute(
-                    "UPDATE daily_papers SET canonical_id = ?, version = ? "
+                    "UPDATE daily_papers SET canonical_id = ?, version = ?, paper_json = ? "
                     "WHERE source = ? AND paper_id = ?",
-                    (canonical_id, desired_version, row["source"], row["paper_id"]),
+                    (
+                        canonical_id,
+                        desired_version,
+                        paper_json,
+                        row["source"],
+                        row["paper_id"],
+                    ),
                 )
 
     @staticmethod
