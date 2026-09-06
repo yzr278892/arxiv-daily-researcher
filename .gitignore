@@ -40,6 +40,9 @@ __pycache__/
 /test/
 /promo/
 
+# Retired screenshots from the legacy interface
+/assets/img_*.png
+
 # OS and temporary files
 .DS_Store
 Thumbs.db
