@@ -988,7 +988,7 @@ function applyTheme() {
   const theme = state.theme === "dark" ? "dark" : "light";
   document.documentElement.dataset.theme = theme;
   document.documentElement.style.colorScheme = theme;
-  const color = theme === "dark" ? "#111827" : "#f7f9fc";
+  const color = theme === "dark" ? "#0a0a0c" : "#fafafa";
   $("meta[name='theme-color']")?.setAttribute("content", color);
   const button = $("#theme-button");
   if (button) button.textContent = theme === "dark" ? localeText("浅色模式", "Light mode") : localeText("深色模式", "Dark mode");
