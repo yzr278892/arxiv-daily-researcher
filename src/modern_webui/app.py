@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import sys
+import threading
 import time
 from functools import partial
 from pathlib import Path
@@ -48,12 +49,46 @@ from modern_webui.auth import (  # noqa: E402
     verify_password_hash,
 )
 from modern_webui.i18n import client_catalogue  # noqa: E402
-from utils.config_io import read_env, write_env  # noqa: E402
+from utils.config_io import DEFAULT_ENV_PATH, read_env, write_env  # noqa: E402
 
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 _MAX_JSON_BYTES = 1_000_000
 _ASSET_VERSION_TOKEN = "__ASSET_VERSION__"
+
+# Every authenticated endpoint resolves the session against ``.env``.  On a
+# slow volume that file read dominated small status polls, so keep the parsed
+# values in-process and re-read only when the file signature changes.  Every
+# write path (setup, account and settings saves) goes through ``write_env``'s
+# atomic replacement, which changes the signature.  A replaced ``read_env``
+# (tests or embedding layers) bypasses the cache and is honoured directly.
+_ENV_CACHE_LOCK = threading.Lock()
+_ENV_CACHE_SIGNATURE: tuple[int, int, int] | None = None
+_ENV_CACHE_VALUES: dict[str, str] | None = None
+_ORIGINAL_READ_ENV = read_env
+
+
+def _cached_env() -> dict[str, str]:
+    global _ENV_CACHE_SIGNATURE, _ENV_CACHE_VALUES
+    if read_env is not _ORIGINAL_READ_ENV:
+        return read_env()
+    try:
+        stat = DEFAULT_ENV_PATH.stat()
+        signature: tuple[int, int, int] | None = (
+            stat.st_mtime_ns,
+            stat.st_size,
+            stat.st_ino,
+        )
+    except OSError:
+        signature = None
+    with _ENV_CACHE_LOCK:
+        if _ENV_CACHE_VALUES is not None and _ENV_CACHE_SIGNATURE == signature:
+            return _ENV_CACHE_VALUES
+    values = read_env()
+    with _ENV_CACHE_LOCK:
+        _ENV_CACHE_SIGNATURE = signature
+        _ENV_CACHE_VALUES = values
+    return values
 
 
 class VersionedStaticFiles(StaticFiles):
@@ -107,7 +142,7 @@ async def _blocking_call(function: Any, /, *args: Any, **kwargs: Any) -> Any:
 
 
 def _auth_config():
-    return read_auth_config(read_env())
+    return read_auth_config(_cached_env())
 
 
 def _session_secret() -> str:

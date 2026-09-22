@@ -21,7 +21,7 @@ import sqlite3
 import tempfile
 import time
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
+from pathlib import Path, PurePath
 from threading import RLock
 from typing import Any, Iterable, Mapping
 
@@ -267,6 +267,17 @@ _RUNTIME_CACHE_LOCK = RLock()
 _FLAT_CONFIG_CACHE: dict[str, Any] | None = None
 _FLAT_CONFIG_CACHE_SIGNATURE: tuple[Path, int | None, int | None, int | None] | None = None
 _STORE_CACHE: dict[Path, DailyResearchStore] = {}
+# Report browsing used to re-walk every report directory, re-read the first
+# 128 KiB of every daily artifact for legacy-supplement detection, and resolve
+# each path on every request.  On a NAS or bind mount that dominated the page
+# load.  These caches are keyed by file (mtime_ns, size) signatures, so a
+# worker writing, moving or deleting a report invalidates them naturally.
+_REPORTS_LIST_CACHE: dict[
+    tuple[Path, bool], tuple[tuple[Any, ...], dict[str, list[dict[str, Any]]]]
+] = {}
+_LEGACY_SUPPLEMENT_CACHE: dict[Path, tuple[int, int, bool]] = {}
+_REPORT_PAPERS_CACHE: dict[Path, tuple[tuple[int, int], list[dict[str, Any]]]] = {}
+_REPORT_ROOT_RESOLVE_CACHE: dict[Path, Path] = {}
 
 
 class ModernWebUIError(ValueError):
@@ -897,16 +908,18 @@ def run_status(kind: str = "daily") -> dict[str, Any]:
         "history": set(HISTORY_MODES),
     }
     wanted = mode_map.get(kind, mode_map["daily"])
-    records = task_records(wanted)
+    # ``task_records`` globs and parses the trigger queue plus every status
+    # receipt on disk.  The page kind and the launch guard both need the same
+    # records, so collect the supported set once and filter in memory.
+    all_records = task_records(SUPPORTED_MODES)
+    records = [row for row in all_records if row["mode"] in wanted]
     live_records = [row for row in records if row["state"] in {"queued", "starting", "running"}]
     # The watcher accepts one trigger at a time.  Daily and trend launchers
     # therefore follow the Streamlit guard and wait until any just-submitted
     # request is handed to a worker; past-date jobs remain queueable behind a
     # running job by design.
     all_live_records = [
-        row
-        for row in task_records(SUPPORTED_MODES)
-        if row["state"] in {"queued", "starting", "running"}
+        row for row in all_records if row["state"] in {"queued", "starting", "running"}
     ]
     relevant_locks = _locks_for_kind(locks, kind)
     # The Streamlit daily landing page is an operational overview.  It keeps
@@ -1587,6 +1600,10 @@ def _analytics_window(
         days = int(key[:-1])
         start = current.replace(hour=0, minute=0, second=0) - timedelta(days=days - 1)
         return start, current, "day", key
+    if key == "1y":
+        # 近一年：包含当天在内的连续 365 个自然日，仍按天聚合，由前端按月汇总成柱状图。
+        start = current.replace(hour=0, minute=0, second=0) - timedelta(days=364)
+        return start, current, "day", key
     if key != "custom":
         raise ModernWebUIError("用量统计时间范围无效。")
     try:
@@ -1683,6 +1700,25 @@ def _report_token(path: Path, root: Path) -> str:
     return base64.urlsafe_b64encode(relative).decode("ascii").rstrip("=")
 
 
+def _resolved_report_root(root: Path) -> Path:
+    """Cache the resolved report root shared by every file request.
+
+    ``root.resolve()`` walks each path component on the filesystem.  Serving a
+    report preview used to pay that cost twice per request, which is visible
+    on network or bind-mounted report directories.
+    """
+
+    with _RUNTIME_CACHE_LOCK:
+        cached = _REPORT_ROOT_RESOLVE_CACHE.get(root)
+    if cached is not None:
+        return cached
+    resolved = root.resolve()
+    with _RUNTIME_CACHE_LOCK:
+        if len(_REPORT_ROOT_RESOLVE_CACHE) >= 16:
+            _REPORT_ROOT_RESOLVE_CACHE.clear()
+        return _REPORT_ROOT_RESOLVE_CACHE.setdefault(root, resolved)
+
+
 def _report_path(token: str, root: Path) -> Path:
     if not isinstance(token, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,2048}", token):
         raise ModernWebUIError("报告标识无效。")
@@ -1690,9 +1726,10 @@ def _report_path(token: str, root: Path) -> Path:
         raw = base64.urlsafe_b64decode(token + "=" * (-len(token) % 4)).decode("utf-8")
     except (ValueError, UnicodeDecodeError):
         raise ModernWebUIError("报告标识无效。") from None
-    candidate = (root / raw).resolve()
+    resolved_root = _resolved_report_root(root)
+    candidate = (resolved_root / raw).resolve()
     try:
-        candidate.relative_to(root.resolve())
+        candidate.relative_to(resolved_root)
     except ValueError as exc:
         raise ModernWebUIError("报告路径无效。") from exc
     if candidate.suffix.lower() != ".html" or not candidate.is_file():
@@ -2088,15 +2125,51 @@ def _report_source(path: Path, root: Path) -> str:
     return _safe_report_source(match.group(1) if match else "arxiv")
 
 
+def _source_from_artifact_relative(relative: PurePath) -> str:
+    """Derive the source key from a path already relative to an artifact root.
+
+    ``_report_source`` resolves both the file and each candidate root, which
+    costs several filesystem calls per report during a directory rebuild.
+    Directory listings already know the relative path, so reuse the exact same
+    nested-or-filename rule without touching the filesystem.
+    """
+
+    if len(relative.parts) > 1:
+        return _safe_report_source(relative.parts[0])
+    match = re.match(r"(.+?)_Report_", Path(relative).stem, re.IGNORECASE)
+    return _safe_report_source(match.group(1) if match else "arxiv")
+
+
 def _legacy_supplement_content(path: Path) -> bool:
-    """Identify an old supplement from its generated title, not a filename."""
+    """Identify an old supplement from its generated title, not a filename.
+
+    The verdict depends only on the file's first 128 KiB, so it is cached by
+    the file's ``(mtime_ns, size)`` signature.  Archives hold hundreds of
+    static daily reports; re-reading each one on every directory request was
+    the single largest I/O cost of the report browser on slow storage.
+    """
+
+    try:
+        stat = path.stat()
+    except OSError:
+        return False
+    with _RUNTIME_CACHE_LOCK:
+        cached = _LEGACY_SUPPLEMENT_CACHE.get(path)
+    if cached is not None and cached[0] == stat.st_mtime_ns and cached[1] == stat.st_size:
+        return cached[2]
     try:
         text = path.read_bytes()[:131_072].decode("utf-8", errors="replace")
     except OSError:
         return False
     if path.suffix.lower() == ".html":
-        return bool(_SUPPLEMENT_HTML_MARKER_RE.search(text))
-    return bool(_SUPPLEMENT_MARKDOWN_MARKER_RE.search(text))
+        verdict = bool(_SUPPLEMENT_HTML_MARKER_RE.search(text))
+    else:
+        verdict = bool(_SUPPLEMENT_MARKDOWN_MARKER_RE.search(text))
+    with _RUNTIME_CACHE_LOCK:
+        if len(_LEGACY_SUPPLEMENT_CACHE) >= 8192:
+            _LEGACY_SUPPLEMENT_CACHE.clear()
+        _LEGACY_SUPPLEMENT_CACHE[path] = (stat.st_mtime_ns, stat.st_size, verdict)
+    return verdict
 
 
 def _legacy_supplement_paths(
@@ -2266,11 +2339,53 @@ def migrate_supplement_reports() -> dict[str, int | bool]:
         raise ModernWebUIError("有运行中的任务正在使用数据库，请等待任务完成后再迁移补充报告。") from exc
 
 
+def _reports_directory_snapshot(root: Path) -> tuple[tuple[str, int, int], ...]:
+    """Collect a cheap change signature for every tree the browser reads.
+
+    The snapshot covers exactly the artefact directories that feed
+    :func:`list_reports`: daily and supplement HTML/Markdown archives, trend
+    HTML plus its sibling Markdown metadata, and keyword-trend reports.  Each
+    entry is ``(relative path, mtime_ns, size)``, collected with ``os.walk``
+    so a rebuilt listing is only needed when a file is added, removed,
+    renamed, or rewritten.
+    """
+
+    signature: list[tuple[str, int, int]] = []
+    bases = (
+        root / "daily_research" / "html",
+        root / "daily_research" / "markdown",
+        root / "trend_research" / "html",
+        root / "trend_research" / "markdown",
+        root / "keyword_trend" / "html",
+        root / "other_reports" / "supplement" / "html",
+        root / "other_reports" / "supplement" / "markdown",
+    )
+    for base in bases:
+        if not base.is_dir():
+            continue
+        for current, dirnames, filenames in os.walk(base):
+            dirnames.sort()
+            for name in sorted(dirnames):
+                entry = Path(current) / name
+                try:
+                    stat = entry.stat()
+                    relative = str(entry.relative_to(root))
+                except (OSError, ValueError):
+                    continue
+                signature.append((relative, stat.st_mtime_ns, stat.st_size))
+            for name in sorted(filenames):
+                entry = Path(current) / name
+                try:
+                    stat = entry.stat()
+                    relative = str(entry.relative_to(root))
+                except (OSError, ValueError):
+                    continue
+                signature.append((relative, stat.st_mtime_ns, stat.st_size))
+    return tuple(signature)
+
+
 def list_reports(show_non_arxiv: bool = False) -> dict[str, list[dict[str, Any]]]:
     root = configured_reports_dir()
-    groups: dict[str, list[dict[str, Any]]] = {"daily": [], "trend": [], "other": []}
-    if not root.is_dir():
-        return groups
     # Loading config.json (JSON5) once is significant on small NAS devices;
     # source labels are shared by every report row in this response.
     labels = _report_source_labels()
@@ -2284,53 +2399,81 @@ def list_reports(show_non_arxiv: bool = False) -> dict[str, list[dict[str, Any]]
             }
         except (OSError, ValueError, json.JSONDecodeError):
             logger.warning("无法读取补充报告 SQLite 路径；将使用报告标题识别旧文件")
-    legacy_supplements = set(
-        _legacy_supplement_paths(root, known_references=known_references)
+    snapshot = _reports_directory_snapshot(root)
+    signature = (
+        snapshot,
+        tuple(sorted(labels.items())),
+        frozenset(known_references),
     )
-    daily_root = root / "daily_research" / "html"
-    if daily_root.is_dir():
-        for path in daily_root.rglob("*.html"):
-            if not path.is_file():
-                continue
-            source = _report_source(path, root)
-            if not show_non_arxiv and source != "arxiv":
-                continue
-            target_group = "other" if path in legacy_supplements else "daily"
-            report_type = "supplement" if target_group == "other" else "daily"
-            groups[target_group].append(
-                _report_row(path, root, report_type, source, labels=labels)
-            )
-    trend_root = root / "trend_research" / "html"
-    if trend_root.is_dir():
-        for path in trend_root.rglob("*.html"):
-            if path.is_file():
-                relative = path.relative_to(trend_root)
-                source = relative.parts[0] if len(relative.parts) > 1 else "trend"
-                groups["trend"].append(_report_row(path, root, "trend", source, labels=labels))
-    keyword_root = root / "keyword_trend" / "html"
-    if keyword_root.is_dir():
-        for path in keyword_root.glob("*.html"):
-            if path.is_file():
-                groups["other"].append(
-                    _report_row(path, root, "keyword_trend", "keyword_trend", labels=labels)
+    cache_key = (root, bool(show_non_arxiv))
+    with _RUNTIME_CACHE_LOCK:
+        cached = _REPORTS_LIST_CACHE.get(cache_key)
+    if cached is not None and cached[0] == signature:
+        # Callers only serialise these rows; a per-group list copy keeps the
+        # cached rows themselves private to the cache.
+        return {group: list(rows) for group, rows in cached[1].items()}
+
+    groups: dict[str, list[dict[str, Any]]] = {"daily": [], "trend": [], "other": []}
+    if root.is_dir():
+        legacy_supplements = set(
+            _legacy_supplement_paths(root, known_references=known_references)
+        )
+        daily_root = root / "daily_research" / "html"
+        if daily_root.is_dir():
+            for path in daily_root.rglob("*.html"):
+                if not path.is_file():
+                    continue
+                try:
+                    relative = path.relative_to(daily_root)
+                except ValueError:
+                    continue
+                source = _source_from_artifact_relative(relative)
+                if not show_non_arxiv and source != "arxiv":
+                    continue
+                target_group = "other" if path in legacy_supplements else "daily"
+                report_type = "supplement" if target_group == "other" else "daily"
+                groups[target_group].append(
+                    _report_row(path, root, report_type, source, labels=labels)
                 )
-    supplement_root = root / "other_reports" / "supplement" / "html"
-    if supplement_root.is_dir():
-        for path in supplement_root.rglob("*.html"):
-            if not path.is_file():
-                continue
-            source = _report_source(path, root)
-            if not show_non_arxiv and source != "arxiv":
-                continue
-            groups["other"].append(
-                _report_row(path, root, "supplement", source, labels=labels)
-            )
-    for name, values in groups.items():
-        values.sort(key=lambda item: item["sort_key"], reverse=True)
-        _disambiguate_report_labels(values)
-        for row in values:
-            row.pop("sort_key", None)
-    return groups
+        trend_root = root / "trend_research" / "html"
+        if trend_root.is_dir():
+            for path in trend_root.rglob("*.html"):
+                if path.is_file():
+                    relative = path.relative_to(trend_root)
+                    source = relative.parts[0] if len(relative.parts) > 1 else "trend"
+                    groups["trend"].append(_report_row(path, root, "trend", source, labels=labels))
+        keyword_root = root / "keyword_trend" / "html"
+        if keyword_root.is_dir():
+            for path in keyword_root.glob("*.html"):
+                if path.is_file():
+                    groups["other"].append(
+                        _report_row(path, root, "keyword_trend", "keyword_trend", labels=labels)
+                    )
+        supplement_root = root / "other_reports" / "supplement" / "html"
+        if supplement_root.is_dir():
+            for path in supplement_root.rglob("*.html"):
+                if not path.is_file():
+                    continue
+                try:
+                    relative = path.relative_to(supplement_root)
+                except ValueError:
+                    continue
+                source = _source_from_artifact_relative(relative)
+                if not show_non_arxiv and source != "arxiv":
+                    continue
+                groups["other"].append(
+                    _report_row(path, root, "supplement", source, labels=labels)
+                )
+        for name, values in groups.items():
+            values.sort(key=lambda item: item["sort_key"], reverse=True)
+            _disambiguate_report_labels(values)
+            for row in values:
+                row.pop("sort_key", None)
+    with _RUNTIME_CACHE_LOCK:
+        if len(_REPORTS_LIST_CACHE) >= 16:
+            _REPORTS_LIST_CACHE.clear()
+        _REPORTS_LIST_CACHE[cache_key] = (signature, groups)
+    return {group: list(rows) for group, rows in groups.items()}
 
 
 def _report_row(
@@ -2463,6 +2606,37 @@ def report_papers(token: str) -> list[dict[str, Any]]:
     """Expose daily or supplement card identities and preference state."""
     path, _ = report_file(token)
     source = _report_source(path, configured_reports_dir())
+    # Creating the tiny local ledger here makes legacy reports immediately
+    # markable, matching Streamlit's in-report controls.  This does not add
+    # any paper-delivery history; it only stores an explicit user preference.
+    store = open_store(create=True)
+    rows = _report_paper_rows(path, source)
+    preferences = store.get_preference_map(rows) if store is not None and rows else {}
+    for row in rows:
+        row["preference"] = preferences.get(
+            (str(row["source"]), str(row["paper_id"])), "none"
+        )
+    return rows
+
+
+def _report_paper_rows(path: Path, source: str) -> list[dict[str, Any]]:
+    """Return the static card rows for one report, cached by file signature.
+
+    ``parse_legacy_report_file`` reads and regex-parses the full HTML archive
+    (often hundreds of KiB) on every preview.  The card identities only change
+    when the file itself changes, so keep the parsed rows keyed by
+    ``(mtime_ns, size)`` and only re-read preferences, which stay live.
+    """
+
+    try:
+        stat = path.stat()
+    except OSError:
+        return []
+    stamp = (stat.st_mtime_ns, stat.st_size)
+    with _RUNTIME_CACHE_LOCK:
+        cached = _REPORT_PAPERS_CACHE.get(path)
+    if cached is not None and cached[0] == stamp:
+        return [dict(row) for row in cached[1]]
     try:
         from utils.legacy_history import parse_legacy_report_file
 
@@ -2485,16 +2659,11 @@ def report_papers(token: str) -> list[dict[str, Any]]:
                     "categories": [],
                 }
             )
-    # Creating the tiny local ledger here makes legacy reports immediately
-    # markable, matching Streamlit's in-report controls.  This does not add
-    # any paper-delivery history; it only stores an explicit user preference.
-    store = open_store(create=True)
-    preferences = store.get_preference_map(rows) if store is not None and rows else {}
-    for row in rows:
-        row["preference"] = preferences.get(
-            (str(row["source"]), str(row["paper_id"])), "none"
-        )
-    return rows
+    with _RUNTIME_CACHE_LOCK:
+        if len(_REPORT_PAPERS_CACHE) >= 64:
+            _REPORT_PAPERS_CACHE.clear()
+        _REPORT_PAPERS_CACHE[path] = (stamp, rows)
+    return [dict(row) for row in rows]
 
 
 def local_backups() -> list[dict[str, Any]]:

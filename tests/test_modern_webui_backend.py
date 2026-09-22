@@ -513,6 +513,74 @@ class ModernBackendTests(unittest.TestCase):
             {legacy_supplement.name, supplement.name},
         )
 
+    def test_report_list_cache_rebuilds_when_archive_files_change(self) -> None:
+        """A cached directory must notice new, rewritten and moved artifacts."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "reports"
+            daily_dir = root / "daily_research" / "html" / "arxiv"
+            daily_dir.mkdir(parents=True)
+            first = daily_dir / "ARXIV_Report_2026-09-01_12-00-00.html"
+            first.write_text("<html><title>Daily report</title></html>", encoding="utf-8")
+            with patch.object(backend, "configured_reports_dir", return_value=root), patch.object(
+                backend, "open_store", return_value=None
+            ), patch.object(backend, "_report_source_labels", return_value={"arxiv": "arXiv"}):
+                before = backend.list_reports(show_non_arxiv=True)
+                # A repeat read is served by the cache and must stay identical.
+                repeated = backend.list_reports(show_non_arxiv=True)
+                second = daily_dir / "ARXIV_Report_2026-09-02_12-00-00.html"
+                second.write_text("<html><title>Daily report</title></html>", encoding="utf-8")
+                after = backend.list_reports(show_non_arxiv=True)
+                # Rewriting one file as a legacy supplement must reclassify it.
+                first.write_text(
+                    "<html><title>arXiv Report Supplement Report</title>"
+                    "<h1>arXiv 补充报告 (Supplement Report)</h1></html>",
+                    encoding="utf-8",
+                )
+                reclassified = backend.list_reports(show_non_arxiv=True)
+
+        self.assertEqual([row["name"] for row in before["daily"]], [first.name])
+        self.assertEqual(
+            [row["name"] for row in repeated["daily"]], [first.name]
+        )
+        self.assertEqual(
+            {row["name"] for row in after["daily"]}, {first.name, second.name}
+        )
+        self.assertEqual(
+            [row["name"] for row in reclassified["daily"]], [second.name]
+        )
+        self.assertEqual(
+            {row["name"] for row in reclassified["other"]}, {first.name}
+        )
+
+    def test_report_paper_rows_follow_the_report_file(self) -> None:
+        """Parsed card rows are cached by signature and refreshed on rewrite."""
+
+        def card(title: str, paper_id: str) -> str:
+            return (
+                '<div class="card pass"><div class="card-title">'
+                f'<a href="https://arxiv.org/abs/{paper_id}">{title}</a></div></div>'
+            )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "reports"
+            daily_dir = root / "daily_research" / "html" / "arxiv"
+            daily_dir.mkdir(parents=True)
+            report = daily_dir / "ARXIV_Report_2026-09-01_12-00-00.html"
+            report.write_text(card("First paper", "2609.00001"), encoding="utf-8")
+            with patch.object(backend, "configured_reports_dir", return_value=root), patch.object(
+                backend, "open_store", return_value=None
+            ):
+                token = backend._report_token(report, root)
+                first = backend.report_papers(token)
+                repeated = backend.report_papers(token)
+                self.assertEqual([row["title"] for row in first], ["First paper"])
+                self.assertEqual([row["title"] for row in repeated], ["First paper"])
+                self.assertEqual([row["preference"] for row in repeated], ["none"])
+                report.write_text(card("Second paper", "2609.00002"), encoding="utf-8")
+                second = backend.report_papers(token)
+
+        self.assertEqual([row["title"] for row in second], ["Second paper"])
+
     def test_migrate_legacy_supplements_moves_artifacts_and_rewrites_sqlite_paths(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             data_dir = Path(directory) / "data"
