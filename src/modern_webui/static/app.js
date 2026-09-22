@@ -658,6 +658,8 @@ const MODERN_EN_TRANSLATIONS = Object.freeze({
   "近 14 天": "Last 14 days",
   "近 30 天": "Last 30 days",
   "近一年 Token 使用热力图": "Token usage heatmap for the past year",
+  "近一年": "Past year",
+  "Token 使用量柱状图": "Token usage bar chart",
   "连接与目录权限正常。": "Connection and directory access are available.",
   "连接或目录权限验证失败。": "Connection or directory access validation failed.",
   "选择解析研究论文 PDF 的方式。": "Choose how research-paper PDFs are parsed.",
@@ -988,7 +990,7 @@ function applyTheme() {
   const theme = state.theme === "dark" ? "dark" : "light";
   document.documentElement.dataset.theme = theme;
   document.documentElement.style.colorScheme = theme;
-  const color = theme === "dark" ? "#0a0a0c" : "#fafafa";
+  const color = theme === "dark" ? "#12150f" : "#f3f6ee";
   $("meta[name='theme-color']")?.setAttribute("content", color);
   const button = $("#theme-button");
   if (button) button.textContent = theme === "dark" ? localeText("浅色模式", "Light mode") : localeText("深色模式", "Dark mode");
@@ -3904,13 +3906,40 @@ function analyticsBucketLabel(value, bucket) {
   return text.slice(5);
 }
 
+function analyticsMonthlyRows(values) {
+  // 超过约四个月的日粒度数据按自然月聚合，保证柱状图在近一年范围内依然可读。
+  const months = new Map();
+  values.forEach((row) => {
+    const key = String(row.bucket || "").slice(0, 7);
+    if (!key) return;
+    const entry = months.get(key) || { bucket: key, prompt: 0, cached_prompt: 0, completion: 0, total: 0, runs: 0 };
+    entry.prompt += Number(row.prompt || 0);
+    entry.cached_prompt += Number(row.cached_prompt || 0);
+    entry.completion += Number(row.completion || 0);
+    entry.total += Number(row.total || 0);
+    entry.runs += Number(row.runs || 0);
+    months.set(key, entry);
+  });
+  return Array.from(months.values()).sort((left, right) => left.bucket.localeCompare(right.bucket));
+}
+
 function tokenTrendChart(rows, window) {
   const values = analyticsSeriesRows(rows, window);
   if (!values.length) return '<p class="empty-state">所选范围内没有 Token 使用记录。</p>';
-  const sampled = values.length > 366 ? values.filter((_, index) => index % Math.ceil(values.length / 366) === 0) : values;
+  const bucketType = window?.bucket === "hour" ? "hour" : "day";
+  const monthly = bucketType === "day" && values.length > 120;
+  const series = monthly ? analyticsMonthlyRows(values) : values;
+  const labelFor = (bucket) => monthly ? String(bucket || "") : analyticsBucketLabel(bucket, bucketType);
+  const seriesKeys = ["prompt", "cached_prompt", "completion"];
+  const componentLabel = (key) => key === "prompt"
+    ? localeText("普通输入", "Non-cached input")
+    : key === "cached_prompt"
+      ? localeText("缓存输入", "Cached input")
+      : localeText("输出", "Output");
   const width = 840; const height = 306; const left = 64; const right = 18; const top = 30; const bottom = 43;
   const plotWidth = width - left - right; const plotHeight = height - top - bottom;
-  const rawMax = Math.max(0, ...sampled.map((row) => Math.max(row.prompt, row.cached_prompt, row.completion, row.total)));
+  const stackTotal = (row) => Number(row.prompt || 0) + Number(row.cached_prompt || 0) + Number(row.completion || 0);
+  const rawMax = Math.max(0, ...series.map(stackTotal));
   const niceCeiling = (value) => {
     if (value <= 0) return 1;
     const exponent = Math.floor(Math.log10(value));
@@ -3920,44 +3949,43 @@ function tokenTrendChart(rows, window) {
     return step * scale;
   };
   const maximum = niceCeiling(rawMax * 1.05);
-  const x = (index) => sampled.length === 1 ? left + plotWidth / 2 : left + index * plotWidth / (sampled.length - 1);
+  const band = plotWidth / series.length;
+  const barWidth = Math.min(band * .62, 46);
+  const x = (index) => left + band * (index + .5);
   const y = (value) => top + plotHeight * (1 - value / maximum);
-  const linePoints = (key) => sampled.map((row, index) => `${x(index).toFixed(1)},${y(row[key]).toFixed(1)}`).join(" ");
-  const points = (key) => sampled.map((row, index) => {
-    const label = key === "prompt"
-      ? localeText("普通输入", "Non-cached input")
-      : key === "cached_prompt"
-        ? localeText("缓存输入", "Cached input")
-        : key === "completion"
-          ? localeText("输出", "Output")
-          : localeText("合计", "Total");
-    const unit = state.language === "en" ? "tokens" : "Token";
-    const title = `${analyticsBucketLabel(row.bucket, window?.bucket)} · ${label} ${formatNumber(row[key])} ${unit}`;
-    return `<circle class="trend-point ${key}" cx="${x(index).toFixed(1)}" cy="${y(row[key]).toFixed(1)}" r="${sampled.length > 90 ? "1.5" : "2.25"}"><title>${escapeHtml(title)}</title></circle>`;
+  const unit = state.language === "en" ? "tokens" : "Token";
+  const bars = series.map((row, index) => {
+    const total = stackTotal(row);
+    let accumulated = 0;
+    const segments = seriesKeys.map((key) => {
+      const value = Number(row[key] || 0);
+      if (value <= 0) return "";
+      const segmentTop = y(accumulated + value);
+      const segmentHeight = y(accumulated) - segmentTop;
+      accumulated += value;
+      const title = `${labelFor(row.bucket)} · ${componentLabel(key)} ${formatNumber(value)} ${unit} · ${localeText("合计", "Total")} ${formatNumber(total)}`;
+      return `<rect class="trend-bar ${key}" x="${(x(index) - barWidth / 2).toFixed(1)}" y="${segmentTop.toFixed(1)}" width="${barWidth.toFixed(1)}" height="${Math.max(segmentHeight, 0).toFixed(1)}"><title>${escapeHtml(title)}</title></rect>`;
+    }).join("");
+    return segments || `<rect class="trend-bar prompt" x="${(x(index) - barWidth / 2).toFixed(1)}" y="${(y(0) - 1).toFixed(1)}" width="${barWidth.toFixed(1)}" height="1" opacity="0"><title>${escapeHtml(`${labelFor(row.bucket)} · ${localeText("暂无用量记录", "No usage recorded")}`)}</title></rect>`;
   }).join("");
   const grid = Array.from({ length: 5 }, (_, index) => {
     const value = maximum * index / 4;
     return `<line x1="${left}" x2="${width - right}" y1="${y(value).toFixed(1)}" y2="${y(value).toFixed(1)}"/><text x="${left - 8}" y="${(y(value) + 4).toFixed(1)}" text-anchor="end">${escapeHtml(formatCompactNumber(value))}</text>`;
   }).join("");
-  const labelCount = Math.min(6, sampled.length);
-  const labels = Array.from({ length: labelCount }, (_, index) => labelCount === 1 ? 0 : Math.round(index * (sampled.length - 1) / (labelCount - 1)));
-  const labelText = labels.map((index) => `<text x="${x(index).toFixed(1)}" y="${height - 16}" text-anchor="middle">${escapeHtml(analyticsBucketLabel(sampled[index].bucket, window?.bucket))}</text>`).join("");
-  const legend = [
-    ["total", localeText("合计", "Total")],
-    ["prompt", localeText("普通输入", "Non-cached input")],
-    ["cached_prompt", localeText("缓存输入", "Cached input")],
-    ["completion", localeText("输出", "Output")],
-  ];
+  const labelCount = Math.min(6, series.length);
+  const labels = Array.from({ length: labelCount }, (_, index) => labelCount === 1 ? 0 : Math.round(index * (series.length - 1) / (labelCount - 1)));
+  const labelText = labels.map((index) => `<text x="${x(index).toFixed(1)}" y="${height - 16}" text-anchor="middle">${escapeHtml(labelFor(series[index].bucket))}</text>`).join("");
+  const legend = seriesKeys.map((key) => [key, componentLabel(key)]);
   const legendTextWidth = (label) => Array.from(label).reduce((total, character) => (
     total + (/[^\x00-\xFF]/.test(character) ? 11 : 6.2)
   ), 0);
   let legendX = left;
   const legendMarkup = legend.map(([key, label]) => {
-    const markup = `<rect x="${legendX}" y="6" width="11" height="11" class="${key}"/><text x="${legendX + 17}" y="15">${escapeHtml(label)}</text>`;
+    const markup = `<rect x="${legendX}" y="6" width="11" height="11" rx="2.5" class="${key}"/><text x="${legendX + 17}" y="15">${escapeHtml(label)}</text>`;
     legendX += 29 + legendTextWidth(label);
     return markup;
   }).join("");
-  return `<div class="trend-chart"><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeAttribute(localeText("Token 使用趋势", "Token usage trend"))}"><g class="trend-grid">${grid}</g><polyline class="trend-line total" points="${linePoints("total")}"/><polyline class="trend-line prompt" points="${linePoints("prompt")}"/><polyline class="trend-line cached_prompt" points="${linePoints("cached_prompt")}"/><polyline class="trend-line completion" points="${linePoints("completion")}"/><g class="trend-points">${points("total")}${points("prompt")}${points("cached_prompt")}${points("completion")}</g><g class="trend-labels">${labelText}</g><g class="trend-legend">${legendMarkup}</g></svg></div>`;
+  return `<div class="trend-chart"><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeAttribute(localeText("Token 使用量柱状图", "Token usage bar chart"))}"><g class="trend-grid">${grid}</g><g class="trend-bars">${bars}</g><g class="trend-labels">${labelText}</g><g class="trend-legend">${legendMarkup}</g></svg></div>`;
 }
 
 function formatCompactNumber(value) {
@@ -3971,7 +3999,7 @@ function formatCompactNumber(value) {
 function analyticsRangeControl(values) {
   const choices = [
     ["24h", "24 小时内"], ["today", "当天"], ["3d", "3 天"],
-    ["7d", "7 天"], ["14d", "14 天"], ["30d", "30 天"], ["custom", "自定义时间段"],
+    ["7d", "7 天"], ["14d", "14 天"], ["30d", "30 天"], ["1y", "近一年"], ["custom", "自定义时间段"],
   ];
   return `<div class="analytics-range-control"><div class="segmented-control" role="group" aria-label="时间段">${choices.map(([value, label]) => `<button type="button" class="segmented-button ${values.range === value ? "is-active" : ""}" data-analytics-range="${value}" aria-pressed="${values.range === value}">${escapeHtml(label)}</button>`).join("")}</div>${values.range === "custom" ? `<div class="form-grid two analytics-custom-range"><label class="form-field"><span>开始日期</span><input id="analytics-from" type="date" value="${escapeAttribute(values.date_from)}" /></label><label class="form-field"><span>结束日期</span><input id="analytics-to" type="date" value="${escapeAttribute(values.date_to)}" /></label></div><div class="action-row analytics-custom-action"><button id="analytics-custom-apply" type="button" class="secondary-button">应用时间段</button></div>` : ""}</div>`;
 }

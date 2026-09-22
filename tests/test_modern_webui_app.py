@@ -272,9 +272,8 @@ class ModernWebUIAppTests(unittest.TestCase):
         self.assertIn("cached_prompt", analytics)
         self.assertIn("缓存输入 Token", analytics)
         self.assertIn("Non-cached input tokens", analytics)
-        self.assertIn('linePoints("cached_prompt")', analytics)
-        self.assertIn(".trend-line.cached_prompt", stylesheet)
-        self.assertIn(".trend-point.cached_prompt", stylesheet)
+        self.assertIn('class="trend-bar ${key}"', analytics)
+        self.assertIn(".trend-bar.cached_prompt", stylesheet)
 
     def test_analytics_trend_legend_reserves_width_for_cjk_labels(self) -> None:
         script = self.client.get("/assets/app.js").text
@@ -686,7 +685,7 @@ class ModernWebUIAppTests(unittest.TestCase):
         self.assertIn("select:not([multiple]) {", stylesheet)
         self.assertIn("-webkit-appearance: none;", stylesheet)
         self.assertIn("background-image: var(--select-chevron);", stylesheet)
-        self.assertIn(".pager select { box-sizing: border-box; min-width: 86px; min-height: 27px;", stylesheet)
+        self.assertIn(".pager select { box-sizing: border-box; min-width: 86px; min-height: 28px;", stylesheet)
         self.assertIn(".pager select:hover { background-image: var(--select-chevron-active); }", stylesheet)
         self.assertIn("text-align-last: center;", stylesheet)
 

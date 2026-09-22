@@ -31,6 +31,12 @@ class ModernBackendTests(unittest.TestCase):
         self.assertEqual(bucket, "day")
         self.assertEqual(key, "7d")
 
+        start, end, bucket, key = backend._analytics_window("1y", now=now)
+        self.assertEqual(start, datetime(2025, 8, 31))
+        self.assertEqual(end, now)
+        self.assertEqual(bucket, "day")
+        self.assertEqual(key, "1y")
+
         start, end, bucket, key = backend._analytics_window(
             "custom", "2026-08-01", "2026-08-03", now=now
         )
