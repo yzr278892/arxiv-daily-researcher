@@ -148,6 +148,17 @@ class DailyResearchStore:
 
     def _init_db(self):
         with self._connect() as conn:
+            # Records which one-time data migrations already completed.  It is
+            # created first because the migrations below consult it before they
+            # scan or rewrite completed rows.
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS schema_migrations (
+                    migration TEXT PRIMARY KEY,
+                    applied_at TEXT NOT NULL
+                )
+                """
+            )
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS daily_runs (
@@ -201,10 +212,10 @@ class DailyResearchStore:
                 )
                 """
             )
-            self._migrate_paper_identity(conn)
+            self._run_migration(conn, "paper_identity", self._migrate_paper_identity)
             self._migrate_paper_queue_scope(conn)
             self._migrate_stage_state(conn)
-            self._migrate_tldr_state(conn)
+            self._run_migration(conn, "tldr_state", self._migrate_tldr_state)
             self._migrate_report_repair_state(conn)
             self._migrate_legacy_report_timestamp(conn)
             self._migrate_stage_fingerprints(conn)
@@ -238,7 +249,9 @@ class DailyResearchStore:
                 )
                 """
             )
-            self._migrate_delivery_identity(conn)
+            self._run_migration(
+                conn, "delivery_identity", self._migrate_delivery_identity
+            )
             self._migrate_delivery_report_timestamp(conn)
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_paper_deliveries_identity "
@@ -522,7 +535,37 @@ class DailyResearchStore:
                 "CREATE INDEX IF NOT EXISTS idx_backfill_queue_pending "
                 "ON backfill_queue(status, requested_at, target_date, backfill_id)"
             )
-            self._migrate_paper_entities(conn)
+            self._run_migration(conn, "paper_entities", self._migrate_paper_entities)
+
+    @staticmethod
+    def _run_migration(conn: sqlite3.Connection, name: str, migration) -> None:
+        """Run a one-time data migration unless it already completed.
+
+        Each of these migrations scans completed rows and re-parses their
+        metadata JSON.  The columns they normalise are written correctly by the
+        current code, so re-running them on every process start only delayed a
+        worker or WebUI boot on a populated database.  A recorded name marks
+        the pass as complete; a failure raises before the row is written, so
+        the next open retries the migration.
+
+        ``_ensure_paper_entity_coverage`` still repairs gaps that older tools
+        or direct compatibility callers insert after the initial pass.
+        """
+        row = conn.execute(
+            "SELECT 1 FROM schema_migrations WHERE migration = ?", (str(name),)
+        ).fetchone()
+        if row is not None:
+            return
+        # A migration returns ``False`` when this image cannot run it yet (for
+        # example the canonical-id backfill in the thin WebUI image); the pass
+        # is then left unrecorded for the worker to complete.
+        if migration(conn) is False:
+            return
+        conn.execute(
+            "INSERT OR REPLACE INTO schema_migrations(migration, applied_at) "
+            "VALUES (?, ?)",
+            (str(name), datetime.now().isoformat()),
+        )
 
     @staticmethod
     def _migrate_run_scan_state(conn):
@@ -594,7 +637,10 @@ class DailyResearchStore:
 
         paper_identity = DailyResearchStore._paper_identity_or_none()
         if paper_identity is None:
-            return
+            # The thin WebUI image ships no paper-source modules.  Report the
+            # pass as incomplete so the worker still runs it on its next open
+            # instead of the sentinel claiming the backfill happened.
+            return False
 
         rows = conn.execute(
             "SELECT source, paper_id, canonical_id, version, paper_json FROM daily_papers"
@@ -644,6 +690,7 @@ class DailyResearchStore:
                         row["paper_id"],
                     ),
                 )
+        return True
 
     @staticmethod
     def _migrate_paper_queue_scope(conn):
@@ -1382,7 +1429,9 @@ class DailyResearchStore:
 
         paper_identity = DailyResearchStore._paper_identity_or_none()
         if paper_identity is None:
-            return
+            # See ``_migrate_paper_identity``: leave the pass unrecorded so the
+            # worker completes it in an image that ships the source modules.
+            return False
 
         rows = conn.execute(
             "SELECT delivery_id, source, paper_id, canonical_id, version FROM paper_deliveries"
@@ -1410,6 +1459,7 @@ class DailyResearchStore:
                 "UPDATE paper_deliveries SET canonical_id = ?, version = ? WHERE delivery_id = ?",
                 updates,
             )
+        return True
 
     @staticmethod
     def _migrate_delivery_report_timestamp(conn):

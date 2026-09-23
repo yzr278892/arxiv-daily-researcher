@@ -73,6 +73,18 @@ def _source_receipt(source: str, status: str = "succeeded") -> dict:
     }
 
 
+def _forget_identity_migration(store: DailyResearchStore, name: str) -> None:
+    """Model a pre-upgrade ledger that has not run this migration yet.
+
+    A completed one-time migration is recorded when the database is first
+    opened by this release.  A fixture that writes legacy-shaped rows through
+    the same process must therefore clear that record to reproduce the real
+    upgrade order (old rows first, migration on the next open).
+    """
+    with store._connect() as conn:
+        conn.execute("DELETE FROM schema_migrations WHERE migration = ?", (name,))
+
+
 class IdentityStoreTests(unittest.TestCase):
     def test_pending_queue_limit_preserves_exact_arxiv_versions(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -474,6 +486,7 @@ class IdentityStoreTests(unittest.TestCase):
             store = DailyResearchStore(db_path)
             run_id = store.start_run(0)
             store.register_paper_candidates(run_id, {"prb": [_doi_paper(doi_url)]})
+            _forget_identity_migration(store, "paper_identity")
 
             # Reopening runs the migration that v4.4 performed only on the
             # database columns.  The persisted payload must receive the same
@@ -504,6 +517,7 @@ class IdentityStoreTests(unittest.TestCase):
                     "WHERE source = ? AND paper_id = ?",
                     ("10.1103/84nx-1r8c", "prb", doi_url),
                 )
+            _forget_identity_migration(store, "paper_identity")
 
             repaired = DailyResearchStore(db_path)
             payload = json.loads(repaired.get_paper_record("prb", doi_url)["paper_json"])
@@ -511,6 +525,58 @@ class IdentityStoreTests(unittest.TestCase):
             self.assertEqual(payload["canonical_id"], "10.1103/84nx-1r8c")
             self.assertIsNone(payload["version"])
             self.assertEqual(repaired.select_pending_papers(["prb"])[1], 1)
+
+    def test_completed_identity_migration_is_not_repeated_on_reopen(self):
+        """A populated ledger must not rescan every row on each process start."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "daily.db"
+            store = DailyResearchStore(db_path)
+            run_id = store.start_run(0)
+            store.register_paper_candidates(
+                run_id, {"prb": [_doi_paper("https://doi.org/10.1103/84nx-1r8c")]}
+            )
+
+            with patch.object(DailyResearchStore, "_migrate_paper_identity") as migration:
+                opened = DailyResearchStore(db_path)
+            self.assertEqual(migration.call_count, 0)
+            self.assertIsNotNone(
+                opened.get_paper_record("prb", "https://doi.org/10.1103/84nx-1r8c")
+            )
+
+            fresh = Path(temp_dir) / "fresh.db"
+            with patch.object(DailyResearchStore, "_migrate_paper_identity") as migration:
+                DailyResearchStore(fresh)
+            self.assertEqual(migration.call_count, 1)
+
+    def test_thin_image_leaves_identity_migration_unrecorded(self):
+        """The WebUI image must not claim a backfill it could not run."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "daily.db"
+            with patch.object(
+                DailyResearchStore,
+                "_paper_identity_or_none",
+                staticmethod(lambda: None),
+            ):
+                store = DailyResearchStore(db_path)
+                with store._connect() as conn:
+                    pending = conn.execute(
+                        "SELECT migration FROM schema_migrations "
+                        "WHERE migration IN ('paper_identity', 'delivery_identity')"
+                    ).fetchall()
+
+            self.assertEqual(list(pending), [])
+
+            # The worker image ships the source modules, so its next open
+            # completes and records the pass.
+            worker_store = DailyResearchStore(db_path)
+            with worker_store._connect() as conn:
+                recorded = {
+                    row["migration"]
+                    for row in conn.execute("SELECT migration FROM schema_migrations")
+                }
+
+        self.assertIn("paper_identity", recorded)
+        self.assertIn("delivery_identity", recorded)
 
     def test_delivery_identity_migration_deduplicates_legacy_doi_aliases(self):
         """A DOI URL and bare DOI may merge after a legacy-history import."""
