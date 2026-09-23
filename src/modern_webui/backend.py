@@ -429,13 +429,31 @@ def open_store(
         return _STORE_CACHE.setdefault(path, store)
 
 
+def persistence_info(flat: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """Report the configured SQLite ledger's footprint for the settings UI.
+
+    Only the size and existence travel to the browser; the resolved absolute
+    path stays server-side so the panel never leaks host or container paths.
+    """
+
+    path = configured_db_path(flat)
+    try:
+        if not path.is_file():
+            return {"exists": False, "size_bytes": 0}
+        return {"exists": True, "size_bytes": path.stat().st_size}
+    except OSError:
+        return {"exists": False, "size_bytes": 0}
+
+
 def public_settings() -> dict[str, Any]:
     """Return configuration plus redacted environment values for the UI."""
     env = read_env()
+    flat = flat_config()
     return {
-        "config": flat_config(),
+        "config": flat,
         "env": {key: str(env.get(key) or "") for key in PUBLIC_ENV_FIELDS},
         "secrets": {key: bool(str(env.get(key) or "").strip()) for key in SECRET_ENV_FIELDS},
+        "persistence": persistence_info(flat),
         "builtin_sources": [
             {
                 "type": OPENALEX_JOURNAL_TYPE,

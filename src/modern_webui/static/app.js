@@ -62,6 +62,10 @@ const MODERN_EN_TRANSLATIONS = Object.freeze({
   "每行一个关键词": "One keyword per line",
   "深色模式": "Dark mode",
   "浅色模式": "Light mode",
+  "绿色主题": "Green theme",
+  "浅蓝主题": "Blue theme",
+  "当前 SQLite 大小：": "Current SQLite size: ",
+  "尚未创建": "not created yet",
   "有未保存修改": "Unsaved changes",
   "关键词": "Keyword",
   "权重（0–1）": "Weight (0–1)",
@@ -845,6 +849,11 @@ const BUILTIN_SOURCES = [
   ["nature", "Nature"], ["nature_physics", "Nature Physics"], ["nature_communications", "Nature Communications"], ["science", "Science"], ["science_advances", "Science Advances"], ["npj_quantum_information", "npj Quantum Information"], ["quantum", "Quantum"], ["new_journal_of_physics", "New Journal of Physics"], ["huggingface_papers", "Hugging Face Papers"],
 ];
 
+// 外观取值为 色系（绿 / 浅蓝）× 明暗（浅色 / 深色）四种组合；
+// 历史版本只存过 "dark"，其它未知取值一律回落到默认绿色浅色主题。
+const THEME_SEQUENCE = ["light", "dark", "blue", "blue-dark"];
+const storedTheme = window.localStorage.getItem("adr-modern-theme");
+
 const state = {
   auth: null,
   settings: null,
@@ -859,7 +868,7 @@ const state = {
   renderToken: 0,
   pageRequestController: null,
   language: window.localStorage.getItem("adr-modern-language") === "en" ? "en" : "zh",
-  theme: window.localStorage.getItem("adr-modern-theme") === "dark" ? "dark" : "light",
+  theme: THEME_SEQUENCE.includes(storedTheme) ? storedTheme : "light",
   configurationDirty: false,
   translationIndex: new Map(),
   translationFragments: [],
@@ -993,18 +1002,39 @@ function renderLanguageButton() {
   if (button) button.textContent = state.language === "en" ? "中文" : "English";
 }
 
+const THEME_META = {
+  light: { color: "#f3f6ee" },
+  dark: { color: "#12150f" },
+  blue: { color: "#eef3f8" },
+  "blue-dark": { color: "#0d141c" },
+};
+const isBlueTheme = (theme) => theme === "blue" || theme === "blue-dark";
+const isDarkTheme = (theme) => theme === "dark" || theme === "blue-dark";
+
 function applyTheme() {
-  const theme = state.theme === "dark" ? "dark" : "light";
+  const theme = THEME_SEQUENCE.includes(state.theme) ? state.theme : "light";
   document.documentElement.dataset.theme = theme;
-  document.documentElement.style.colorScheme = theme;
-  const color = theme === "dark" ? "#12150f" : "#f3f6ee";
-  $("meta[name='theme-color']")?.setAttribute("content", color);
-  const button = $("#theme-button");
-  if (button) button.textContent = theme === "dark" ? localeText("浅色模式", "Light mode") : localeText("深色模式", "Dark mode");
+  document.documentElement.style.colorScheme = isDarkTheme(theme) ? "dark" : "light";
+  $("meta[name='theme-color']")?.setAttribute("content", THEME_META[theme].color);
+  // 两个按钮分别展示点击后切换到的另一种明暗 / 色系。
+  const themeButton = $("#theme-button");
+  if (themeButton) themeButton.textContent = isDarkTheme(theme) ? localeText("浅色模式", "Light mode") : localeText("深色模式", "Dark mode");
+  const paletteButton = $("#palette-button");
+  if (paletteButton) paletteButton.textContent = isBlueTheme(theme) ? localeText("绿色主题", "Green theme") : localeText("浅蓝主题", "Blue theme");
 }
 
 function toggleTheme() {
-  state.theme = state.theme === "dark" ? "light" : "dark";
+  // 只切换明暗，保留当前色系。
+  const blue = isBlueTheme(state.theme);
+  state.theme = isDarkTheme(state.theme) ? (blue ? "blue" : "light") : (blue ? "blue-dark" : "dark");
+  window.localStorage.setItem("adr-modern-theme", state.theme);
+  applyTheme();
+}
+
+function togglePalette() {
+  // 只切换色系，保留当前明暗。
+  const dark = isDarkTheme(state.theme);
+  state.theme = isBlueTheme(state.theme) ? (dark ? "dark" : "light") : (dark ? "blue-dark" : "blue");
   window.localStorage.setItem("adr-modern-theme", state.theme);
   applyTheme();
 }
@@ -1130,6 +1160,14 @@ function formatNumber(value) {
 function formatPercent(value) {
   const number = Number(value);
   return Number.isFinite(number) ? `${(number * 100).toFixed(1)}%` : "—";
+}
+
+function formatBytes(bytes) {
+  const size = Number(bytes);
+  if (!Number.isFinite(size) || size < 0) return "—";
+  if (size >= 1048576) return `${(size / 1048576).toFixed(1)} MB`;
+  if (size >= 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${Math.round(size)} B`;
 }
 
 function relativeLocalDateKey(offsetDays = 0) {
@@ -1447,6 +1485,67 @@ function bindFields(root = document) {
       }
     });
   });
+}
+
+/* ============================ 美化单选下拉框 ============================
+ * 原生 <select> 保留在 DOM 中：取值、表单校验、data-field 绑定与 change
+ * 事件全部维持原契约；视觉上换成与 arXiv 分类选择器一致的 details 面板。
+ * 动态重写选项（innerHTML / insertAdjacentHTML）由 MutationObserver 同步；
+ * 直接给 select.value 赋值的少数路径需要手动调用 refreshPrettySelect。 */
+function refreshPrettySelect(select) {
+  const wrapper = select.closest?.(".pretty-select");
+  if (!wrapper) return;
+  const dropdown = $(".pretty-select-dropdown", wrapper);
+  const optionsHost = $(".pretty-select-options", dropdown);
+  const options = Array.from(select.options);
+  const selectedIndex = select.selectedIndex;
+  $("summary > span", dropdown).textContent = selectedIndex >= 0 ? options[selectedIndex].textContent : "—";
+  optionsHost.innerHTML = options.map((option, index) => (
+    `<button type="button" role="option" data-pretty-index="${index}" aria-selected="${index === selectedIndex ? "true" : "false"}" class="${index === selectedIndex ? "is-selected" : ""}">${escapeHtml(option.textContent)}</button>`
+  )).join("");
+  $$("button", optionsHost).forEach((button) => button.addEventListener("click", () => {
+    select.selectedIndex = Number(button.dataset.prettyIndex);
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    dropdown.open = false;
+    refreshPrettySelect(select);
+  }));
+  wrapper.classList.toggle("is-disabled", Boolean(select.disabled));
+  if (select.disabled) dropdown.open = false;
+  applyLocale(wrapper);
+}
+
+function decorateSelect(select) {
+  if (select.dataset.prettyReady) {
+    refreshPrettySelect(select);
+    return;
+  }
+  select.dataset.prettyReady = "1";
+  select.classList.add("pretty-select-native");
+  // 包装器必须是 <div>：<span> 会命中 .form-field > span 的 flex 规则，
+  // 让内部 details 收缩成内容宽度而不是撑满表单栅格。
+  const wrapper = document.createElement("div");
+  wrapper.className = "pretty-select";
+  select.parentNode.insertBefore(wrapper, select);
+  wrapper.appendChild(select);
+  const dropdown = document.createElement("details");
+  dropdown.className = "pretty-select-dropdown";
+  dropdown.innerHTML = `<summary><span></span><i class="dropdown-chevron" aria-hidden="true"></i></summary><div class="pretty-select-options" role="listbox"></div>`;
+  wrapper.appendChild(dropdown);
+  dropdown.addEventListener("toggle", () => {
+    if (select.disabled) dropdown.open = false;
+  });
+  // 选项被脚本整体重写时（例如服务商预设、模板列表刷新）保持面板同步。
+  const observer = new MutationObserver(() => refreshPrettySelect(select));
+  observer.observe(select, { childList: true, attributes: true, attributeFilter: ["disabled"] });
+  select._prettyObserver = observer;
+  refreshPrettySelect(select);
+}
+
+function decorateNativeSelects(root = document) {
+  // 分页器里的每页条数保持原生紧凑样式；多选框没有在本面板使用。
+  $$("select:not([multiple]):not(.pretty-select-native)", root)
+    .filter((select) => !select.closest(".pager"))
+    .forEach(decorateSelect);
 }
 
 function tableId(key) { return `${state.page}:${key}`; }
@@ -1890,7 +1989,10 @@ async function renderTrend(token) {
     const selector = $("#trend-template");
     const nameInput = $("#trend-template-name");
     const textInput = $("#trend-template-text");
-    if (selector) selector.value = item?.name || "";
+    if (selector) {
+      selector.value = item?.name || "";
+      refreshPrettySelect(selector);
+    }
     if (nameInput) {
       nameInput.value = item ? trendTemplateDisplayName(item) : "";
       nameInput.readOnly = Boolean(item);
@@ -1932,6 +2034,8 @@ async function renderTrend(token) {
     state.pageData.trend.categories = state.pageData.trend.categories.filter((item) => item !== value);
     renderTrendCategories();
   });
+  // 首次渲染也要绑定一次，否则“添加分类”面板里的选项点击没有反应。
+  bindTrendCategories();
   ["#trend-keywords", "#trend-from", "#trend-to"].forEach((selector) => $(selector)?.addEventListener("change", preserveTrend));
   ["#trend-sort", "#trend-max-results", "#trend-template-name", "#trend-template-text"].forEach((selector) => $(selector)?.addEventListener("change", () => {
     preserveTrend(); markConfigurationDirty();
@@ -2475,6 +2579,7 @@ async function renderPaperSearch(token) {
   const values = state.pageData.search || { query: "", source: "", completed_from: "", completed_to: "", min_score: "", liked_only: false, page: 0, size: 20 };
   root.innerHTML = `${pageHeader()}${section("检索条件", `<div class="form-grid two"><label class="form-field"><span>关键词</span><input id="search-query" value="${escapeAttribute(values.query)}" placeholder="标题、摘要、TL;DR 或关键词" /></label><label class="form-field"><span>来源</span><select id="search-source"><option value="">全部来源</option></select></label><label class="form-field"><span>完成日期开始</span><input id="search-from" type="date" value="${escapeAttribute(values.completed_from)}" /></label><label class="form-field"><span>完成日期结束</span><input id="search-to" type="date" value="${escapeAttribute(values.completed_to)}" /></label><label class="form-field"><span>最低分数</span><input id="search-score" type="number" step="0.5" min="0" value="${escapeAttribute(values.min_score)}" /></label><label class="toggle-field"><span>仅收藏论文</span><input id="search-liked" type="checkbox" ${values.liked_only ? "checked" : ""}/><i></i></label></div><div class="action-row"><button id="search-run" class="primary-button">搜索</button></div>`, { icon: "🔍" })}<div id="search-results"></div>`;
   const sourceSelect = $("#search-source");
+  decorateNativeSelects(root);
   try {
     const sourceProbe = await api("/api/papers?limit=5&offset=0");
     if (token !== state.renderToken) return;
@@ -2713,6 +2818,21 @@ function sourceDefinition(code) {
   return (state.settings.builtin_sources || []).find((item) => item.code === code);
 }
 
+function tagChipLabel(label) {
+  // 简写保持品牌色，完整名称（“代码 · 名称”或“展示名（代码）”中的后半段）
+  // 换用强调色，两类来源卡片保持同一视觉层级。
+  const text = String(label);
+  const dot = text.indexOf(" · ");
+  if (dot > 0) {
+    return `<span>${escapeHtml(text.slice(0, dot))}</span><small>${escapeHtml(text.slice(dot + 3))}</small>`;
+  }
+  const paren = text.match(/^(.*?)(（[^（）]+）)$/u);
+  if (paren && paren[1]) {
+    return `<span>${escapeHtml(paren[1])}</span><small>${escapeHtml(paren[2])}</small>`;
+  }
+  return `<span>${escapeHtml(text)}</span>`;
+}
+
 function tagMultiSelect({ id, label, selected, choices, addLabel, emptyLabel, help = "" }) {
   const byValue = new Map(choices.map((item) => [String(item.value), item]));
   const selectedSet = new Set(selected.map(String));
@@ -2720,7 +2840,7 @@ function tagMultiSelect({ id, label, selected, choices, addLabel, emptyLabel, he
     value: String(value), label: String(value),
   });
   const chips = selectedItems.length
-    ? selectedItems.map((item) => `<span class="source-tag"><span>${escapeHtml(item.label)}</span><button type="button" data-tag-remove="${escapeAttribute(id)}" data-tag-value="${escapeAttribute(item.value)}" aria-label="${escapeAttribute(localeText(`移除 ${item.label}`, `Remove ${item.label}`))}">×</button></span>`).join("")
+    ? selectedItems.map((item) => `<span class="source-tag">${tagChipLabel(item.label)}<button type="button" data-tag-remove="${escapeAttribute(id)}" data-tag-value="${escapeAttribute(item.value)}" aria-label="${escapeAttribute(localeText(`移除 ${item.label}`, `Remove ${item.label}`))}">×</button></span>`).join("")
     : `<span class="tag-select-placeholder">${escapeHtml(emptyLabel)}</span>`;
   const available = choices.filter((item) => !selectedSet.has(String(item.value)));
   const picker = available.length
@@ -3269,7 +3389,11 @@ function renderAdvanced() {
   ].join("")}</div>`, { icon: "📄", className: "advanced-settings-card" });
   const concurrency = section("并发设置", `<p class="hint-text">LLM 评分的并行处理，注意 API 速率限制。</p><div class="form-grid two">${field({ label: "启用并发处理", key: "concurrency_enabled", type: "checkbox", fallback: false })}${field({ label: "工作线程数", key: "concurrency_workers", type: "number", min: 1, max: 10, fallback: 3, help: "推荐：3–5，过高可能触发速率限制。" })}</div>`, { icon: "⚡" });
   const requestPool = section("LLM 请求池", `<p class="hint-text">全局限制 LLM 请求速率，避免并发任务触发 API 限流。</p><div class="form-grid three">${field({ label: "启用 LLM 请求池", key: "llm_request_pool_enabled", type: "checkbox", fallback: true })}${field({ label: "每分钟请求数", key: "llm_requests_per_minute", type: "number", min: 1, max: 600, fallback: 30 })}${field({ label: "慢等待日志阈值（秒）", key: "llm_request_pool_log_slow_wait_seconds", type: "number", min: 0, max: 120, step: 0.5, fallback: 5 })}</div>`, { icon: "🚦" });
-  const persistence = section("每日研究持久化", `<p class="hint-text">保存论文级评分与分析进度，用于断点续跑和失败恢复。</p>${field({ label: "启用每日深度分析", key: "daily_enable_deep_analysis", type: "checkbox", fallback: true })}${field({ label: "持久化数据库路径", key: "daily_research_db_path", fallback: "data/daily_research/daily_research.db" })}`, { icon: "💾" });
+  const persistenceMeta = state.settings?.persistence || {};
+  const persistenceSize = persistenceMeta.exists
+    ? formatBytes(persistenceMeta.size_bytes)
+    : localeText("尚未创建", "not created yet");
+  const persistence = section("每日研究持久化", `<p class="hint-text">保存论文级评分与分析进度，用于断点续跑和失败恢复。</p>${field({ label: "启用每日深度分析", key: "daily_enable_deep_analysis", type: "checkbox", fallback: true })}${field({ label: "持久化数据库路径", key: "daily_research_db_path", fallback: "data/daily_research/daily_research.db" })}<p class="db-size-line">${escapeHtml(localeText("当前 SQLite 大小：", "Current SQLite size: "))}<strong>${escapeHtml(persistenceSize)}</strong></p>`, { icon: "💾" });
   const featureToggles = section("功能开关", `${field({ label: "Token 用量追踪", key: "token_tracking_enabled", type: "checkbox", fallback: true })}${field({ label: "检查新版本并通知", key: "auto_update_enabled", type: "checkbox", fallback: true, help: "只检查 GitHub Release，不会自动拉取代码、重建镜像或重启容器。发现比当前版本更新的发布版时，经已启用的通知渠道提醒；若所有渠道未送达，后续检查会重试。" })}`, { icon: "📊" });
   const keywordTracker = section("关键词趋势追踪", `<div class="advanced-settings-stack">${field({ label: "启用关键词追踪", key: "keyword_tracker_enabled", type: "checkbox", fallback: true })}<div id="keyword-tracker-dependent" class="advanced-settings-stack" ${tracker ? "" : "hidden"}>${field({ label: "AI 归一化", key: "keyword_normalization_enabled", type: "checkbox", fallback: true })}<div id="keyword-normalization-dependent" class="trend-dependent-fields advanced-settings-stack" ${normalizationEnabled ? "" : "hidden"}><div class="form-grid two">${field({ label: "归一化批次大小", key: "keyword_normalization_batch_size", type: "number", min: 5, max: 100, fallback: 25 })}${field({ label: "归一化使用的 LLM", key: "keyword_normalization_llm_role", type: "select", choices: [{ value: "cheap", label: "低成本 LLM" }, { value: "smart", label: "高性能 LLM" }], fallback: "cheap", help: "该选择会用于每日关键词标准化，并同步记录到 LLM 健康统计。" })}</div></div>${keywordTrendDefaultDaysFields()}<div class="form-grid two">${field({ label: "柱状图 Top-N", key: "keyword_chart_top_n", type: "number", min: 5, max: 50, fallback: 15 })}${field({ label: "趋势图 Top-N", key: "keyword_trend_top_n", type: "number", min: 3, max: 20, fallback: 5 })}</div>${field({ label: "启用趋势报告", key: "keyword_report_enabled", type: "checkbox", fallback: true })}<div id="keyword-report-frequency" ${keywordReportEnabled ? "" : "hidden"}>${field({ label: "报告频率", key: "keyword_report_frequency", type: "select", choices: ["daily", "weekly", "monthly", "always"], fallback: "weekly" })}</div></div></div>`, { icon: "🧩", className: "advanced-settings-card" });
   const retryAndLogs = section("重试与日志", `<div class="form-grid three">${field({ label: "最大重试次数", key: "retry_max_attempts", type: "number", min: 1, max: 10, fallback: 3 })}${field({ label: "最短等待（秒）", key: "retry_min_wait", type: "number", min: 1, max: 60, fallback: 2 })}${field({ label: "最长等待（秒）", key: "retry_max_wait", type: "number", min: 5, max: 300, fallback: 30 })}</div>${field({ label: "运行锁超龄告警阈值（小时）", key: "run_lock_max_age_hours", type: "number", min: 1, max: 168, fallback: 12, help: "同一任务超过该时长时，后续同类任务会告警并跳过；不会按 PID 自动终止进程。" })}<div class="form-grid two">${field({ label: "日志轮转方式", key: "log_rotation_type", type: "select", choices: [{ value: "time", label: "time" }, { value: "size", label: "size" }], fallback: "time" })}${field({ label: "日志保留天数", key: "log_keep_days", type: "number", min: 1, max: 365, fallback: 30 })}</div>`, { icon: "♻️" });
@@ -3296,8 +3420,14 @@ function bindAdvancedInteractions(root) {
   bindProxyNoProxyEditor(root);
 }
 
-async function renderAdvancedPage(_token) {
+async function renderAdvancedPage(token) {
   const root = $("#page-root");
+  // 持久化区块展示的是 SQLite 实时大小；打开页面时刷新一次设置，
+  // 让数值反映任务刚写入后的真实占用。未保存的草稿覆盖仍然优先。
+  try {
+    state.settings = await api("/api/settings");
+    if (token !== state.renderToken) return;
+  } catch (_) { /* 读取失败时沿用已缓存设置，页面保持可用 */ }
   root.innerHTML = `${pageHeader()}${renderAdvanced()}`;
   bindCommon(root);
   bindAdvancedInteractions(root);
@@ -3746,7 +3876,10 @@ function healthTable(key, kind, rows) {
 }
 
 function diagnosticsRangeControl(id, value) {
-  return `<label class="form-field narrow-field"><span>查看范围</span><select id="${escapeAttribute(id)}"><option value="3" ${value === "3" ? "selected" : ""}>近 3 天</option><option value="7" ${value === "7" ? "selected" : ""}>近 7 天</option><option value="14" ${value === "14" ? "selected" : ""}>近 14 天</option><option value="30" ${value === "30" ? "selected" : ""}>近 30 天</option><option value="all" ${value === "all" ? "selected" : ""}>全部</option></select></label>`;
+  // 与“用量统计”一致的分段选择条：点击即切换范围，不再使用下拉框。
+  const choices = [["3", "近 3 天"], ["7", "近 7 天"], ["14", "近 14 天"], ["30", "近 30 天"], ["all", "全部"]];
+  const buttons = choices.map(([optionValue, label]) => `<button type="button" class="segmented-button ${value === optionValue ? "is-active" : ""}" data-diagnostics-range-value="${optionValue}" aria-pressed="${value === optionValue}">${escapeHtml(label)}</button>`).join("");
+  return `<div class="diagnostics-range-control"><span class="range-control-label">查看范围</span><div class="segmented-control" role="group" aria-label="查看范围" data-diagnostics-range="${escapeAttribute(id)}">${buttons}</div></div>`;
 }
 
 function diagnosticsRanges() {
@@ -3768,11 +3901,11 @@ function diagnosticsContentMarkup(data, ranges) {
 }
 
 function bindDiagnosticsRange(root, key, token) {
-  const selectors = { runs: "#diagnostics-range", llm: "#llm-range", sources: "#source-range" };
-  $(selectors[key], root)?.addEventListener("change", (event) => {
-    state.pageData.diagnosticsRanges = { ...diagnosticsRanges(), [key]: event.target.value };
+  const controlIds = { runs: "diagnostics-range", llm: "llm-range", sources: "source-range" };
+  $$(`[data-diagnostics-range="${controlIds[key]}"] .segmented-button`, root).forEach((button) => button.addEventListener("click", () => {
+    state.pageData.diagnosticsRanges = { ...diagnosticsRanges(), [key]: button.dataset.diagnosticsRangeValue };
     runLocalRefresh(refreshDiagnosticsPanel($("#page-root"), key, token));
-  });
+  }));
 }
 
 function bindDiagnosticsRanges(root, token) {
@@ -4343,7 +4476,13 @@ function bindAccountForm(selector, endpoint, onSuccess) {
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     const payload = Object.fromEntries(new FormData(form).entries());
-    try { await api(endpoint, { method: "POST", body: payload }); form.reset(); onSuccess(); } catch (error) { toast(error.message, "error"); }
+    try {
+      await api(endpoint, { method: "POST", body: payload });
+      form.reset();
+      // form.reset() 不触发 change/ Mutation 事件，美化下拉需手动同步显示。
+      $$("select.pretty-select-native", form).forEach(refreshPrettySelect);
+      onSuccess();
+    } catch (error) { toast(error.message, "error"); }
   });
 }
 
@@ -4479,6 +4618,7 @@ async function refreshActiveTaskPanels() {
 function bindCommon(root = document) {
   bindFields(root);
   bindPagers(root);
+  decorateNativeSelects(root);
   $$('[data-refresh-status]', root).forEach((button) => button.addEventListener("click", () => runLocalRefresh(refreshActiveTaskPanels())));
   $$('[data-start-task]', root).forEach((button) => button.addEventListener("click", async () => {
     try { await api(`/api/tasks/${encodeURIComponent(button.dataset.startTask)}`, { method: "POST", body: { args: {} } }); toast("任务已加入队列。", "success"); await refreshActiveTaskPanels(); } catch (error) { toast(error.message, "error"); }
@@ -4626,6 +4766,7 @@ async function initialize() {
   $("#skip-auth-button").addEventListener("click", skipAuth);
   $("#language-button").addEventListener("click", () => { void toggleLanguage(); });
   $("#theme-button").addEventListener("click", toggleTheme);
+  $("#palette-button").addEventListener("click", togglePalette);
   $("#logout-button").addEventListener("click", logout);
   $("#save-button").addEventListener("click", () => saveAll(true));
   $("#reload-button").addEventListener("click", async () => { try { await loadSettings(); state.draft = { config: {}, env: {}, clearEnv: new Set() }; state.configurationDirty = false; state.pageData.sources = undefined; updateConfigurationDirtyIndicator(); toast("配置已重新加载。", "success"); renderPage(); } catch (error) { toast(error.message, "error"); } });
@@ -4643,6 +4784,12 @@ async function initialize() {
     }
   });
   window.addEventListener("hashchange", () => { readLocation(); renderNavigation(); renderPage(); });
+  // 与原生下拉一致：点击面板外部时收起所有展开的自定义下拉。
+  document.addEventListener("click", (event) => {
+    $$(".pretty-select-dropdown[open], .tag-select-dropdown[open], .scroll-select[open]").forEach((dropdown) => {
+      if (!dropdown.contains(event.target)) dropdown.open = false;
+    });
+  });
   try {
     applyTheme();
     // Start authentication immediately. Chinese is already embedded in the
