@@ -41,6 +41,10 @@ _RESTART_DONE_NAME_RE = re.compile(
     r"^restart_worker\.request\.done-\d{8}T\d{6}(?:\d{1,9})?(?:-\d+)?$"
 )
 _STATUS_OUTPUT_TAIL_LINES = 120
+# Child output is forwarded in fixed-size chunks.  Progress bars redraw with
+# ``\r`` and never emit a newline, so a line-based reader kept the whole redraw
+# sequence buffered in memory until the next newline.
+_OUTPUT_CHUNK_CHARS = 4096
 _STATUS_SUMMARY_MAX_CHARS = 420
 _URL_RE = re.compile(r"\bhttps?://[^\s<>()\[\]{}\"']+", re.IGNORECASE)
 _BEARER_TOKEN_RE = re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]+")
@@ -296,13 +300,27 @@ def _forward_child_output(child: subprocess.Popen) -> list[str]:
         return []
 
     tail: deque[str] = deque(maxlen=_STATUS_OUTPUT_TAIL_LINES)
+    pending = ""
     try:
-        for line in iter(stream.readline, ""):
-            if not line:
+        while True:
+            chunk = stream.read(_OUTPUT_CHUNK_CHARS)
+            if not chunk:
                 break
-            sys.stdout.write(line)
+            sys.stdout.write(chunk)
             sys.stdout.flush()
-            tail.append(line)
+            pending += chunk
+            if "\n" in pending:
+                # Keep the newline-based tail the failure summary expects; the
+                # unterminated remainder stays pending across chunks.
+                *complete, pending = pending.split("\n")
+                tail.extend(line + "\n" for line in complete)
+            elif len(pending) >= _OUTPUT_CHUNK_CHARS * 4:
+                # A redraw-heavy bar can stream without a newline at all.  Keep
+                # the retained tail bounded instead of buffering it entirely.
+                tail.append(pending)
+                pending = ""
+        if pending:
+            tail.append(pending)
     finally:
         try:
             stream.close()

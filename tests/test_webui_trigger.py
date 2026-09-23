@@ -467,3 +467,34 @@ class SkippedBusyMappingTests(unittest.TestCase):
             self.assertEqual(len(status_files), 1)
             state = json.loads(status_files[0].read_text(encoding="utf-8"))["state"]
             self.assertEqual(state, "skipped_busy")
+
+
+class ChildOutputForwardingTests(unittest.TestCase):
+    def test_output_is_forwarded_in_chunks_with_a_bounded_tail(self):
+        """A redraw-only progress stream must not grow the retained buffer."""
+        from types import SimpleNamespace
+
+        from utils import webui_trigger
+
+        stream = io.StringIO("first\nsecond\n" + "progress\r" * 2000)
+        child = SimpleNamespace(stdout=stream)
+        forwarded = io.StringIO()
+        with patch("sys.stdout", forwarded):
+            tail = webui_trigger._forward_child_output(child)
+
+        self.assertIn("first\nsecond\n", forwarded.getvalue())
+        self.assertEqual(tail[0], "first\n")
+        self.assertEqual(tail[1], "second\n")
+        self.assertLessEqual(len(tail), webui_trigger._STATUS_OUTPUT_TAIL_LINES)
+        self.assertTrue(all(isinstance(line, str) for line in tail))
+
+    def test_an_unterminated_line_is_retained_like_readline_did(self):
+        from types import SimpleNamespace
+
+        from utils import webui_trigger
+
+        child = SimpleNamespace(stdout=io.StringIO("complete\npartial"))
+        with patch("sys.stdout", io.StringIO()):
+            tail = webui_trigger._forward_child_output(child)
+
+        self.assertEqual(tail, ["complete\n", "partial"])
