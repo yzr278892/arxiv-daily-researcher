@@ -77,6 +77,15 @@ class _ArxivTimeoutError(TimeoutError):
 # 领域重试全部失败后、扫描下一领域前的冷却时间（秒）
 _POST_FAILURE_COOLDOWN_SECONDS = 60
 
+# ``cat:<domain>`` 的 updated 查询没有时间下界，只靠降序排序在越过截止日期时
+# 停止；活跃领域在恢复性长窗口下可能连续翻很多页，而每页还要强制约 6 秒间隔。
+# 给单次 updated 查询一个页数预算，触达上限时记录 WARNING 诊断（正常范围行为不变）。
+_ARXIV_MAX_UPDATED_QUERY_PAGES = 100
+
+# SIGALRM 看门狗只能在 POSIX 主线程安装；不可用时原实现会静默失效，
+# 因此改为首次禁用时记录一条明确 WARNING（进程内只记一次）。
+_TIMEOUT_GUARD_WARNED = False
+
 
 class ArxivFetchError(RuntimeError):
     """ArXiv 抓取失败异常。
@@ -104,10 +113,24 @@ class _timeout_guard:
         self._old_handler = None
         self._enabled = False
 
+    def _disable(self, reason: str) -> None:
+        """标记看门狗不可用并说明原因（每个进程只报告一次）。"""
+        global _TIMEOUT_GUARD_WARNED
+        self._enabled = False
+        if _TIMEOUT_GUARD_WARNED:
+            return
+        _TIMEOUT_GUARD_WARNED = True
+        logger.warning(
+            "⚠️  [ArXiv] 抓取超时看门狗不可用（%s）：本次抓取不会在请求无进展时"
+            "强制超时，卡住的请求只能依赖 arXiv 客户端自身的重试与网络超时。",
+            reason,
+        )
+
     def __enter__(self):
         if self.seconds <= 0:
             return self
         if not hasattr(signal, "SIGALRM"):
+            self._disable("当前平台不支持 signal.SIGALRM")
             return self
         try:
             self._old_handler = signal.getsignal(signal.SIGALRM)
@@ -118,8 +141,10 @@ class _timeout_guard:
             signal.signal(signal.SIGALRM, _handler)
             signal.alarm(self.seconds)
             self._enabled = True
-        except Exception:
-            self._enabled = False
+        except Exception as exc:
+            # ``signal.signal`` only works on the main thread; a silently
+            # missing watchdog would hide the loss of that protection.
+            self._disable(f"无法安装 SIGALRM 处理器（可能不在主线程）：{exc}")
         return self
 
     def touch(self):
@@ -261,12 +286,16 @@ class ArxivSource(BasePaperSource):
         boundary_field: str,
         fetch_timeout_seconds: int,
         page_size: Optional[int] = None,
+        max_pages: Optional[int] = None,
+        context: str = "",
     ) -> tuple[list, Dict[str, int]]:
         """
         获取一个无数量上限的查询结果。
 
         arxiv.Client 会按 page_size 自动分页；这里仅在排序字段早于时间边界时
         停止，因此不会因为历史记录数量或 max_results 配置提前结束。
+        ``max_pages`` 为 None 时保持该行为；传入页数预算后，触达预算即停止并
+        记录诊断（用于没有时间下界的 updated 查询）。
         """
         results = []
         api_total = 0
@@ -286,6 +315,18 @@ class ArxivSource(BasePaperSource):
                 guard.touch()
                 api_total += 1
                 page_count = ((api_total - 1) // configured_page_size) + 1
+                if max_pages is not None and page_count > max_pages:
+                    api_total -= 1
+                    page_count = max_pages
+                    logger.warning(
+                        "    ⚠️  [ArXiv] 领域 %s 的 updated 查询达到页数上限 %d 页，"
+                        "已停止继续分页（已检查约 %d 条 API 条目，截止日期 %s）",
+                        context or "?",
+                        max_pages,
+                        api_total,
+                        cutoff_date.isoformat(),
+                    )
+                    break
                 boundary = getattr(result, boundary_field)
                 if boundary < cutoff_date:
                     # 两个查询都按边界字段降序排列，可以安全地停止后续分页。
@@ -463,11 +504,19 @@ class ArxivSource(BasePaperSource):
                     for query_kind, search, boundary_field in searches:
                         active_query_kind = query_kind
                         domain_receipt["queries"][query_kind]["attempts"] += 1
+                        # submitted 查询自带时间下界，页数本就有限；updated 查询
+                        # 没有下界、只靠降序早停，必须给它一个页数预算。
                         query_results, query_receipt = self._fetch_query_results(
                             search,
                             cutoff_date,
                             boundary_field,
                             fetch_timeout_seconds,
+                            max_pages=(
+                                _ARXIV_MAX_UPDATED_QUERY_PAGES
+                                if query_kind == "updated"
+                                else None
+                            ),
+                            context=domain,
                         )
                         domain_receipt["queries"][query_kind].update(query_receipt)
                         domain_receipt["queries"][query_kind]["error"] = None

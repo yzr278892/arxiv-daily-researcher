@@ -378,6 +378,37 @@ class ArxivFetchTests(unittest.TestCase):
         fake_source.set_history_filtering_enabled.assert_called_once_with(False)
 
 
+    def test_updated_query_stops_at_the_page_budget(self):
+        """An updated query has no lower bound and must not page forever."""
+        from sources import arxiv_source
+
+        class _Client:
+            page_size = 2
+
+            def results(self, _search):
+                # Every result is inside the window, so without a budget this
+                # iterator would keep paging through the whole domain.
+                for index in range(20):
+                    moment = datetime(2026, 9, 1, tzinfo=timezone.utc)
+                    yield _FakeResult(f"2501.{index:05d}v1", moment, moment)
+
+        source = ArxivSource.__new__(ArxivSource)
+        source.client = _Client()
+        with self.assertLogs("sources.arxiv_source", level="WARNING") as logs:
+            results, receipt = source._fetch_query_results(
+                object(),
+                datetime(2026, 7, 1, tzinfo=timezone.utc),
+                "updated",
+                0,
+                max_pages=2,
+                context="cs.AI",
+            )
+
+        self.assertEqual(len(results), 4)
+        self.assertEqual(receipt["pages_observed"], 2)
+        self.assertTrue(any("页数上限" in line for line in logs.output))
+
+
 class ArxivTimeoutGuardTests(unittest.TestCase):
     """超时守卫是"无进展"看门狗：持续到达的结果应持续续期。"""
 
@@ -430,6 +461,22 @@ def _http_error(status: int, message: str, retry_after=None):
         headers,
         BytesIO(b""),
     )
+
+
+    def test_unavailable_watchdog_explains_why_it_is_disabled(self):
+        """A silently disabled watchdog would hide the lost protection."""
+        from sources import arxiv_source
+
+        arxiv_source._TIMEOUT_GUARD_WARNED = False
+        with patch.object(
+            arxiv_source.signal,
+            "signal",
+            side_effect=ValueError("signal only works in main thread"),
+        ), self.assertLogs("sources.arxiv_source", level="WARNING") as logs:
+            with arxiv_source._timeout_guard(5) as guard:
+                self.assertFalse(guard._enabled)
+
+        self.assertTrue(any("看门狗不可用" in line for line in logs.output))
 
 
 class ArxivRetryBackoffTests(unittest.TestCase):
