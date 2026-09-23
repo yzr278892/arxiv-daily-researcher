@@ -2,6 +2,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -71,6 +72,31 @@ class PaperPreferenceTests(unittest.TestCase):
                 [{"source": "arxiv", "paper_id": "1"}, {"source": "arxiv", "paper_id": "2"}]
             )
             self.assertEqual(mapping, {("arxiv", "1"): "like"})
+
+    def test_preference_map_reads_a_whole_page_with_one_query(self):
+        """A report card must not run one preference query per paper."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = DailyResearchStore(Path(temp_dir) / "state.db")
+            papers = []
+            for index in range(60):
+                paper_id = f"2401.{index:05d}"
+                _deliver_paper(store, paper_id=paper_id)
+                papers.append({"source": "arxiv", "paper_id": paper_id})
+
+            statements: list[str] = []
+            original_connect = store._connect
+
+            def tracing_connect():
+                conn = original_connect()
+                conn.set_trace_callback(statements.append)
+                return conn
+
+            with patch.object(store, "_connect", side_effect=tracing_connect):
+                mapping = store.get_preference_map(papers)
+
+        self.assertEqual(len(mapping), 60)
+        preference_queries = [sql for sql in statements if "paper_preferences" in sql]
+        self.assertEqual(len(preference_queries), 1)
 
     def test_auto_favorite_is_idempotent_and_preserves_reader_decisions(self):
         with tempfile.TemporaryDirectory() as temp_dir:

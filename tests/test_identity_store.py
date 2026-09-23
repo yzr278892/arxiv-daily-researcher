@@ -196,6 +196,32 @@ class IdentityStoreTests(unittest.TestCase):
             self.assertEqual("failed", recent[0]["status"])
             self.assertEqual("failed", recent[0]["receipts"][0]["status"])
 
+    def test_recent_runs_read_every_receipt_set_with_one_query(self):
+        """The diagnostics list must not open a query per listed run."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = DailyResearchStore(Path(temp_dir) / "daily.db")
+            run_ids = [store.start_run(1) for _ in range(3)]
+            for run_id in run_ids:
+                store.record_scan_receipt(run_id, "arxiv", _source_receipt("arxiv"))
+
+            statements: list[str] = []
+            original_connect = store._connect
+
+            def tracing_connect():
+                conn = original_connect()
+                conn.set_trace_callback(statements.append)
+                return conn
+
+            with patch.object(store, "_connect", side_effect=tracing_connect):
+                runs = store.get_recent_runs(limit=3)
+
+        self.assertEqual(3, len(runs))
+        for run in runs:
+            self.assertEqual(1, len(run["receipts"]))
+            self.assertEqual("succeeded", run["receipts"][0]["status"])
+        receipt_queries = [sql for sql in statements if "daily_scan_receipts" in sql]
+        self.assertEqual(len(receipt_queries), 1)
+
     def test_scan_receipt_rejects_wrong_source_or_missing_run(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             store = DailyResearchStore(Path(temp_dir) / "daily.db")

@@ -7,7 +7,7 @@ import threading
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple, TYPE_CHECKING
+from typing import Any, Dict, Iterable, Optional, Tuple, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from agents.analysis_agent import Stage2Response
@@ -1999,31 +1999,47 @@ class DailyResearchStore:
 
     def get_scan_receipts(self, run_id: str) -> list[Dict[str, Any]]:
         """Return parsed source receipts in stable source order for diagnostics/UI."""
+        return self.get_scan_receipts_bulk([run_id]).get(str(run_id), [])
+
+    def get_scan_receipts_bulk(
+        self, run_ids: Iterable[str]
+    ) -> Dict[str, list[Dict[str, Any]]]:
+        """Return receipts for many runs in one query, keyed by run id.
+
+        The diagnostics page asks for receipts of every listed run; one query
+        per run turned a bounded table into a connection and statement per row.
+        """
+        wanted = [str(run_id) for run_id in run_ids if str(run_id)]
+        grouped: Dict[str, list[Dict[str, Any]]] = {run_id: [] for run_id in wanted}
+        if not wanted:
+            return grouped
         with self._connect() as conn:
-            rows = conn.execute(
-                """
-                SELECT source, status, receipt_json, recorded_at
-                FROM daily_scan_receipts
-                WHERE run_id = ?
-                ORDER BY source ASC
-                """,
-                (run_id,),
-            ).fetchall()
-        receipts = []
-        for row in rows:
-            try:
-                receipt = json.loads(row["receipt_json"])
-            except (TypeError, ValueError, json.JSONDecodeError):
-                # A corrupt legacy row must remain visible rather than silently
-                # disappearing from a diagnostic screen.
-                receipt = {"source": row["source"], "status": "corrupt"}
-            if not isinstance(receipt, dict):
-                receipt = {"source": row["source"], "status": "corrupt"}
-            receipt["source"] = row["source"]
-            receipt["status"] = row["status"]
-            receipt["recorded_at"] = row["recorded_at"]
-            receipts.append(receipt)
-        return receipts
+            for start in range(0, len(wanted), 200):
+                chunk = wanted[start : start + 200]
+                placeholders = ", ".join("?" for _ in chunk)
+                rows = conn.execute(
+                    f"""
+                    SELECT run_id, source, status, receipt_json, recorded_at
+                    FROM daily_scan_receipts
+                    WHERE run_id IN ({placeholders})
+                    ORDER BY source ASC
+                    """,
+                    chunk,
+                ).fetchall()
+                for row in rows:
+                    try:
+                        receipt = json.loads(row["receipt_json"])
+                    except (TypeError, ValueError, json.JSONDecodeError):
+                        # A corrupt legacy row must remain visible rather than
+                        # silently disappearing from a diagnostic screen.
+                        receipt = {"source": row["source"], "status": "corrupt"}
+                    if not isinstance(receipt, dict):
+                        receipt = {"source": row["source"], "status": "corrupt"}
+                    receipt["source"] = row["source"]
+                    receipt["status"] = row["status"]
+                    receipt["recorded_at"] = row["recorded_at"]
+                    grouped.setdefault(str(row["run_id"]), []).append(receipt)
+        return grouped
 
     def get_app_state(self, key: str) -> Optional[str]:
         """Return a persisted scratch value, or None when the key is unset."""
@@ -4125,20 +4141,37 @@ class DailyResearchStore:
 
     def get_preference_map(self, papers: list[Dict[str, Any]]) -> Dict[Tuple[str, str], str]:
         """Batch lookup of preference strings for (source, paper_id) pairs."""
+        pairs: list[Tuple[str, str]] = []
+        seen: set[Tuple[str, str]] = set()
+        for paper in papers:
+            source = paper.get("source")
+            paper_id = paper.get("paper_id")
+            if not isinstance(source, str) or not isinstance(paper_id, str):
+                continue
+            key = (source, paper_id)
+            if key not in seen:
+                seen.add(key)
+                pairs.append(key)
         result: Dict[Tuple[str, str], str] = {}
+        if not pairs:
+            return result
         with self._connect() as conn:
-            for paper in papers:
-                source = paper.get("source")
-                paper_id = paper.get("paper_id")
-                if not isinstance(source, str) or not isinstance(paper_id, str):
-                    continue
-                row = conn.execute(
-                    "SELECT preference FROM paper_preferences "
-                    "WHERE source = ? AND paper_id = ?",
-                    (source, paper_id),
-                ).fetchone()
-                if row and row["preference"] != "none":
-                    result[(source, paper_id)] = row["preference"]
+            # One row-value query per chunk instead of one statement per paper:
+            # an archived report can ask about hundreds of cards at once.
+            for start in range(0, len(pairs), 100):
+                chunk = pairs[start : start + 100]
+                placeholders = ", ".join("(?, ?)" for _ in chunk)
+                params: list[Any] = []
+                for source, paper_id in chunk:
+                    params.extend((source, paper_id))
+                rows = conn.execute(
+                    "SELECT source, paper_id, preference FROM paper_preferences "
+                    f"WHERE (source, paper_id) IN ({placeholders})",
+                    params,
+                ).fetchall()
+                for row in rows:
+                    if row["preference"] != "none":
+                        result[(row["source"], row["paper_id"])] = row["preference"]
         return result
 
     def list_preferences(
@@ -4862,6 +4895,7 @@ class DailyResearchStore:
                 (max_rows,),
             ).fetchall()
         runs = []
+        receipts_by_run = self.get_scan_receipts_bulk([row["run_id"] for row in rows])
         for row in rows:
             try:
                 sources = json.loads(row["scanned_sources_json"] or "[]")
@@ -4878,7 +4912,7 @@ class DailyResearchStore:
                     "status": row["status"],
                     "total_papers": int(row["total_papers"] or 0),
                     "error": row["error"],
-                    "receipts": self.get_scan_receipts(row["run_id"]),
+                    "receipts": receipts_by_run.get(str(row["run_id"]), []),
                 }
             )
         return runs
