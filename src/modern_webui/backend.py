@@ -825,7 +825,7 @@ def _read_status_file(path: Path) -> dict[str, Any] | None:
     }
 
 
-def task_records(modes: Iterable[str] | None = None, *, limit: int = 200) -> list[dict[str, Any]]:
+def task_records(modes: Iterable[str] | None = None, *, limit: int | None = 200) -> list[dict[str, Any]]:
     """Combine durable queue entries and worker receipts into one safe list."""
     allowed = set(modes or SUPPORTED_MODES)
     allowed.intersection_update(SUPPORTED_MODES)
@@ -888,7 +888,7 @@ def task_records(modes: Iterable[str] | None = None, *, limit: int = 200) -> lis
             records[record["request_id"]] = record
     rows = list(records.values())
     rows.sort(key=lambda item: (item.get("updated_at") or item.get("created_at") or ""), reverse=True)
-    return rows[: max(1, min(int(limit), 500))]
+    return rows if limit is None else rows[: max(1, min(int(limit), 500))]
 
 
 def _latest_record(modes: Iterable[str]) -> dict[str, Any] | None:
@@ -911,7 +911,10 @@ def run_status(kind: str = "daily") -> dict[str, Any]:
     # ``task_records`` globs and parses the trigger queue plus every status
     # receipt on disk.  The page kind and the launch guard both need the same
     # records, so collect the supported set once and filter in memory.
-    all_records = task_records(SUPPORTED_MODES)
+    # Limit only lists returned to the browser. A queued maintenance request
+    # can be older than 200 newer receipts from other modes, but it must still
+    # participate in launch and active-state decisions.
+    all_records = task_records(SUPPORTED_MODES, limit=None)
     records = [row for row in all_records if row["mode"] in wanted]
     live_records = [row for row in records if row["state"] in {"queued", "starting", "running"}]
     # The watcher accepts one trigger at a time.  Daily and trend launchers
@@ -1021,7 +1024,7 @@ def run_status(kind: str = "daily") -> dict[str, Any]:
             "started_at": "",
         }
     else:
-        latest = _latest_record(wanted)
+        latest = records[0] if records else None
         if latest and latest["state"] in {"failed", "rejected", "interrupted", "skipped_busy"}:
             task = {
                 "state": latest["state"],

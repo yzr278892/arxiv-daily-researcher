@@ -95,6 +95,21 @@ class ModernWebUIAppTests(unittest.TestCase):
             response.text.count('preview.className = "report-preview-host";'), 2
         )
 
+    def test_direct_report_html_is_browser_sandboxed(self) -> None:
+        self.env["WEBUI_AUTH_ENABLED"] = "false"
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "legacy.html"
+            path.write_text("<script>window.parent.location='/'</script>", encoding="utf-8")
+            with patch.object(
+                modern_app.backend, "report_file", return_value=(path, "text/html")
+            ):
+                response = self.client.get("/api/reports/legacy/file")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["content-security-policy"], "sandbox")
+        self.assertEqual(response.headers["x-content-type-options"], "nosniff")
+        self.assertEqual(response.headers["cache-control"], "private, no-store")
+
     def test_report_navigation_follows_each_report_batch_not_calendar_dates(self) -> None:
         script = self.client.get("/assets/app.js").text
         start = script.index("function findAdjacentDailyReport")

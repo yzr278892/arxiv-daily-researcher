@@ -121,14 +121,16 @@ class KeywordFusionTests(unittest.TestCase):
         self.assertEqual(stats["normalized_keywords"], 0)
 
     def test_alias_normalization_and_daily_counts(self):
+        first_day = date.today() - timedelta(days=3)
+        second_day = first_day + timedelta(days=1)
         _insert_completed_paper(
-            self.db_path, "2401.00001", ["Quantum Error Correction"], "2026-08-20"
+            self.db_path, "2401.00001", ["Quantum Error Correction"], first_day.isoformat()
         )
         _insert_completed_paper(
-            self.db_path, "2401.00002", ["quantum error correction"], "2026-08-20"
+            self.db_path, "2401.00002", ["quantum error correction"], first_day.isoformat()
         )
         _insert_completed_paper(
-            self.db_path, "2401.00003", ["QEC"], "2026-08-21"
+            self.db_path, "2401.00003", ["QEC"], second_day.isoformat()
         )
         db = KeywordDatabase(self.db_path)
 
@@ -141,12 +143,12 @@ class KeywordFusionTests(unittest.TestCase):
 
         db.update_daily_counts()
 
-        # 别名覆盖后，8-20 两篇、8-21 一篇
+        # 别名覆盖后，第一天两篇、第二天一篇。
         trends = db.get_keyword_trends(days=30, keywords=["quantum error correction"])
         self.assertEqual(len(trends), 1)
         daily = trends[0].daily_counts
-        self.assertEqual(daily[date(2026, 8, 20)], 2)
-        self.assertEqual(daily[date(2026, 8, 21)], 1)
+        self.assertEqual(daily[first_day], 2)
+        self.assertEqual(daily[second_day], 1)
 
         top = db.get_top_keywords(days=30)
         self.assertEqual(top[0][0], "quantum error correction")

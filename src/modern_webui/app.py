@@ -593,7 +593,20 @@ async def report_file(request: Request) -> FileResponse:
         path, media_type = await _blocking_call(backend.report_file, request.path_params.get("token", ""))
     except Exception as exc:
         raise _safe_error(exc) from exc
-    return FileResponse(path, media_type=media_type, content_disposition_type="inline")
+    # Archived HTML may originate from a legacy import or a remote backup.
+    # The in-app preview fetches this response into a sandboxed srcdoc iframe;
+    # a direct browser navigation must not grant the archived document the
+    # management application's origin or script privileges.
+    return FileResponse(
+        path,
+        media_type=media_type,
+        content_disposition_type="inline",
+        headers={
+            "Content-Security-Policy": "sandbox",
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "private, no-store",
+        },
+    )
 
 
 async def report_papers_get(request: Request) -> JSONResponse:

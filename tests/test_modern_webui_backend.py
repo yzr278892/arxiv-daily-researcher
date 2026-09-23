@@ -295,6 +295,40 @@ class ModernBackendTests(unittest.TestCase):
         self.assertEqual(rows[0]["state"], "queued")
         self.assertFalse(rows[0]["args"]["full_repair"])
 
+    def test_queued_history_task_survives_global_receipt_display_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            data_dir = Path(directory)
+            queued = enqueue_trigger(data_dir, "legacy_import", full_repair=False)
+            status_dir = trigger_status_directory(data_dir)
+            status_dir.mkdir(parents=True, exist_ok=True)
+            for index in range(200):
+                request_id = f"{index:032x}"
+                (status_dir / f"{request_id}.json").write_text(
+                    json.dumps({
+                        "request_id": request_id,
+                        "mode": "daily_research",
+                        "state": "succeeded",
+                        "created_at": "2099-01-01T00:00:00+00:00",
+                        "updated_at": "2099-01-01T00:00:01+00:00",
+                    }),
+                    encoding="utf-8",
+                )
+            with patch.object(backend, "DEFAULT_DATA_DIR", data_dir), patch.object(
+                backend, "flat_config", return_value={}
+            ), patch.object(backend, "active_locks", return_value=[]), patch.object(
+                backend, "open_store", return_value=None
+            ):
+                self.assertEqual(len(backend.task_records()), 200)
+                self.assertIn(
+                    queued.stem.rsplit("_", 1)[-1],
+                    {row["request_id"] for row in backend.task_records(limit=None)},
+                )
+                status = backend.run_status("history")
+
+        self.assertTrue(status["is_active"])
+        self.assertFalse(status["can_start"])
+        self.assertEqual(status["task"]["state"], "queued")
+
     def test_running_receipt_beats_persistent_handoff_file(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             data_dir = Path(directory)
