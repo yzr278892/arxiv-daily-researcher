@@ -97,8 +97,8 @@ class VersionedStaticFiles(StaticFiles):
     async def get_response(self, path: str, scope: Any) -> Response:
         response = await super().get_response(path, scope)
         if response.status_code == status.HTTP_200_OK:
-            # The SPA document injects a file fingerprint into every CSS/JS
-            # URL.  A direct asset URL remains revalidatable for operators and
+            # The SPA document injects a file fingerprint into its static
+            # asset URLs. A direct asset URL remains revalidatable for operators and
             # tests, while a fingerprinted URL avoids repeat transfers over a
             # LAN or Tailscale connection.
             query = scope.get("query_string", b"")
@@ -111,10 +111,10 @@ class VersionedStaticFiles(StaticFiles):
 
 
 def _frontend_asset_version() -> str:
-    """Return a cheap content-change token for the two SPA entry assets."""
+    """Return a cheap content-change token for the SPA entry assets."""
 
     parts: list[str] = []
-    for name in ("app.css", "app.js"):
+    for name in ("app.css", "app.js", "icon.svg", "favicon-32.png"):
         try:
             stat = (STATIC_DIR / name).stat()
             parts.append(f"{stat.st_mtime_ns:x}-{stat.st_size:x}")

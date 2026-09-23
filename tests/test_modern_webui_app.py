@@ -67,6 +67,19 @@ class ModernWebUIAppTests(unittest.TestCase):
         # httpx transparently decodes the body for TestClient callers.
         self.assertIn("const NAVIGATION", response.text)
 
+    def test_brand_icon_is_present_in_shell_and_served_assets(self) -> None:
+        shell = self.client.get("/")
+        self.assertEqual(shell.status_code, 200)
+        self.assertIn('<title>arXiv Daily Researcher</title>', shell.text)
+        self.assertIn('rel="icon" type="image/svg+xml" href="/assets/icon.svg?v=', shell.text)
+        self.assertIn('rel="icon" type="image/png" sizes="32x32"', shell.text)
+        self.assertEqual(shell.text.count('class="brand-mark'), 2)
+
+        svg = self.client.get("/assets/icon.svg")
+        self.assertEqual(svg.status_code, 200)
+        self.assertIn("arXiv Daily Researcher", svg.text)
+        self.assertEqual(self.client.get("/assets/favicon-32.png").status_code, 200)
+
     def test_reading_the_account_registry_does_not_derive_a_test_password(self) -> None:
         """Authenticated requests must not run PBKDF2 just to parse .env."""
         owner = modern_auth.Account(
