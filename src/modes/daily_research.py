@@ -46,6 +46,7 @@ from utils.daily_research_store import (
     V1_PASS_SIGNAL_STRENGTH,
 )
 from utils.llm_health import make_llm_health_recorder
+from utils.llm_resilience import is_retryable_llm_error
 from utils.daily_research_errors import PaperStageError, paper_stage_error
 from utils.daily_research_fingerprints import (
     build_score_audit_metadata,
@@ -396,6 +397,22 @@ def _deep_analyze_single_paper(paper_info, analysis_agent):
     pdf_url = paper_meta.get_best_pdf_url() if paper_meta else paper_info.get("pdf_url")
 
     max_attempts = max(1, int(getattr(settings, "RETRY_MAX_ATTEMPTS", 3)))
+    # Parse the PDF once.  Every retry used to download up to 50 MB again (and
+    # re-submit the MinerU cloud job), even though only the LLM call was
+    # transiently failing.  An empty string means "already attempted, no full
+    # text available"; ``deep_analyze`` then uses the abstract fallback.
+    prepared_pdf_text: Optional[str] = None
+    if pdf_url:
+        try:
+            prepared_pdf_text = analysis_agent._download_and_parse_pdf(pdf_url) or ""
+        except Exception as exc:
+            logger.warning(
+                "PDF 下载或解析失败，将按配置回退到摘要 (%s...): %s",
+                str(paper_info.get("title") or "")[:30],
+                exc,
+            )
+            prepared_pdf_text = ""
+
     last_error = None
     for attempt in range(1, max_attempts + 1):
         try:
@@ -404,6 +421,7 @@ def _deep_analyze_single_paper(paper_info, analysis_agent):
                 pdf_url=pdf_url,
                 abstract=paper_info["abstract"],
                 fallback_to_abstract=True,
+                pdf_text=prepared_pdf_text,
             )
             if analysis:
                 return {
@@ -415,6 +433,15 @@ def _deep_analyze_single_paper(paper_info, analysis_agent):
             last_error = RuntimeError("深度分析未返回结果")
         except Exception as exc:
             last_error = exc
+            if not is_retryable_llm_error(exc):
+                # Auth, permission and schema errors repeat identically: the
+                # remaining attempts would only delay the same failure.
+                logger.error(
+                    "深度分析遇到不可重试错误 (%s...): %s",
+                    str(paper_info.get("title") or "")[:30],
+                    exc,
+                )
+                break
 
         if attempt < max_attempts:
             wait_seconds = min(
@@ -1078,6 +1105,9 @@ class DailyResearchPipeline:
         store = None
         run_id = None
         notifier = None
+        # Owned source sessions must be closable from ``finally`` even when the
+        # run fails before the scan stage creates them.
+        search_agent = None
         report_delivery_committed = False
         try:
             print("\n" + "=" * 80)
@@ -1249,7 +1279,6 @@ class DailyResearchPipeline:
             logger.info(">>> 阶段3: 从多个数据源抓取论文...")
             store.record_run_phase(run_id, "scan")
 
-            search_agent = None
             supplement_identities: List[Tuple[str, str, int]] = []
             supplement_fetch_failures = 0
 
@@ -2187,6 +2216,15 @@ class DailyResearchPipeline:
 
             raise
         finally:
+            # 无论成功、失败还是中断都关闭数据源会话；一次运行会打开多个
+            # HTTP 连接（arXiv、OpenAlex、Hugging Face、Semantic Scholar），
+            # 否则它们会一直留在常驻的 worker 进程里。
+            if search_agent is not None:
+                try:
+                    search_agent.close()
+                except Exception:
+                    logger.debug("关闭数据源会话失败", exc_info=True)
+
             # 无论成功、失败还是中断，都把本次运行真实消耗的 token 落库；
             # 统计失败绝不影响主流程。
             if store and run_id:

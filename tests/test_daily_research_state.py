@@ -515,6 +515,200 @@ class DailyResearchStateTests(unittest.TestCase):
             self.assertIsNotNone(completed["completed_at"])
             self.assertEqual(pending_count, 1)
 
+    def test_pipeline_closes_source_sessions_after_the_run(self):
+        """A finished run must not leave source HTTP sessions open."""
+        closed = []
+
+        class _KeywordAgent:
+            def get_all_keywords(self):
+                return {"quantum": 1.0}
+
+        class _SearchAgent:
+            def __init__(self, **_kwargs):
+                pass
+
+            def get_enabled_sources(self):
+                return ["arxiv"]
+
+            def fetch_all_papers(self, **kwargs):
+                kwargs["scan_receipt_callbacks"]["arxiv"](
+                    {
+                        "source": "arxiv",
+                        "status": "succeeded",
+                        "scanned_at": "2026-09-01T08:00:00+00:00",
+                        "domain_receipts": [],
+                        "total_new_candidates": 1,
+                    }
+                )
+                return {
+                    "arxiv": [
+                        PaperMetadata(
+                            paper_id="2501.50001v1",
+                            title="Closed sessions",
+                            authors=["Alice"],
+                            abstract="An abstract",
+                            published_date=datetime.now(timezone.utc),
+                            url="https://arxiv.org/abs/2501.50001v1",
+                            source="arxiv",
+                        )
+                    ]
+                }
+
+            def can_download_pdf(self, _source):
+                return False
+
+            def close(self):
+                closed.append(True)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            db_path = root / "daily.db"
+            report_path = root / "ARXIV_Report.html"
+
+            class _Reporter:
+                def generate_reports_by_source(self, **_kwargs):
+                    report_path.write_text("<html>report</html>", encoding="utf-8")
+                    return {"arxiv_html": report_path}
+
+            overrides = {
+                "TOKEN_TRACKING_ENABLED": False,
+                "DAILY_RESEARCH_DB_PATH": db_path,
+                "ENABLE_NOTIFICATIONS": False,
+                "ENABLED_SOURCES": ["arxiv"],
+                "TARGET_DOMAINS": ["quant-ph"],
+                "TARGET_JOURNALS": [],
+                "ENABLE_REFERENCE_EXTRACTION": False,
+                "PRIMARY_KEYWORDS": ["quantum"],
+                "PRIMARY_KEYWORD_WEIGHT": 1.0,
+                "SCORE_STRATEGY": "legacy_weighted_keyword_v1",
+                "HISTORY_DIR": root / "history",
+                "OPENALEX_API_KEY": "",
+                "ENABLE_SEMANTIC_SCHOLAR_TLDR": False,
+                "SEMANTIC_SCHOLAR_API_KEY": "",
+                "KEYWORD_TRACKER_ENABLED": False,
+                "DAILY_ENABLE_DEEP_ANALYSIS": False,
+                "DAILY_MAX_PAPERS_PER_RUN": 1,
+                "ENABLE_CONCURRENCY": False,
+                "ENABLE_MARKDOWN_REPORT": False,
+                "ENABLE_HTML_REPORT": True,
+                "REPORTS_DIR": root,
+                "BACKUP_ENABLED": False,
+            }
+            with ExitStack() as stack:
+                for name, value in overrides.items():
+                    stack.enter_context(patch.object(settings, name, value))
+                stack.enter_context(patch("modes.daily_research.KeywordAgent", _KeywordAgent))
+                stack.enter_context(patch("modes.daily_research.SearchAgent", _SearchAgent))
+                stack.enter_context(patch("modes.daily_research.AnalysisAgent", _Agent))
+                stack.enter_context(patch("modes.daily_research.Reporter", _Reporter))
+                stack.enter_context(
+                    patch(
+                        "modes.daily_research.deliver_pending_after_report_syncs",
+                        return_value={"claimed": 0},
+                    )
+                )
+                stack.enter_context(
+                    patch("modes.daily_research.after_report_sync_maintenance_entry", return_value=None)
+                )
+                result = DailyResearchPipeline().run()
+
+        self.assertTrue(result.success)
+        self.assertEqual(closed, [True])
+
+    def test_deep_analysis_downloads_the_pdf_once_across_retries(self):
+        """A transient LLM failure must not re-transfer the paper's PDF."""
+
+        class _RetryingAgent:
+            def __init__(self):
+                self.downloads = 0
+                self.calls = 0
+                self.last_pdf_text = None
+
+            def _download_and_parse_pdf(self, _url):
+                self.downloads += 1
+                return "parsed full text"
+
+            def deep_analyze(self, **kwargs):
+                self.calls += 1
+                self.last_pdf_text = kwargs["pdf_text"]
+                raise RuntimeError("provider temporarily unavailable")
+
+        agent = _RetryingAgent()
+        with patch.object(settings, "RETRY_MAX_ATTEMPTS", 3), patch.object(
+            settings, "RETRY_MIN_WAIT", 0
+        ), patch.object(settings, "RETRY_MAX_WAIT", 0):
+            with self.assertRaises(PaperStageError):
+                daily_research_module._deep_analyze_single_paper(
+                    {
+                        "paper_id": "2501.40001v1",
+                        "title": "Retrying paper",
+                        "abstract": "An abstract",
+                        "pdf_url": "https://example.test/paper.pdf",
+                    },
+                    agent,
+                )
+
+        self.assertEqual(agent.downloads, 1)
+        self.assertEqual(agent.calls, 3)
+        self.assertEqual(agent.last_pdf_text, "parsed full text")
+
+    def test_deep_analysis_fails_fast_on_a_fatal_provider_error(self):
+        """Auth/schema failures repeat identically, so they must not retry."""
+
+        class _FatalError(Exception):
+            status_code = 401
+
+        class _FatalAgent:
+            def __init__(self):
+                self.downloads = 0
+                self.calls = 0
+
+            def _download_and_parse_pdf(self, _url):
+                self.downloads += 1
+                return ""
+
+            def deep_analyze(self, **_kwargs):
+                self.calls += 1
+                raise _FatalError("invalid api key")
+
+        agent = _FatalAgent()
+        with patch.object(settings, "RETRY_MAX_ATTEMPTS", 3), patch.object(
+            settings, "RETRY_MIN_WAIT", 0
+        ):
+            with self.assertRaises(PaperStageError) as raised:
+                daily_research_module._deep_analyze_single_paper(
+                    {
+                        "paper_id": "2501.40002v1",
+                        "title": "Unauthorised paper",
+                        "abstract": "An abstract",
+                        "pdf_url": "https://example.test/paper.pdf",
+                    },
+                    agent,
+                )
+
+        self.assertEqual(agent.downloads, 1)
+        self.assertEqual(agent.calls, 1)
+        self.assertIn("invalid api key", str(raised.exception))
+
+    def test_deep_analyze_reports_a_fatal_error_instead_of_returning_none(self):
+        """The fatal/transient distinction must survive the agent boundary."""
+        from agents.analysis_agent import AnalysisAgent
+
+        class _FatalError(Exception):
+            status_code = 403
+
+        agent = AnalysisAgent.__new__(AnalysisAgent)
+        agent.deep_template = {"modules": [], "prompts": {}}
+
+        def _fatal(*_args, **_kwargs):
+            raise _FatalError("permission denied")
+
+        with patch.object(agent, "_download_and_parse_pdf", return_value="full text"), patch.object(
+            agent, "_call_smart_llm", side_effect=_fatal
+        ):
+            with self.assertRaises(_FatalError):
+                agent.deep_analyze("T", "https://example.test/p.pdf", "abstract")
+
     def test_concurrent_scoring_forwards_learned_terms_to_every_paper(self):
         """The pooled branch must forward the learned library, not the legacy hint."""
 

@@ -18,6 +18,7 @@ from utils.llm_request_pool import call_chat_completion, call_responses
 from utils.llm_resilience import (
     LLMEndpointCapabilityError,
     build_llm_client,
+    is_retryable_llm_error,
     llm_retry,
 )
 from utils.llm_endpoint_capabilities import (
@@ -1403,7 +1404,12 @@ class AnalysisAgent:
     # ======================================================================
 
     def deep_analyze(
-        self, title: str, pdf_url: str, abstract: str, fallback_to_abstract: bool = True
+        self,
+        title: str,
+        pdf_url: str,
+        abstract: str,
+        fallback_to_abstract: bool = True,
+        pdf_text: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         """
         对论文进行深度分析（使用新的模板系统）。
@@ -1413,24 +1419,38 @@ class AnalysisAgent:
             pdf_url (str): PDF下载URL
             abstract (str): 论文摘要（作为降级方案）
             fallback_to_abstract (bool): PDF下载失败时是否使用摘要
+            pdf_text (Optional[str]): 调用方已解析的全文。传入后不再下载 PDF：
+                空字符串表示已尝试但全文不可用，此时按配置回退到摘要。重试循环
+                复用它可避免每轮重新下载。
 
         返回:
             Optional[Dict]: 分析结果字典，失败时返回None
         """
-        # 尝试下载并解析PDF。来源标记必须由本地代码写入，不能相信
-        # 模型自行声明的 ``content_source``；它决定全文 TL;DR 是否能
-        # 出现在日报中。
-        pdf_text = self._download_and_parse_pdf(pdf_url)
-        content_source = CONTENT_SOURCE_PDF
+        # 来源标记必须由本地代码写入，不能相信模型自行声明的
+        # ``content_source``；它决定全文 TL;DR 是否能出现在日报中。
+        if pdf_text is None:
+            # 尝试下载并解析PDF。
+            pdf_text = self._download_and_parse_pdf(pdf_url)
+            content_source = CONTENT_SOURCE_PDF
 
-        if not pdf_text:
-            if fallback_to_abstract:
-                logger.warning(f"PDF解析失败 [{title[:50]}]，使用摘要作为降级方案")
-                pdf_text = abstract
-                content_source = CONTENT_SOURCE_ABSTRACT_FALLBACK
-            else:
-                logger.error(f"PDF解析失败 [{title[:50]}]，且未启用降级方案")
+            if not pdf_text:
+                if fallback_to_abstract:
+                    logger.warning(f"PDF解析失败 [{title[:50]}]，使用摘要作为降级方案")
+                    pdf_text = abstract
+                    content_source = CONTENT_SOURCE_ABSTRACT_FALLBACK
+                else:
+                    logger.error(f"PDF解析失败 [{title[:50]}]，且未启用降级方案")
+                    return None
+        elif not pdf_text:
+            # 调用方复用了已解析的全文；空值表示全文不可用。
+            if not fallback_to_abstract:
+                logger.error(f"PDF全文不可用 [{title[:50]}]，且未启用降级方案")
                 return None
+            logger.warning(f"PDF全文不可用 [{title[:50]}]，使用摘要作为降级方案")
+            pdf_text = abstract
+            content_source = CONTENT_SOURCE_ABSTRACT_FALLBACK
+        else:
+            content_source = CONTENT_SOURCE_PDF
 
         # 从新模板获取配置
         modules = self.deep_template.get("modules", [])
@@ -1555,6 +1575,11 @@ class AnalysisAgent:
 
         except Exception as e:
             logger.error(f"深度分析失败 [{title[:50]}]: {e}")
+            # Auth, permission and schema errors repeat identically on every
+            # attempt.  Reporting them as ``None`` made callers retry the whole
+            # paper (including its download) instead of failing fast.
+            if not is_retryable_llm_error(e):
+                raise
             return None
 
     def _download_and_parse_pdf(self, pdf_url: str) -> Optional[str]:
