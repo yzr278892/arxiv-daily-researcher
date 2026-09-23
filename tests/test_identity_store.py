@@ -574,6 +574,54 @@ class IdentityStoreTests(unittest.TestCase):
                 DailyResearchStore(fresh)
             self.assertEqual(migration.call_count, 1)
 
+    def test_queue_scope_quarantine_runs_once_and_is_recorded(self):
+        """The pre-scope backfill repair must not rescan the ledger on reopen."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "daily.db"
+            store = DailyResearchStore(db_path)
+            with store._connect() as conn:
+                recorded = {
+                    row["migration"]
+                    for row in conn.execute("SELECT migration FROM schema_migrations")
+                }
+            self.assertIn("paper_queue_scope", recorded)
+
+            with patch.object(
+                DailyResearchStore, "_migrate_paper_queue_scope"
+            ) as migration:
+                DailyResearchStore(db_path)
+            self.assertEqual(migration.call_count, 0)
+
+            fresh = Path(temp_dir) / "fresh.db"
+            with patch.object(
+                DailyResearchStore, "_migrate_paper_queue_scope"
+            ) as migration:
+                DailyResearchStore(fresh)
+            self.assertEqual(migration.call_count, 1)
+
+    def test_entity_coverage_probe_is_cached_until_a_paper_is_inserted(self):
+        """Archive reads must not rescan ``daily_papers`` for entity gaps."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "daily.db"
+            store = DailyResearchStore(db_path)
+            store._ensure_paper_entity_coverage()
+            self.assertTrue(store._entity_coverage_valid)
+
+            with patch.object(
+                DailyResearchStore, "_migrate_paper_entities"
+            ) as migration:
+                # A confirmed-aligned ledger short-circuits the whole-table probe.
+                store._ensure_paper_entity_coverage()
+                self.assertEqual(migration.call_count, 0)
+
+            # Inserting a paper row invalidates the cached answer so a row that
+            # arrives without an entity is still detected.
+            run_id = store.start_run(0)
+            store.register_paper_candidates(run_id, {"arxiv": [_paper("2501.70001v1")]})
+            self.assertFalse(store._entity_coverage_valid)
+            store._ensure_paper_entity_coverage()
+            self.assertTrue(store._entity_coverage_valid)
+
     def test_thin_image_leaves_identity_migration_unrecorded(self):
         """The WebUI image must not claim a backfill it could not run."""
         with tempfile.TemporaryDirectory() as temp_dir:

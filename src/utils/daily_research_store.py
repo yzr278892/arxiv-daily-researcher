@@ -58,6 +58,11 @@ class DailyResearchStore:
         # Connections are never shared between threads, and each call site
         # keeps its existing ``with conn`` commit/rollback semantics.
         self._local = threading.local()
+        # ``daily_papers`` and ``paper_entities`` are aligned once the backfill
+        # has run.  Probing for gaps means scanning the whole paper table, which
+        # every archive read did; remember the confirmed state and invalidate it
+        # whenever this store inserts a paper row.
+        self._entity_coverage_valid = False
         self._init_db()
 
     @staticmethod
@@ -213,7 +218,13 @@ class DailyResearchStore:
                 """
             )
             self._run_migration(conn, "paper_identity", self._migrate_paper_identity)
-            self._migrate_paper_queue_scope(conn)
+            # Quarantining pre-scope backfill leftovers is a one-time repair; the
+            # modern write path already stores the correct queue scope, so the
+            # unconditional UPDATE plus EXISTS subquery must not rescan
+            # ``daily_papers`` on every process start.
+            self._run_migration(
+                conn, "paper_queue_scope", self._migrate_paper_queue_scope
+            )
             self._migrate_stage_state(conn)
             self._run_migration(conn, "tldr_state", self._migrate_tldr_state)
             self._migrate_report_repair_state(conn)
@@ -1397,20 +1408,24 @@ class DailyResearchStore:
 
     def _ensure_paper_entity_coverage(self) -> None:
         """Backfill rows inserted by older tools or direct compatibility callers."""
-        with self._lock, self._connect() as conn:
-            missing = conn.execute(
-                """
-                SELECT 1 FROM daily_papers
-                WHERE entity_id IS NULL
-                   OR NOT EXISTS (
-                       SELECT 1 FROM paper_entities entities
-                       WHERE entities.entity_id = daily_papers.entity_id
-                   )
-                LIMIT 1
-                """
-            ).fetchone()
-            if missing is not None:
-                self._migrate_paper_entities(conn)
+        with self._lock:
+            if self._entity_coverage_valid:
+                return
+            with self._connect() as conn:
+                missing = conn.execute(
+                    """
+                    SELECT 1 FROM daily_papers
+                    WHERE entity_id IS NULL
+                       OR NOT EXISTS (
+                           SELECT 1 FROM paper_entities entities
+                           WHERE entities.entity_id = daily_papers.entity_id
+                       )
+                    LIMIT 1
+                    """
+                ).fetchone()
+                if missing is not None:
+                    self._migrate_paper_entities(conn)
+                self._entity_coverage_valid = True
 
     @staticmethod
     def _migrate_delivery_identity(conn):
@@ -2434,6 +2449,7 @@ class DailyResearchStore:
             ):
                 outcome = "skipped_existing_newer"
             else:
+                self._entity_coverage_valid = False
                 conn.execute(
                     """
                     INSERT INTO daily_papers (
@@ -3576,7 +3592,10 @@ class DailyResearchStore:
         params: list[Any] = []
         if days is not None and days > 0:
             cutoff = (datetime.now() - timedelta(days=days)).date().isoformat()
-            query += " WHERE substr(recorded_at, 1, 10) >= ?"
+            # ``substr(recorded_at, 1, 10) >= ?`` cannot use the recorded_at
+            # index (append-only table, so a full scan grows forever).  ISO
+            # timestamps compare identically against a date prefix.
+            query += " WHERE recorded_at >= ?"
             params.append(cutoff)
         query += " GROUP BY day ORDER BY day"
         with self._connect() as conn:
@@ -3605,7 +3624,8 @@ class DailyResearchStore:
         params: list[Any] = []
         if days is not None and days > 0:
             cutoff = (datetime.now() - timedelta(days=days)).date().isoformat()
-            query += " WHERE substr(recorded_at, 1, 10) >= ?"
+            # Index-friendly equivalent of the previous ``substr`` comparison.
+            query += " WHERE recorded_at >= ?"
             params.append(cutoff)
         query += " GROUP BY model ORDER BY total DESC"
         with self._connect() as conn:
@@ -3948,14 +3968,26 @@ class DailyResearchStore:
         qualified = 0
         added = 0
         with self._lock, self._connect() as conn:
+            # ``scanned`` still counts every stored score row; the qualified
+            # rows are then narrowed in SQL so a large ledger is not pulled into
+            # Python just to discard the unqualified majority.
+            scanned = int(
+                conn.execute(
+                    "SELECT COUNT(*) AS total FROM daily_papers "
+                    "WHERE score_json IS NOT NULL AND trim(score_json) <> ''"
+                ).fetchone()["total"]
+                or 0
+            )
             rows = conn.execute(
                 """
                 SELECT source, paper_id, canonical_id, version, paper_json, score_json
                 FROM daily_papers
                 WHERE score_json IS NOT NULL AND trim(score_json) <> ''
+                  AND json_valid(score_json)
+                  AND json_extract(score_json, '$.is_qualified') = 1
                 """
             ).fetchall()
-            scanned = len(rows)
+            inserts: list[tuple[Any, ...]] = []
             for row in rows:
                 score = self._decode_json_object(row["score_json"])
                 if score.get("is_qualified") is not True:
@@ -3981,14 +4013,7 @@ class DailyResearchStore:
                     version = int(raw_version) if raw_version not in (None, "") else None
                 except (TypeError, ValueError):
                     version = None
-                cursor = conn.execute(
-                    """
-                    INSERT INTO paper_preferences (
-                        source, paper_id, canonical_id, version, preference,
-                        title, authors_json, categories_json, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, 'like', ?, ?, ?, ?, ?)
-                    ON CONFLICT(source, paper_id) DO NOTHING
-                    """,
+                inserts.append(
                     (
                         str(row["source"]),
                         str(row["paper_id"]),
@@ -3999,9 +4024,20 @@ class DailyResearchStore:
                         json.dumps(categories, ensure_ascii=False),
                         now,
                         now,
-                    ),
+                    )
                 )
-                added += max(0, int(cursor.rowcount))
+            if inserts:
+                cursor = conn.executemany(
+                    """
+                    INSERT INTO paper_preferences (
+                        source, paper_id, canonical_id, version, preference,
+                        title, authors_json, categories_json, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, 'like', ?, ?, ?, ?, ?)
+                    ON CONFLICT(source, paper_id) DO NOTHING
+                    """,
+                    inserts,
+                )
+                added = max(0, int(cursor.rowcount or 0))
         return {
             "scanned": scanned,
             "qualified": qualified,
@@ -4294,21 +4330,24 @@ class DailyResearchStore:
     def aggregate_liked_preferences(self) -> Dict[str, list[Dict[str, Any]]]:
         """Deterministic top authors/categories among liked papers.
 
-        Pure SQLite + Python counting; no LLM involved by design — the goal is
-        a faithful mirror of what the reader marked, not a model's guess.
+        Pure SQLite counting; no LLM involved by design — the goal is a
+        faithful mirror of what the reader marked, not a model's guess.
+        Histogramming in SQL avoids loading every liked row (and its JSON
+        payload) into Python just to build two counters.
         """
-        rows = self.list_preferences(preference="like", limit=100000)
-        author_counts: Dict[str, int] = {}
-        category_counts: Dict[str, int] = {}
-        for row in rows:
-            for author in row["authors"]:
-                key = author.strip()
-                if key:
-                    author_counts[key] = author_counts.get(key, 0) + 1
-            for category in row["categories"]:
-                key = category.strip()
-                if key:
-                    category_counts[key] = category_counts.get(key, 0) + 1
+
+        def counts_for(column: str) -> Dict[str, int]:
+            # ``column`` is an internal constant, never user input.
+            with self._connect() as conn:
+                rows = conn.execute(
+                    "SELECT trim(entry.value) AS name, COUNT(*) AS total "
+                    "FROM paper_preferences p, json_each(p." + column + ") entry "
+                    "WHERE p.preference = 'like' "
+                    "AND json_type(p." + column + ") = 'array' "
+                    "AND entry.type = 'text' AND trim(entry.value) <> '' "
+                    "GROUP BY name"
+                ).fetchall()
+            return {row["name"]: int(row["total"]) for row in rows}
 
         def ranked(counts: Dict[str, int]) -> list[Dict[str, Any]]:
             return [
@@ -4318,7 +4357,10 @@ class DailyResearchStore:
                 )
             ]
 
-        return {"authors": ranked(author_counts), "categories": ranked(category_counts)}
+        return {
+            "authors": ranked(counts_for("authors_json")),
+            "categories": ranked(counts_for("categories_json")),
+        }
 
     def liked_paper_urls(self) -> Dict[Tuple[str, str], str]:
         """URL lookup for liked papers, taken from their stored metadata."""
@@ -4343,35 +4385,27 @@ class DailyResearchStore:
     def aggregate_liked_keywords(self, limit: int = 200) -> list[Dict[str, Any]]:
         """Count extracted keywords across currently liked papers.
 
-        Mirrors aggregate_liked_preferences: pure SQL + Python counting over
-        the reader's own marks — no model inference involved.
+        Mirrors aggregate_liked_preferences: pure SQL counting over the
+        reader's own marks — no model inference involved.
         """
+        bounded_limit = max(1, int(limit))
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT d.score_json FROM paper_preferences p "
+                "SELECT trim(keyword.value) AS keyword, COUNT(*) AS total "
+                "FROM paper_preferences p "
                 "JOIN daily_papers d "
-                "ON d.source = p.source AND d.paper_id = p.paper_id "
-                "WHERE p.preference = 'like'"
+                "ON d.source = p.source AND d.paper_id = p.paper_id, "
+                "json_each(d.score_json, '$.extracted_keywords') keyword "
+                "WHERE p.preference = 'like' "
+                "AND d.score_json IS NOT NULL AND json_valid(d.score_json) "
+                "AND json_type(d.score_json, '$.extracted_keywords') = 'array' "
+                "AND keyword.type = 'text' AND trim(keyword.value) <> '' "
+                "GROUP BY keyword ORDER BY total DESC, keyword ASC LIMIT ?",
+                (bounded_limit,),
             ).fetchall()
-        counts: Dict[str, int] = {}
-        for row in rows:
-            try:
-                score = json.loads(row["score_json"]) if row["score_json"] else {}
-            except (TypeError, ValueError, json.JSONDecodeError):
-                score = {}
-            if not isinstance(score, dict):
-                continue
-            for keyword in score.get("extracted_keywords") or []:
-                if isinstance(keyword, str) and keyword.strip():
-                    key = keyword.strip()
-                    counts[key] = counts.get(key, 0) + 1
-        ranked = [
-            {"keyword": keyword, "count": count}
-            for keyword, count in sorted(
-                counts.items(), key=lambda item: (-item[1], item[0])
-            )
+        return [
+            {"keyword": row["keyword"], "count": int(row["total"])} for row in rows
         ]
-        return ranked[: max(1, int(limit))]
 
     def count_pending_papers(self) -> Dict[str, int]:
         """Ordinary daily-queue depth, split by retry need.
@@ -5712,6 +5746,7 @@ class DailyResearchStore:
                 ).fetchone()
                 if existing is not None:
                     self._restore_optional_enrichment(paper, existing["paper_json"])
+                self._entity_coverage_valid = False
                 conn.execute(
                     """
                     INSERT INTO daily_papers(
@@ -5967,6 +6002,7 @@ class DailyResearchStore:
                             (source, paper.paper_id),
                         )
 
+            self._entity_coverage_valid = False
             conn.execute(
                 """
                 INSERT INTO daily_papers(
@@ -6024,6 +6060,7 @@ class DailyResearchStore:
         translation_done = bool(str(scored.get("abstract_cn", "")).strip())
         translation_status = "succeeded" if translation_done else "pending"
         with self._lock, self._connect() as conn:
+            self._entity_coverage_valid = False
             conn.execute(
                 """
                 INSERT INTO daily_papers(
