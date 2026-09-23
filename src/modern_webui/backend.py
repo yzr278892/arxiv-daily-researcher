@@ -278,6 +278,9 @@ _REPORTS_LIST_CACHE: dict[
 _LEGACY_SUPPLEMENT_CACHE: dict[Path, tuple[int, int, bool]] = {}
 _REPORT_PAPERS_CACHE: dict[Path, tuple[tuple[int, int], list[dict[str, Any]]]] = {}
 _REPORT_ROOT_RESOLVE_CACHE: dict[Path, Path] = {}
+# Parsed trigger-queue and status-receipt rows, keyed by the queue and status
+# directory signatures that produced them.
+_TASK_RECORDS_CACHE: tuple[tuple[Any, ...], list[dict[str, Any]]] | None = None
 
 
 class ModernWebUIError(ValueError):
@@ -847,13 +850,26 @@ def task_records(modes: Iterable[str] | None = None, *, limit: int | None = 200)
     """Combine durable queue entries and worker receipts into one safe list."""
     allowed = set(modes or SUPPORTED_MODES)
     allowed.intersection_update(SUPPORTED_MODES)
-    queue_dir = trigger_directory(DEFAULT_DATA_DIR)
+    rows = [row for row in _task_records_snapshot() if row["mode"] in allowed]
+    rows.sort(key=lambda item: (item.get("updated_at") or item.get("created_at") or ""), reverse=True)
+    return rows if limit is None else rows[: max(1, min(int(limit), 500))]
+
+
+def _directory_signature(path: Path) -> tuple[int, int, int] | None:
+    """Return a cheap change token for a queue directory."""
+
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    return (stat.st_mtime_ns, stat.st_size, stat.st_ino)
+
+
+def _scan_task_records(queue_dir: Path, status_dir: Path) -> list[dict[str, Any]]:
     records: dict[str, dict[str, Any]] = {}
     try:
         for path in queue_dir.glob("*.json"):
             payload = read_trigger_payload(path)
-            if payload.get("mode") not in allowed:
-                continue
             request_id = str(payload["request_id"])
             records[request_id] = {
                 "request_id": request_id,
@@ -868,8 +884,6 @@ def task_records(modes: Iterable[str] | None = None, *, limit: int | None = 200)
             }
         for path in queue_dir.glob("*.running"):
             payload = read_trigger_payload(path)
-            if payload.get("mode") not in allowed:
-                continue
             request_id = str(payload["request_id"])
             records[request_id] = {
                 "request_id": request_id,
@@ -884,14 +898,13 @@ def task_records(modes: Iterable[str] | None = None, *, limit: int | None = 200)
             }
     except (OSError, ValueError):
         pass
-    status_dir = trigger_status_directory(DEFAULT_DATA_DIR)
     try:
         paths = sorted(status_dir.glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True)
     except OSError:
         paths = []
     for path in paths:
         record = _read_status_file(path)
-        if record is None or record["mode"] not in allowed:
+        if record is None:
             continue
         # A live queue entry has precedence over an older receipt with the
         # same ID. Once the watcher has written its ``running`` receipt,
@@ -904,9 +917,36 @@ def task_records(modes: Iterable[str] | None = None, *, limit: int | None = 200)
             or (existing["state"] == "starting" and record["state"] == "running")
         ):
             records[record["request_id"]] = record
-    rows = list(records.values())
-    rows.sort(key=lambda item: (item.get("updated_at") or item.get("created_at") or ""), reverse=True)
-    return rows if limit is None else rows[: max(1, min(int(limit), 500))]
+    return list(records.values())
+
+
+def _task_records_snapshot() -> list[dict[str, Any]]:
+    """Reuse the parsed queue/receipt snapshot until a directory changes.
+
+    Status pages poll ``task_records`` every few seconds and the history page
+    needs the same rows for both its task table and its status card.  Globbing
+    and parsing every trigger and receipt file on each call dominated a small
+    poll on a populated queue.  Every producer writes those files through an
+    atomic replace, which always updates the owning directory's mtime, so the
+    signature is a truthful invalidation key.
+    """
+    global _TASK_RECORDS_CACHE
+    queue_dir = trigger_directory(DEFAULT_DATA_DIR)
+    status_dir = trigger_status_directory(DEFAULT_DATA_DIR)
+    signature = (
+        str(queue_dir),
+        _directory_signature(queue_dir),
+        str(status_dir),
+        _directory_signature(status_dir),
+    )
+    with _RUNTIME_CACHE_LOCK:
+        cached = _TASK_RECORDS_CACHE
+    if cached is not None and cached[0] == signature:
+        return cached[1]
+    records = _scan_task_records(queue_dir, status_dir)
+    with _RUNTIME_CACHE_LOCK:
+        _TASK_RECORDS_CACHE = (signature, records)
+    return records
 
 
 def _latest_record(modes: Iterable[str]) -> dict[str, Any] | None:
@@ -914,10 +954,23 @@ def _latest_record(modes: Iterable[str]) -> dict[str, Any] | None:
     return rows[0] if rows else None
 
 
-def run_status(kind: str = "daily") -> dict[str, Any]:
-    """Return the durable state for a modern run page without starting work."""
-    flat = flat_config()
-    locks = active_locks(flat)
+def run_status(
+    kind: str = "daily",
+    *,
+    records: list[dict[str, Any]] | None = None,
+    locks: list[dict[str, Any]] | None = None,
+    flat: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Return the durable state for a modern run page without starting work.
+
+    ``history_status`` already holds the queue and lock snapshot for its own
+    task table; it passes them in so one HTTP request no longer globs and
+    parses the same trigger and receipt files twice.
+    """
+    if flat is None:
+        flat = flat_config()
+    if locks is None:
+        locks = active_locks(flat)
     trigger = trigger_queue_state(locks)
     mode_map = {
         "daily": {"daily_research", "supplement_run"},
@@ -932,7 +985,7 @@ def run_status(kind: str = "daily") -> dict[str, Any]:
     # Limit only lists returned to the browser. A queued maintenance request
     # can be older than 200 newer receipts from other modes, but it must still
     # participate in launch and active-state decisions.
-    all_records = task_records(SUPPORTED_MODES, limit=None)
+    all_records = records if records is not None else task_records(SUPPORTED_MODES, limit=None)
     records = [row for row in all_records if row["mode"] in wanted]
     live_records = [row for row in records if row["state"] in {"queued", "starting", "running"}]
     # The watcher accepts one trigger at a time.  Daily and trend launchers
@@ -1202,7 +1255,7 @@ def history_status() -> dict[str, Any]:
             active_progress = candidate if isinstance(candidate, Mapping) else None
         except Exception:
             active_progress = None
-    all_records = task_records(HISTORY_MODES)
+    all_records = task_records(HISTORY_MODES, limit=None)
     retried_request_ids = {
         str(row.get("retry_of") or "").strip()
         for row in all_records
@@ -1210,12 +1263,14 @@ def history_status() -> dict[str, Any]:
     }
     records = [
         _history_task_row(row, active_progress, schedule)
-        for row in all_records
+        for row in all_records[:200]
         if row["state"] != "succeeded"
         and str(row.get("request_id") or "") not in retried_request_ids
     ]
     return {
-        "status": run_status("history"),
+        "status": run_status(
+            "history", records=all_records, locks=active_locks(flat), flat=flat
+        ),
         "schedule": {
             "run_mode": schedule[0],
             "time_window_start": schedule[1],

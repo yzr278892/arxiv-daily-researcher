@@ -353,6 +353,47 @@ class ModernBackendTests(unittest.TestCase):
         self.assertFalse(status["can_start"])
         self.assertEqual(status["task"]["state"], "queued")
 
+    def test_task_records_scan_is_reused_until_the_queue_changes(self) -> None:
+        """Polling must not re-glob and re-parse the queue on every call."""
+        with tempfile.TemporaryDirectory() as directory:
+            data_dir = Path(directory)
+            enqueue_trigger(data_dir, "daily_research")
+            queue_dir = backend.trigger_directory(data_dir)
+            with patch.object(backend, "DEFAULT_DATA_DIR", data_dir):
+                first = backend.task_records()
+                with patch.object(
+                    backend, "_scan_task_records", wraps=backend._scan_task_records
+                ) as scan:
+                    second = backend.task_records()
+                    third = backend.task_records(limit=None)
+                    self.assertEqual(scan.call_count, 0)
+                    enqueue_trigger(data_dir, "daily_research")
+                    os.utime(queue_dir, None)
+                    fourth = backend.task_records()
+                    self.assertEqual(scan.call_count, 1)
+
+        self.assertEqual(len(first), 1)
+        self.assertEqual(len(second), 1)
+        self.assertEqual(len(third), 1)
+        self.assertEqual(len(fourth), 2)
+
+    def test_history_status_collects_the_queue_snapshot_once_per_request(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            data_dir = Path(directory)
+            enqueue_trigger(data_dir, "history_data_repair")
+            with patch.object(backend, "DEFAULT_DATA_DIR", data_dir), patch.object(
+                backend, "flat_config", return_value={}
+            ), patch.object(backend, "open_store", return_value=None), patch.object(
+                backend, "_live_log_tail", return_value=None
+            ), patch.object(
+                backend, "_scan_task_records", wraps=backend._scan_task_records
+            ) as scan:
+                response = backend.history_status()
+
+        self.assertEqual(scan.call_count, 1)
+        self.assertTrue(response["status"]["is_active"])
+        self.assertEqual(len(response["tasks"]), 1)
+
     def test_running_receipt_beats_persistent_handoff_file(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             data_dir = Path(directory)
