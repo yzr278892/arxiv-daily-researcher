@@ -1143,18 +1143,37 @@ function safeExternalUrl(value) {
   }
 }
 
+// Constructing an ``Intl`` formatter is expensive, and tables, heat maps and
+// cards used to build one per cell.  Keep one bundle per locale for the
+// session; switching the language simply selects the other bundle.
+const LOCALE_FORMATTERS = new Map();
+
+function localeFormatters() {
+  const locale = state.language === "en" ? "en-US" : "zh-CN";
+  let cached = LOCALE_FORMATTERS.get(locale);
+  if (!cached) {
+    cached = {
+      dateTime: new Intl.DateTimeFormat(locale, {
+        year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
+      }),
+      number: new Intl.NumberFormat(locale),
+      monthShort: new Intl.DateTimeFormat(locale, { month: "short" }),
+    };
+    LOCALE_FORMATTERS.set(locale, cached);
+  }
+  return cached;
+}
+
 function formatTime(value) {
   if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return String(value).replace("T", " ").slice(0, 19);
-  return new Intl.DateTimeFormat(state.language === "en" ? "en-US" : "zh-CN", {
-    year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
-  }).format(date);
+  return localeFormatters().dateTime.format(date);
 }
 
 function formatNumber(value) {
   const number = Number(value);
-  return Number.isFinite(number) ? new Intl.NumberFormat(state.language === "en" ? "en-US" : "zh-CN").format(number) : "—";
+  return Number.isFinite(number) ? localeFormatters().number.format(number) : "—";
 }
 
 function formatPercent(value) {
@@ -4027,7 +4046,7 @@ function tokenHeatmap(rows) {
     const weekStart = new Date(start.getFullYear(), start.getMonth(), start.getDate() + week * 7);
     const month = weekStart.getMonth();
     const monthLabel = state.language === "en"
-      ? new Intl.DateTimeFormat("en-US", { month: "short" }).format(weekStart)
+      ? localeFormatters().monthShort.format(weekStart)
       : `${month + 1}月`;
     monthCells.push(`<th>${month !== previousMonth ? monthLabel : ""}</th>`);
     previousMonth = month;

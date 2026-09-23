@@ -117,6 +117,22 @@ class ModernWebUIAppTests(unittest.TestCase):
             response.text.count('preview.className = "report-preview-host";'), 2
         )
 
+    def test_locale_formatters_are_built_once_and_reused(self) -> None:
+        """Large tables must not construct an Intl formatter for every cell."""
+        script = self.client.get("/assets/app.js").text
+
+        self.assertIn("const LOCALE_FORMATTERS = new Map();", script)
+        self.assertIn("function localeFormatters()", script)
+        self.assertIn("return localeFormatters().dateTime.format(date);", script)
+        self.assertIn("localeFormatters().number.format(number)", script)
+        self.assertIn("localeFormatters().monthShort.format(weekStart)", script)
+        # Every formatter is constructed inside the shared locale bundle.
+        bundle_start = script.index("function localeFormatters()")
+        bundle_end = script.index("function formatTime", bundle_start)
+        bundle = script[bundle_start:bundle_end]
+        self.assertEqual(bundle.count("new Intl."), 3)
+        self.assertEqual(script.count("new Intl."), 3)
+
     def test_chunked_json_upload_cannot_bypass_the_body_budget(self) -> None:
         """A streamed body must hit the same limit as a declared Content-Length."""
         self.env["WEBUI_AUTH_ENABLED"] = "false"
