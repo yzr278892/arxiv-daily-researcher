@@ -12,6 +12,7 @@
 ## Git、版本与发布
 
 - 一个独立功能、修复或文档变更对应一个独立提交；提交前检查差异和 `git diff --check`。
+- 提交标题统一采用历史惯用的 Conventional Commits 格式：`type(scope): imperative summary`，例如 `feat(scoring): add weighted keyword penalties`、`fix(webui): keep report navigation in batch order`。`type` 使用 `feat`、`fix`、`perf`、`style`、`docs`、`test` 或 `chore`；`scope` 写受影响模块；摘要使用英文祈使语态，不写无前缀的自然语言标题。修改已发布提交前先确认其远端影响，不擅自重写公共历史。
 - 默认只在本地提交。只有用户明确要求时才 `push`、打标签、创建 Release 或发布/更新镜像。
 - 不擅自修改版本号；版本、标签、Release、镜像标签和 CHANGELOG 必须一致。
 - 处理脏工作区时只提交本任务涉及的文件，并在交付时说明未触碰的改动。
