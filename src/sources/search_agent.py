@@ -586,10 +586,16 @@ class SearchAgent:
         enriched_count = 0
         arxiv_found_count = 0
 
+        # 一次批量请求即可解析整页期刊论文；逐篇调用会让每篇论文各占一个
+        # API 配额（匿名配额在高峰期还常被限速）。
+        info_by_doi = self.semantic_scholar_enricher.enrich_many(
+            [paper.doi for paper in papers if paper.doi]
+        )
+
         for paper in papers:
             if paper.doi:
                 # 获取完整的论文信息（TLDR + arXiv ID）
-                paper_info = self.semantic_scholar_enricher.get_paper_info(paper.doi)
+                paper_info = info_by_doi.get(paper.doi)
                 if paper_info:
                     # 设置 TLDR
                     if paper_info.get("tldr"):

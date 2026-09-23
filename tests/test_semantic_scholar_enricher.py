@@ -106,9 +106,12 @@ class SemanticScholarBoundaryTests(unittest.TestCase):
         paper = _journal_paper()
         agent = SearchAgent.__new__(SearchAgent)
         agent.semantic_scholar_enricher = SimpleNamespace(
-            get_paper_info=lambda _doi: {
-                "tldr": "Provider TLDR",
-                "arxiv_id": "2501.12345/../../internal",
+            enrich_many=lambda dois: {
+                doi: {
+                    "tldr": "Provider TLDR",
+                    "arxiv_id": "2501.12345/../../internal",
+                }
+                for doi in dois
             }
         )
 
@@ -118,6 +121,64 @@ class SemanticScholarBoundaryTests(unittest.TestCase):
         self.assertIsNone(enriched[0].arxiv_id)
         self.assertIsNone(enriched[0].pdf_url)
 
+
+
+class BatchEnrichmentTests(unittest.TestCase):
+    """一次批量请求解析整页期刊论文，而不是每篇各占一个配额。"""
+
+    def test_batch_lookup_resolves_every_doi_with_one_request(self):
+        enricher = SemanticScholarEnricher()
+        calls = []
+
+        def fake_post(url, params, json_body, timeout=10):
+            calls.append((url, params, json_body))
+            return _Response(
+                [{"tldr": {"text": f"tldr-{index}"}} for index in range(len(json_body["ids"]))]
+            )
+
+        with patch.object(enricher, "_api_post", side_effect=fake_post):
+            result = enricher.enrich_many(["10.1/a", "10.1/b", "10.1/c"])
+
+        self.assertEqual(len(calls), 1)
+        self.assertTrue(calls[0][0].endswith("/paper/batch"))
+        self.assertEqual(
+            calls[0][2]["ids"], ["DOI:10.1/a", "DOI:10.1/b", "DOI:10.1/c"]
+        )
+        self.assertEqual(result["10.1/b"]["tldr"], "tldr-1")
+
+    def test_large_batches_are_split_into_provider_sized_chunks(self):
+        enricher = SemanticScholarEnricher()
+        chunk_sizes = []
+
+        def fake_post(url, params, json_body, timeout=10):
+            chunk_sizes.append(len(json_body["ids"]))
+            return _Response([None] * len(json_body["ids"]))
+
+        dois = [f"10.1/{index}" for index in range(1200)]
+        with patch.object(enricher, "_api_post", side_effect=fake_post):
+            result = enricher.enrich_many(dois)
+
+        self.assertEqual(chunk_sizes, [500, 500, 200])
+        self.assertEqual(len(result), 1200)
+        self.assertTrue(all(value is None for value in result.values()))
+
+    def test_a_failed_chunk_does_not_discard_the_other_chunks(self):
+        enricher = SemanticScholarEnricher()
+        attempts = []
+
+        def fake_post(url, params, json_body, timeout=10):
+            attempts.append(len(json_body["ids"]))
+            if len(attempts) == 1:
+                raise RuntimeError("provider unavailable")
+            return _Response([{"tldr": {"text": "second"}} for _ in json_body["ids"]])
+
+        dois = [f"10.1/{index}" for index in range(600)]
+        with patch.object(enricher, "_api_post", side_effect=fake_post):
+            result = enricher.enrich_many(dois)
+
+        self.assertEqual(attempts, [500, 100])
+        self.assertIsNone(result["10.1/0"])
+        self.assertEqual(result["10.1/599"]["tldr"], "second")
 
 if __name__ == "__main__":
     unittest.main()

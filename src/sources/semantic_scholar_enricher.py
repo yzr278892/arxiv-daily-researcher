@@ -8,7 +8,7 @@ import logging
 import threading
 import time
 import requests
-from typing import Callable, Dict, Optional
+from typing import Callable, Dict, List, Optional
 from tenacity import retry, stop_after_attempt, wait_exponential, before_sleep_log
 
 from .base_source import normalize_arxiv_identifier
@@ -32,6 +32,12 @@ class SemanticScholarEnricher:
     # during busy periods.
     AUTHENTICATED_MIN_REQUEST_INTERVAL_SECONDS = 1.0
     ANONYMOUS_MIN_REQUEST_INTERVAL_SECONDS = 0.1
+    # ``POST /paper/batch`` accepts at most 500 identifiers per request.
+    BATCH_MAX_IDS = 500
+    # Field set shared by the single-paper and batch lookup endpoints.
+    PAPER_INFO_FIELDS = (
+        "tldr,citationCount,influentialCitationCount,publicationTypes,externalIds"
+    )
 
     def __init__(self, api_key: Optional[str] = None):
         """
@@ -142,6 +148,38 @@ class SemanticScholarEnricher:
             self._record_health(True)
         return response
 
+    def _api_post(
+        self, url: str, params: dict, json_body: dict, timeout: int = 10
+    ) -> requests.Response:
+        """发送 Semantic Scholar API POST 请求（与 GET 共用限速与重试策略）。"""
+        from config import settings as _settings
+
+        @retry(
+            stop=stop_after_attempt(_settings.RETRY_MAX_ATTEMPTS),
+            wait=wait_exponential(min=_settings.RETRY_MIN_WAIT, max=_settings.RETRY_MAX_WAIT),
+            before_sleep=before_sleep_log(logger, logging.WARNING),
+            reraise=True,
+        )
+        def _do_post():
+            self._wait_for_request_slot()
+            resp = self.session.post(url, params=params, json=json_body, timeout=timeout)
+            # 404 和 429 不重试，直接返回
+            if resp.status_code in (404, 429):
+                return resp
+            resp.raise_for_status()
+            return resp
+
+        try:
+            response = _do_post()
+        except Exception as exc:
+            self._record_health(False, exc)
+            raise
+        if response.status_code == 429:
+            self._record_health(False, "HTTP 429 rate limited")
+        else:
+            self._record_health(True)
+        return response
+
     @staticmethod
     def _clean_doi(doi: object) -> Optional[str]:
         """Return a minimally safe DOI lookup key, or no key at all."""
@@ -238,9 +276,7 @@ class SemanticScholarEnricher:
                 return None
 
             url = f"{self.API_BASE_URL}/paper/DOI:{clean_doi}"
-            params = {
-                "fields": "tldr,citationCount,influentialCitationCount,publicationTypes,externalIds"
-            }
+            params = {"fields": self.PAPER_INFO_FIELDS}
 
             response = self._api_get(url, params)
 
@@ -248,44 +284,118 @@ class SemanticScholarEnricher:
                 return None
 
             response.raise_for_status()
-            data = response.json()
-            if not isinstance(data, dict):
-                logger.warning("Semantic Scholar 返回的论文元数据不是对象，已忽略")
-                return None
-
-            result = {}
-
-            # 提取 TLDR
-            tldr_obj = data.get("tldr")
-            if tldr_obj and isinstance(tldr_obj, dict):
-                tldr_text = tldr_obj.get("text")
-                if isinstance(tldr_text, str) and tldr_text.strip():
-                    result["tldr"] = tldr_text.strip()
-
-            # 提取引用数
-            if "citationCount" in data:
-                result["citation_count"] = data["citationCount"]
-
-            if "influentialCitationCount" in data:
-                result["influential_citation_count"] = data["influentialCitationCount"]
-
-            if "publicationTypes" in data:
-                result["publication_types"] = data["publicationTypes"]
-
-            # 提取 arXiv ID（关键新增功能）
-            arxiv_id = self._external_arxiv_id(data.get("externalIds"))
-            if arxiv_id:
-                result["arxiv_id"] = arxiv_id
-                result["arxiv_url"] = f"https://arxiv.org/abs/{arxiv_id}"
-                logger.debug(f"找到 arXiv 版本: {arxiv_id}")
-            elif isinstance(data.get("externalIds"), dict) and "ArXiv" in data["externalIds"]:
-                logger.warning("Semantic Scholar 返回了无效 arXiv ID，已忽略该可选增强")
-
-            return result if result else None
+            return self._paper_info_from_payload(response.json())
 
         except Exception as e:
             logger.warning(f"获取 Semantic Scholar 信息失败: {e}")
             return None
+
+    def _paper_info_from_payload(self, data: object) -> Optional[Dict]:
+        """Map one Semantic Scholar paper payload into the enrichment dict.
+
+        Shared by the single-paper and batch entry points so both keep the same
+        field mapping, arXiv-id validation and warnings.
+        """
+        if not isinstance(data, dict):
+            logger.warning("Semantic Scholar 返回的论文元数据不是对象，已忽略")
+            return None
+
+        result = {}
+
+        # 提取 TLDR
+        tldr_obj = data.get("tldr")
+        if tldr_obj and isinstance(tldr_obj, dict):
+            tldr_text = tldr_obj.get("text")
+            if isinstance(tldr_text, str) and tldr_text.strip():
+                result["tldr"] = tldr_text.strip()
+
+        # 提取引用数
+        if "citationCount" in data:
+            result["citation_count"] = data["citationCount"]
+
+        if "influentialCitationCount" in data:
+            result["influential_citation_count"] = data["influentialCitationCount"]
+
+        if "publicationTypes" in data:
+            result["publication_types"] = data["publicationTypes"]
+
+        # 提取 arXiv ID（关键新增功能）
+        arxiv_id = self._external_arxiv_id(data.get("externalIds"))
+        if arxiv_id:
+            result["arxiv_id"] = arxiv_id
+            result["arxiv_url"] = f"https://arxiv.org/abs/{arxiv_id}"
+            logger.debug(f"找到 arXiv 版本: {arxiv_id}")
+        elif isinstance(data.get("externalIds"), dict) and "ArXiv" in data["externalIds"]:
+            logger.warning("Semantic Scholar 返回了无效 arXiv ID，已忽略该可选增强")
+
+        return result if result else None
+
+    def enrich_many(self, dois: List[str]) -> Dict[str, Optional[Dict]]:
+        """Batch-resolve enrichment for many DOIs with ``POST /paper/batch``.
+
+        The single-paper endpoint costs one request per paper, so a page of
+        journal papers used to spend one API slot each.  The batch endpoint
+        resolves up to ``BATCH_MAX_IDS`` identifiers per request; rate limiting,
+        retries and health reporting stay shared with ``_api_get``.  The result
+        is keyed by the DOI exactly as the caller passed it in.
+        """
+        results: Dict[str, Optional[Dict]] = {}
+        if not dois:
+            return results
+
+        keyed: List[tuple[str, str]] = []
+        unique_lookup: List[str] = []
+        seen: set[str] = set()
+        for raw in dois:
+            if raw in results:
+                continue
+            # An unresolved key is ``None``, matching the single-paper contract.
+            results[raw] = None
+            clean_doi = self._clean_doi(raw)
+            if not clean_doi:
+                logger.debug("Semantic Scholar 跳过无效 DOI 批量查询")
+                continue
+            keyed.append((raw, clean_doi))
+            if clean_doi not in seen:
+                seen.add(clean_doi)
+                unique_lookup.append(clean_doi)
+
+        if not unique_lookup:
+            return results
+
+        url = f"{self.API_BASE_URL}/paper/batch"
+        params = {"fields": self.PAPER_INFO_FIELDS}
+        resolved: Dict[str, Optional[Dict]] = {}
+        for offset in range(0, len(unique_lookup), self.BATCH_MAX_IDS):
+            chunk = unique_lookup[offset : offset + self.BATCH_MAX_IDS]
+            try:
+                response = self._api_post(
+                    url, params, {"ids": [f"DOI:{doi}" for doi in chunk]}
+                )
+                if response.status_code in (404, 429):
+                    logger.warning(
+                        "⚠️  Semantic Scholar 批量查询失败 (HTTP %s)，本批 %d 条已跳过",
+                        response.status_code,
+                        len(chunk),
+                    )
+                    continue
+                payload = response.json()
+            except Exception as e:
+                logger.warning(f"⚠️  Semantic Scholar 批量查询异常: {e}")
+                continue
+            if not isinstance(payload, list):
+                logger.warning("Semantic Scholar 批量响应不是列表，已忽略")
+                continue
+            # The batch endpoint answers in request order and returns null for
+            # identifiers it could not resolve.
+            for clean_doi, entry in zip(chunk, payload):
+                resolved[clean_doi] = (
+                    None if entry is None else self._paper_info_from_payload(entry)
+                )
+
+        for raw, clean_doi in keyed:
+            results[raw] = resolved.get(clean_doi)
+        return results
 
     def get_arxiv_id(self, doi: str) -> Optional[str]:
         """
