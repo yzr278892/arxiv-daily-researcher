@@ -36,7 +36,7 @@ Scan new and revised arXiv papers. Optional sources include PRL, PRA/PRB, Nature
 
 ### 🎯 Configurable scoring
 
-Select papers by primary-keyword relevance, weighted keywords, or learned preferences from saved papers. Keywords and authors can have separate weights. A per-run limit leaves the remaining papers in the queue.
+Select papers by primary-keyword relevance, weighted keywords, or learned preferences from saved papers. An optional weighted-keyword policy assigns individual penalties to topics you do not follow. A per-run limit leaves the remaining papers in the queue.
 
 </td>
 </tr>
@@ -114,7 +114,7 @@ docker compose up -d
 docker compose ps
 ~~~
 
-Open `http://HOST:8501` (replace HOST with the server address) and create the administrator account. Set the research context and primary keywords, choose sources and a scoring policy, then use **Save All Changes** in the sidebar. Port 8501 should be reachable only through a controlled LAN, Tailnet, or protected reverse proxy.
+Open `http://HOST:8501` (replace HOST with the server address) and create the administrator account. Set the research context and primary keywords, choose sources and a scoring policy, then use **Save All Changes** in the sidebar. For the weighted-keyword penalty strategy, set downweighted keywords and their weights on the Keywords page. Port 8501 should be reachable only through a controlled LAN, Tailnet, or protected reverse proxy.
 
 ### 3. Verify a research run
 

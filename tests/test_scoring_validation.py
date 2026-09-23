@@ -8,7 +8,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from agents.analysis_agent import AnalysisAgent, ScoreValidationError  # noqa: E402
 from config import settings  # noqa: E402
-from scoring_policy import CORE_RELEVANCE_V2  # noqa: E402
+from scoring_policy import (  # noqa: E402
+    CORE_RELEVANCE_V2,
+    WEIGHTED_KEYWORD_WITH_PENALTIES_V1,
+)
 from report.daily.modules.base_module import FormatHelper  # noqa: E402
 from report.daily.modules.renderers import ScoringRenderer  # noqa: E402
 
@@ -105,6 +108,98 @@ class ScoringValidationTests(unittest.TestCase):
         with patch.object(settings, "MAX_SCORE_PER_KEYWORD", 0):
             with self.assertRaises(ScoreValidationError):
                 agent.score_paper_with_keywords("title", ["Alice"], "abstract", {"kw": 1})
+
+    def test_penalty_strategy_subtracts_weighted_relevance_without_lowering_threshold(self):
+        payload = _score_payload(
+            keyword_scores={
+                "quantum sensing": 8,
+                "noise": 4,
+                "quantum communication": 9,
+                "photonic networks": 2,
+            },
+        )
+        with patch.multiple(
+            settings,
+            SCORE_STRATEGY=WEIGHTED_KEYWORD_WITH_PENALTIES_V1,
+            NEGATIVE_KEYWORDS=["quantum communication", "photonic networks"],
+            NEGATIVE_KEYWORD_WEIGHTS={
+                "quantum communication": 0.5,
+                "photonic networks": 0.25,
+            },
+            ENABLE_AUTHOR_BONUS=False,
+            PASSING_SCORE_BASE=5.0,
+            PASSING_SCORE_WEIGHT_COEFFICIENT=3.0,
+        ):
+            result = self._agent_with_response(payload).score_paper_with_keywords(
+                "title", ["Alice"], "abstract",
+                {"quantum sensing": 1.0, "noise": 0.5},
+            )
+
+        self.assertEqual(result.strategy_id, WEIGHTED_KEYWORD_WITH_PENALTIES_V1)
+        self.assertEqual(result.keyword_scores, {"quantum sensing": 8.0, "noise": 4.0})
+        self.assertEqual(
+            result.negative_keyword_scores,
+            {"quantum communication": 9.0, "photonic networks": 2.0},
+        )
+        self.assertEqual(result.negative_keyword_penalty, 5.0)
+        self.assertEqual(result.total_score, 5.0)
+        self.assertEqual(result.passing_score, 9.5)
+        self.assertFalse(result.is_qualified)
+        self.assertIn("扣分 5.0", result.qualification_reason)
+
+    def test_penalty_strategy_requires_every_negative_relevance_score(self):
+        with patch.multiple(
+            settings,
+            SCORE_STRATEGY=WEIGHTED_KEYWORD_WITH_PENALTIES_V1,
+            NEGATIVE_KEYWORDS=["quantum communication"],
+            NEGATIVE_KEYWORD_WEIGHTS={"quantum communication": 0.5},
+        ):
+            with self.assertRaisesRegex(RuntimeError, "缺少关键词"):
+                self._agent_with_response(_score_payload()).score_paper_with_keywords(
+                    "title", ["Alice"], "abstract",
+                    {"quantum sensing": 1.0, "noise": 0.5},
+                )
+
+    def test_penalty_strategy_rejects_overlap_before_llm_request(self):
+        agent = AnalysisAgent.__new__(AnalysisAgent)
+        agent._call_cheap_llm = lambda _prompt, **_kwargs: self.fail("LLM must not be called")
+        with patch.multiple(
+            settings,
+            SCORE_STRATEGY=WEIGHTED_KEYWORD_WITH_PENALTIES_V1,
+            NEGATIVE_KEYWORDS=["Noise"],
+            NEGATIVE_KEYWORD_WEIGHTS={"Noise": 0.5},
+        ):
+            with self.assertRaisesRegex(ScoreValidationError, "不能同时作为加分关键词"):
+                agent.score_paper_with_keywords(
+                    "title", ["Alice"], "abstract", {"noise": 0.5}
+                )
+
+    def test_penalty_details_are_visible_in_markdown_scoring_module(self):
+        renderer = ScoringRenderer(FormatHelper("mkdocs"))
+        payload = _score_payload(
+            keyword_scores={
+                "quantum sensing": 8,
+                "noise": 2.5,
+                "quantum communication": 9,
+            },
+        )
+        with patch.multiple(
+            settings,
+            SCORE_STRATEGY=WEIGHTED_KEYWORD_WITH_PENALTIES_V1,
+            NEGATIVE_KEYWORDS=["quantum communication"],
+            NEGATIVE_KEYWORD_WEIGHTS={"quantum communication": 0.5},
+            ENABLE_AUTHOR_BONUS=False,
+        ):
+            result = self._agent_with_response(payload).score_paper_with_keywords(
+                "title", ["Alice"], "abstract",
+                {"quantum sensing": 1.0, "noise": 0.5},
+            )
+            lines = renderer.render(
+                {"score_response": result, "keywords_dict": {"quantum sensing": 1.0, "noise": 0.5}},
+                {"format": "list", "show_details": True, "show_reasoning": False},
+            )
+        self.assertIn("不关注：quantum communication", "\n".join(lines))
+        self.assertIn("→ -4.5", "\n".join(lines))
 
     def test_v2_reference_keywords_cannot_lower_core_qualification(self):
         payload = _score_payload(

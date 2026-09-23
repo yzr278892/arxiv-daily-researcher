@@ -447,8 +447,15 @@ class KeywordAgent:
             logger.info("Reference关键词提取已关闭；仅使用主要关键词。")
 
         # 合并（主要关键词优先，不会被覆盖）
+        negative_keys = set()
+        if settings.normalized_score_strategy() == "weighted_keyword_with_penalties_v1":
+            negative_keys = {
+                keyword.casefold() for keyword in settings.NEGATIVE_KEYWORDS
+            }
         for kw, weight in reference_keywords.items():
-            if kw not in all_keywords:
+            # A reference PDF can yield a configured penalty term.  Do not
+            # score the same term as both positive and negative evidence.
+            if kw.casefold() not in negative_keys and kw not in all_keywords:
                 all_keywords[kw] = weight
 
         logger.info(f"关键词总数: {len(all_keywords)} 个")

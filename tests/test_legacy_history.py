@@ -168,6 +168,23 @@ class LegacyCardParsingTests(unittest.TestCase):
         self.assertEqual(card["score_payload"]["extracted_keywords"], ["entanglement", "state preparation"])
         self.assertEqual(card["report_at"], datetime(2026, 3, 3, 16, 10, 8))
 
+    def test_penalty_report_keeps_negative_score_and_separate_keyword_details(self):
+        card = _card_fail(1, "2603.00845v1", "Downweighted Topic").replace(
+            '<span class="score">2.4</span>', '<span class="score">-2.1</span>'
+        ).replace(
+            '</table>',
+            '<tr><td>不关注：Noise</td><td>-0.50</td><td>9.0/10</td><td>-4.5</td></tr></table>',
+        )
+        _write_report(self.root, "arxiv", "2026-03-03_16-10-08", card)
+
+        payload = parse_legacy_report_cards(self.root / "html")[0]["score_payload"]
+        self.assertEqual(payload["total_score"], -2.1)
+        self.assertEqual(payload["strategy_id"], "weighted_keyword_with_penalties_v1")
+        self.assertEqual(payload["keyword_scores"], {"Entanglement": 2.4})
+        self.assertEqual(payload["negative_keyword_scores"], {"Noise": 9.0})
+        self.assertEqual(payload["negative_keyword_weights"], {"Noise": 0.5})
+        self.assertEqual(payload["negative_keyword_penalty"], 4.5)
+
     def test_parses_deep_analysis_sections_into_field_ids(self):
         _write_report(self.root, "arxiv", "2026-04-17_08-15-37", _CARD_PASS_WITH_ANALYSIS)
         cards = parse_legacy_report_cards(self.root / "html")

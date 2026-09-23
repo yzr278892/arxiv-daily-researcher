@@ -253,6 +253,12 @@ const MODERN_EN_TRANSLATIONS = Object.freeze({
   "研究背景会用于评分和参考文献关键词提取。": "Research context is used for scoring and reference-keyword extraction.",
   "主关键词": "Primary Keywords",
   "主关键词参与资格判定与排序。": "Primary keywords take part in qualification and ranking.",
+  "不关注关键词": "Downweighted Keywords",
+  "扣分权重（0–1）": "Penalty weight (0–1)",
+  "添加不关注关键词": "Add downweighted keyword",
+  "仅在“加权关键词＋扣分”策略下使用；相关度越高，扣分越多。不关注关键词不计入及格线。": "Used only by the Weighted Keywords + Penalties strategy. Higher relevance produces a larger penalty. These terms do not raise the passing threshold.",
+  "加权关键词＋扣分 V1": "Weighted Keywords + Penalties V1",
+  "按加权关键词 V1 计算主关键词、参考关键词与作者加分，再按相关度和独立权重扣除不关注关键词。及格线仅由加分关键词权重决定。": "Adds primary and reference keyword scores plus author bonuses as in Weighted Keywords V1, then subtracts each downweighted term's relevance times its weight. Only positive keyword weights determine the passing threshold.",
   "参考文献 PDF 关键词提取": "Reference PDF Keyword Extraction",
   "高重要度": "High importance",
   "中重要度": "Medium importance",
@@ -407,6 +413,7 @@ const MODERN_EN_TRANSLATIONS = Object.freeze({
   "例如：实验进展综述": "e.g. Experimental Progress Review",
   "例如 quantum error correction": "e.g. quantum error correction",
   "例如 quantum sensing": "e.g. quantum sensing",
+  "例如 quantum communication": "e.g. quantum communication",
   "例如 Alice Smith": "e.g. Alice Smith",
   "标题、摘要、TL;DR 或关键词": "Title, abstract, TL;DR, or keyword",
   "描述你的研究问题、方法与关注方向": "Describe your research question, methods, and focus areas",
@@ -2602,13 +2609,34 @@ function primaryKeywordEditor() {
   };
 }
 
+function negativeKeywordEditor() {
+  return {
+    id: "negative-keyword-editor",
+    entries: weightedEntries("negative_keyword_entries", "negative_keywords", "negative_keyword_weight", "keyword", "weight", 1),
+    configKey: "negative_keyword_entries",
+    legacyNamesKey: "negative_keywords",
+    legacyValueKey: "negative_keyword_weight",
+    nameKey: "keyword",
+    valueKey: "weight",
+    nameLabel: "关键词",
+    valueLabel: "扣分权重（0–1）",
+    placeholder: "例如 quantum communication",
+    min: 0,
+    max: 1,
+    step: 0.05,
+    addLabel: "添加不关注关键词",
+  };
+}
+
 async function renderKeywords(token) {
   const root = $("#page-root");
   const context = escapeHtml(String(configValue("research_context", "") || ""));
   const editor = primaryKeywordEditor();
-  root.innerHTML = `${pageHeader()}<section class="section-card"><p class="hint-text">研究背景会用于评分和参考文献关键词提取。</p><label class="form-field"><textarea data-field="research_context" data-scope="config" aria-label="研究背景" rows="6" placeholder="描述你的研究问题、方法与关注方向">${context}</textarea></label></section>${divider()}${section("主关键词", `${weightedEntryEditor(editor)}`, { icon: "🏷️", hint: "主关键词参与资格判定与排序；每个关键词可设置 0–1 的独立权重。" })}${divider()}${renderReferenceExtraction()}`;
+  const negativeEditor = negativeKeywordEditor();
+  root.innerHTML = `${pageHeader()}<section class="section-card"><p class="hint-text">研究背景会用于评分和参考文献关键词提取。</p><label class="form-field"><textarea data-field="research_context" data-scope="config" aria-label="研究背景" rows="6" placeholder="描述你的研究问题、方法与关注方向">${context}</textarea></label></section>${divider()}${section("主关键词", `${weightedEntryEditor(editor)}`, { icon: "🏷️", hint: "主关键词参与资格判定与排序；每个关键词可设置 0–1 的独立权重。" })}${divider()}${section("不关注关键词", weightedEntryEditor(negativeEditor), { icon: "➖", hint: "仅在“加权关键词＋扣分”策略下使用；相关度越高，扣分越多。不关注关键词不计入及格线。" })}${divider()}${renderReferenceExtraction()}`;
   bindCommon(root);
   bindWeightedEntryEditor(root, editor);
+  bindWeightedEntryEditor(root, negativeEditor);
   const referenceToggle = $('[data-field="enable_reference_extraction"]', root);
   referenceToggle?.addEventListener("change", (event) => {
     const dependent = $("#reference-extraction-dependent", root);
@@ -2832,13 +2860,14 @@ async function renderScoring(token) {
   const authorEditor = authorBonusEditor();
   const root = $("#page-root");
   const strategyFields = (value) => `${strategyDescription(value)}${strategyQualificationNotice(value)}${renderStrategyFields(value)}${legacyFormulaPreview(value)}`;
-  root.innerHTML = `${pageHeader()}${section("评价策略", `<p class="hint-text">选择论文如何获得资格，以及通过后如何排序。新配置建议使用核心相关性 V2。</p>${field({ label: "评分策略", key: "score_strategy", type: "select", choices: [{ value: "core_relevance_v2", label: "核心相关性 V2（推荐）" }, { value: "legacy_weighted_keyword_v1", label: "加权关键词 V1（兼容）" }, { value: "learned_preference_v1", label: "偏好学习 V1（个性化）" }], fallback: "core_relevance_v2" })}<div id="scoring-strategy-fields">${strategyFields(strategy)}</div>`, { icon: "🧮" })}${divider()}${renderAuthorBonus(authorEditor)}`;
+  root.innerHTML = `${pageHeader()}${section("评价策略", `<p class="hint-text">选择论文如何获得资格，以及通过后如何排序。新配置建议使用核心相关性 V2。</p>${field({ label: "评分策略", key: "score_strategy", type: "select", choices: [{ value: "core_relevance_v2", label: "核心相关性 V2（推荐）" }, { value: "legacy_weighted_keyword_v1", label: "加权关键词 V1（兼容）" }, { value: "weighted_keyword_with_penalties_v1", label: "加权关键词＋扣分 V1" }, { value: "learned_preference_v1", label: "偏好学习 V1（个性化）" }], fallback: "core_relevance_v2" })}<div id="scoring-strategy-fields">${strategyFields(strategy)}</div>`, { icon: "🧮" })}${divider()}${renderAuthorBonus(authorEditor)}`;
   bindCommon(root);
   $('[data-field="score_strategy"]', root)?.addEventListener("change", (event) => {
     const host = $("#scoring-strategy-fields", root);
     if (!host) return;
     host.innerHTML = strategyFields(event.target.value);
     bindCommon(host);
+    bindLegacyFormulaPreview(host, event.target.value);
     applyLocale(host);
   });
   bindWeightedEntryEditor(root, authorEditor);
@@ -2871,6 +2900,7 @@ function strategyDescription(strategy) {
   const descriptions = {
     core_relevance_v2: "先由模型为每个关键词给出内容相关度。资格只看主关键词：按主关键词权重计算平均相关度，并且至少一个主关键词达到“强匹配”门槛；两项都满足才通过。通过后，参考关键词和收藏作者只用于排序，不能让无关论文获得资格。",
     legacy_weighted_keyword_v1: "将主关键词和参考关键词的得分按权重累加，再叠加专家作者加分；总分达到“基础分 + 权重系数 × 全部关键词总权重”即通过。参考词和作者加分同时影响资格与排序，适合复现旧报告或临时回退，但可能放大非核心信号。",
+    weighted_keyword_with_penalties_v1: "按加权关键词 V1 计算主关键词、参考关键词与作者加分，再按相关度和独立权重扣除不关注关键词。及格线仅由加分关键词权重决定。",
     learned_preference_v1: "以加权关键词 V1 为基础，再加入从喜欢/不喜欢和历史通过记录学习到的关键词、作者偏好。每个学习项先限幅再衰减，且已直接配置的关键词不会重复计算；但学习项仍会改变总分，因此也可能改变资格。适合个人化筛选，不适合严格复现基准结果。",
   };
   return `<p class="info-box">${escapeHtml(descriptions[strategy] || descriptions.core_relevance_v2)}</p>`;
@@ -2897,11 +2927,14 @@ function legacyStrategyFields() { return `<div class="form-grid three">${field({
 
 function legacyFormulaMarkup(count, totalWeight, base, coefficient) {
   const passing = base + coefficient * totalWeight;
+  const hasReferenceExtraction = configValue("enable_reference_extraction", false) === true;
   if (state.language === "en") {
     const noun = count === 1 ? "primary keyword" : "primary keywords";
-    return `With ${count} ${noun} at a total weight of ${totalWeight.toFixed(2)}: passing score = ${base} + ${coefficient} × ${totalWeight.toFixed(2)} = <strong>${passing.toFixed(1)}</strong>`;
+    const referenceNote = hasReferenceExtraction ? " Extracted reference keywords may raise the actual passing score." : "";
+    return `With ${count} ${noun} at a total weight of ${totalWeight.toFixed(2)}: base passing score = ${base} + ${coefficient} × ${totalWeight.toFixed(2)} = <strong>${passing.toFixed(1)}</strong>.${referenceNote}`;
   }
-  return `共 ${count} 个主关键词，总权重 ${totalWeight.toFixed(2)}：通过分数 = ${base} + ${coefficient} × ${totalWeight.toFixed(2)} = <strong>${passing.toFixed(1)}</strong>`;
+  const referenceNote = hasReferenceExtraction ? " 参考关键词提取后，实际及格分可能增加。" : "";
+  return `共 ${count} 个主关键词，总权重 ${totalWeight.toFixed(2)}：基准及格分 = ${base} + ${coefficient} × ${totalWeight.toFixed(2)} = <strong>${passing.toFixed(1)}</strong>。${referenceNote}`;
 }
 
 function legacyFormulaPreview(strategy) {

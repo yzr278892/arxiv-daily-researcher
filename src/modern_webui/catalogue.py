@@ -844,6 +844,10 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "zh": "加权关键词 V1（兼容）",
         "en": "Weighted keywords V1 (Compatibility)",
     },
+    "score_strategy_weighted_keyword_with_penalties_v1_label": {
+        "zh": "加权关键词＋扣分 V1",
+        "en": "Weighted Keywords + Penalties V1",
+    },
     "score_strategy_learned_preference_v1_label": {
         "zh": "偏好学习 V1（个性化）",
         "en": "Learned preference V1 (Personalized)",
@@ -855,6 +859,10 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
     "score_strategy_legacy_weighted_keyword_v1_description": {
         "zh": "将主关键词和参考关键词的得分按权重累加，再叠加专家作者加分；总分达到“基础分 + 权重系数 × 全部关键词总权重”即通过。参考词和作者加分同时影响资格与排序，适合复现旧报告或临时回退，但可能放大非核心信号。",
         "en": "Scores from primary and reference keywords are summed by weight, then expert-author bonuses are added. A paper passes when the total reaches “base score + weight coefficient × total keyword weight.” Reference terms and author bonuses affect both qualification and ranking. Use it to reproduce old reports or temporarily roll back; non-core signals can carry more influence.",
+    },
+    "score_strategy_weighted_keyword_with_penalties_v1_description": {
+        "zh": "主关键词、参考关键词与作者按加权关键词 V1 加分，再按相关度和独立权重扣除不关注关键词；扣分词不计入及格线。",
+        "en": "Primary and reference keywords plus authors add points as in Weighted Keywords V1. Downweighted terms subtract relevance times their individual weights and do not raise the passing threshold.",
     },
     "score_strategy_learned_preference_v1_description": {
         "zh": "以加权关键词 V1 为基础，再加入从喜欢/不喜欢和历史通过记录学习到的关键词、作者偏好。每个学习项先限幅再衰减，且已直接配置的关键词不会重复计算；但学习项仍会改变总分，因此也可能改变资格。适合个人化筛选，不适合严格复现基准结果。",

@@ -360,6 +360,11 @@ class ScoringRenderer(BaseModuleRenderer):
                     rows.append(
                         (kw, f"{weight:.1f}", f"{score:.1f}/{max_score_label}", f"{weighted:.1f}")
                     )
+                for kw, score in getattr(score_resp, "negative_keyword_scores", {}).items():
+                    weight = getattr(score_resp, "negative_keyword_weights", {}).get(kw, 0)
+                    rows.append(
+                        (f"不关注：{kw}", f"-{weight:.2f}", f"{score:.1f}/{max_score_label}", f"-{score * weight:.1f}")
+                    )
 
                 preference_bonus = getattr(score_resp, "author_preference_bonus", score_resp.author_bonus)
                 if preference_bonus > 0:
@@ -380,6 +385,12 @@ class ScoringRenderer(BaseModuleRenderer):
                     detail_lines.append(
                         f"- **{markdown_text(kw, multiline=False)}** "
                         f"(权重{weight:.1f}): {score:.1f}/{max_score_label} → {weighted:.1f}"
+                    )
+                for kw, score in getattr(score_resp, "negative_keyword_scores", {}).items():
+                    weight = getattr(score_resp, "negative_keyword_weights", {}).get(kw, 0)
+                    detail_lines.append(
+                        f"- **不关注：{markdown_text(kw, multiline=False)}** "
+                        f"(扣分权重{weight:.2f}): {score:.1f}/{max_score_label} → -{score * weight:.1f}"
                     )
 
                 preference_bonus = getattr(score_resp, "author_preference_bonus", score_resp.author_bonus)

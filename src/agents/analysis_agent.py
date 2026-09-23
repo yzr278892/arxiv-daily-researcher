@@ -39,6 +39,7 @@ from scoring_policy import (
     CORE_RELEVANCE_V2,
     LEGACY_WEIGHTED_KEYWORD_V1,
     LEARNED_PREFERENCE_V1,
+    WEIGHTED_KEYWORD_WITH_PENALTIES_V1,
     compute_learned_adjustment,
 )
 
@@ -169,6 +170,11 @@ class WeightedScoreResponse(BaseModel):
     learned_adjustment: Optional[float] = None
     learned_keywords_matched: List[str] = Field(default_factory=list)
     learned_authors_matched: List[str] = Field(default_factory=list)
+    # A penalty-mode score keeps positive and negative evidence distinct.
+    # Defaults preserve hydration of all historical score rows.
+    negative_keyword_scores: Dict[str, float] = Field(default_factory=dict)
+    negative_keyword_weights: Dict[str, float] = Field(default_factory=dict)
+    negative_keyword_penalty: Optional[float] = None
 
 
 class Stage2Response(BaseModel):
@@ -783,6 +789,8 @@ class AnalysisAgent:
         ``learned_preference_v1`` 在旧公式之上叠加学习库修正：从收藏
         偏好与 v1 及格历史学到的关键词/作者权重经过限幅与衰减后调
         整总分，直接配置的关键词权重始终高于学习权重。
+        ``weighted_keyword_with_penalties_v1`` 使用旧及格线，仅将
+        不关注关键词的相关度乘权重后从总分扣除。
 
         参数:
             title (str): 论文标题
@@ -819,6 +827,26 @@ class AnalysisAgent:
         if not normalized_keywords:
             raise ScoreValidationError("至少需要一个评分关键词")
 
+        negative_weights: Dict[str, float] = {}
+        if strategy_id == WEIGHTED_KEYWORD_WITH_PENALTIES_V1:
+            positive_keys = {keyword.casefold() for keyword in normalized_keywords}
+            for keyword in settings.NEGATIVE_KEYWORDS:
+                if not isinstance(keyword, str) or not keyword.strip():
+                    raise ScoreValidationError("不关注关键词必须是非空字符串")
+                if keyword.casefold() in positive_keys:
+                    raise ScoreValidationError(
+                        f"不关注关键词 {keyword!r} 不能同时作为加分关键词"
+                    )
+                weight = _finite_number(
+                    settings.NEGATIVE_KEYWORD_WEIGHTS.get(keyword, 1.0),
+                    f"不关注关键词 {keyword!r} 的权重",
+                )
+                if not 0 <= weight <= 1:
+                    raise ScoreValidationError(
+                        f"不关注关键词 {keyword!r} 的扣分权重必须在 0–1 之间"
+                    )
+                negative_weights[keyword] = weight
+
         if isinstance(authors, str):
             author_names = [name.strip() for name in authors.split(",") if name.strip()]
         elif isinstance(authors, list) and all(isinstance(name, str) for name in authors):
@@ -854,7 +882,11 @@ class AnalysisAgent:
         # 配置而无法执行；它使用自己的归一化资格门槛。
         total_weight = math.fsum(normalized_keywords.values())
         legacy_passing_score = None
-        if strategy_id in (LEGACY_WEIGHTED_KEYWORD_V1, LEARNED_PREFERENCE_V1):
+        if strategy_id in (
+            LEGACY_WEIGHTED_KEYWORD_V1,
+            LEARNED_PREFERENCE_V1,
+            WEIGHTED_KEYWORD_WITH_PENALTIES_V1,
+        ):
             legacy_passing_score = _finite_number(
                 settings.calculate_passing_score(total_weight), "动态及格分"
             )
@@ -937,6 +969,10 @@ class AnalysisAgent:
         keywords_list = "\n".join(
             [f"  - {kw} (权重: {weight:.1f})" for kw, weight in normalized_keywords.items()]
         )
+        negative_keywords_list = "\n".join(
+            f"  - {kw} (扣分权重: {weight:.2f})"
+            for kw, weight in negative_weights.items()
+        )
 
         primary_keywords_text = "、".join(primary_keywords) or "（无）"
         if strategy_id == CORE_RELEVANCE_V2:
@@ -949,10 +985,15 @@ class AnalysisAgent:
 """
         else:
             scoring_policy_text = f"""
-旧版加权判定（由系统计算，不要自行判定是否及格）：
-- 关键词总权重: {total_weight:.1f}
+加权判定（由系统计算，不要自行判定是否及格）：
+- 加分关键词总权重: {total_weight:.1f}
 - 动态及格分: {legacy_passing_score:.1f}
 """
+            if strategy_id == WEIGHTED_KEYWORD_WITH_PENALTIES_V1:
+                scoring_policy_text += (
+                    "- 系统会将不关注关键词的相关度乘各自权重后扣分；"
+                    "它们不参与及格线的计算。模型只需对所有词给出相关度。\n"
+                )
             if strategy_id == LEARNED_PREFERENCE_V1:
                 scoring_policy_text += (
                     "- 学习模式：系统会在加权总分上叠加衰减后的学习偏好项"
@@ -966,6 +1007,8 @@ class AnalysisAgent:
 
 评分关键词及权重:
 {keywords_list}
+
+{f"不关注关键词及扣分权重:{chr(10)}{negative_keywords_list}" if negative_weights else ""}
 
 评分任务:
 1. 理解论文的研究内容和主题
@@ -1025,7 +1068,7 @@ class AnalysisAgent:
             if not isinstance(raw_keyword_scores, dict):
                 raise ScoreValidationError("keyword_scores 必须是对象")
 
-            expected_keywords = set(normalized_keywords)
+            expected_keywords = set(normalized_keywords) | set(negative_weights)
             returned_keywords = set(raw_keyword_scores)
             missing_keywords = expected_keywords.difference(returned_keywords)
             unexpected_keywords = returned_keywords.difference(expected_keywords)
@@ -1037,8 +1080,8 @@ class AnalysisAgent:
                     details.append("包含未配置关键词: " + ", ".join(sorted(unexpected_keywords)))
                 raise ScoreValidationError("keyword_scores 键集合无效（" + "；".join(details) + "）")
 
-            keyword_scores: Dict[str, float] = {}
-            for keyword in normalized_keywords:
+            scored_keywords: Dict[str, float] = {}
+            for keyword in (*normalized_keywords, *negative_weights):
                 score = _finite_number(
                     raw_keyword_scores[keyword], f"关键词 {keyword!r} 的相关度"
                 )
@@ -1046,7 +1089,13 @@ class AnalysisAgent:
                     raise ScoreValidationError(
                         f"关键词 {keyword!r} 的相关度必须在 0-{max_score:g} 之间"
                     )
-                keyword_scores[keyword] = score
+                scored_keywords[keyword] = score
+            keyword_scores = {
+                keyword: scored_keywords[keyword] for keyword in normalized_keywords
+            }
+            negative_keyword_scores = {
+                keyword: scored_keywords[keyword] for keyword in negative_weights
+            }
 
             reasoning = data.get("reasoning")
             if not isinstance(reasoning, str) or not reasoning.strip():
@@ -1200,7 +1249,18 @@ class AnalysisAgent:
                     learned_adjustment = learned["adjustment"]
                     learned_keywords_matched = learned["keywords"]
                     learned_authors_matched = learned["authors"]
-                total_score = weighted_score + author_bonus + (learned_adjustment or 0.0)
+                negative_keyword_penalty = (
+                    math.fsum(
+                        negative_keyword_scores[keyword] * weight
+                        for keyword, weight in negative_weights.items()
+                    )
+                    if strategy_id == WEIGHTED_KEYWORD_WITH_PENALTIES_V1
+                    else None
+                )
+                total_score = (
+                    weighted_score + author_bonus + (learned_adjustment or 0.0)
+                    - (negative_keyword_penalty or 0.0)
+                )
                 passing_score = legacy_passing_score
                 is_qualified = total_score >= passing_score
                 relevance_score = None
@@ -1215,6 +1275,11 @@ class AnalysisAgent:
                         f"关键词 {len(learned_keywords_matched)} 个、"
                         f"作者 {len(learned_authors_matched)} 个匹配，"
                         "学习权重经限幅与衰减）"
+                    )
+                elif strategy_id == WEIGHTED_KEYWORD_WITH_PENALTIES_V1:
+                    qualification_reason = (
+                        "加权关键词总分减去不关注关键词扣分"
+                        f"（扣分 {negative_keyword_penalty:.1f}）"
                     )
                 logger.info(
                     f"论文评分完成 [{title[:50]}]: 总分={total_score:.1f}, 及格分={passing_score:.1f}, {'✅及格' if is_qualified else '❌未及格'}"
@@ -1245,6 +1310,11 @@ class AnalysisAgent:
                 learned_adjustment=learned_adjustment,
                 learned_keywords_matched=learned_keywords_matched,
                 learned_authors_matched=learned_authors_matched,
+                negative_keyword_scores=negative_keyword_scores,
+                negative_keyword_weights=negative_weights,
+                negative_keyword_penalty=negative_keyword_penalty
+                if strategy_id == WEIGHTED_KEYWORD_WITH_PENALTIES_V1
+                else None,
             )
 
         except Exception as e:

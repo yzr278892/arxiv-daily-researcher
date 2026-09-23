@@ -13,6 +13,7 @@ import json
 from typing import Any, Dict, Mapping
 
 from config import settings
+from scoring_policy import WEIGHTED_KEYWORD_WITH_PENALTIES_V1
 # New score audit records derive the identifier from settings for each actual
 # decision; historical audit JSON continues to carry its own fixed value.
 SCORE_PROMPT_REVISION = "daily-keyword-score-v3"
@@ -71,6 +72,19 @@ def _author_bonus_entries() -> list[list[Any]]:
     ]
 
 
+def _negative_keyword_entries() -> list[list[Any]]:
+    """Only the penalty strategy depends on these configured terms."""
+    if configured_score_strategy_id() != WEIGHTED_KEYWORD_WITH_PENALTIES_V1:
+        return []
+    weights = getattr(settings, "NEGATIVE_KEYWORD_WEIGHTS", {})
+    if not isinstance(weights, Mapping):
+        weights = {}
+    return [
+        [str(keyword), weights.get(keyword, 1.0)]
+        for keyword in getattr(settings, "NEGATIVE_KEYWORDS", [])
+    ]
+
+
 def build_score_audit_metadata(
     paper: Any,
     keywords: Mapping[str, Any],
@@ -93,6 +107,7 @@ def build_score_audit_metadata(
         # when the merged keyword dictionary happens to stay identical.
         "primary_keywords": [str(keyword) for keyword in settings.PRIMARY_KEYWORDS],
         "primary_keyword_entries": _primary_keyword_entries(),
+        "negative_keyword_entries": _negative_keyword_entries(),
         "score_settings": {
             "max_score_per_keyword": settings.MAX_SCORE_PER_KEYWORD,
             "passing_score_base": settings.PASSING_SCORE_BASE,
@@ -128,6 +143,7 @@ def build_score_audit_metadata(
         ],
         "primary_keywords": [str(keyword) for keyword in settings.PRIMARY_KEYWORDS],
         "primary_keyword_entries": _primary_keyword_entries(),
+        "negative_keyword_entries": _negative_keyword_entries(),
         # The actual configured expert list and free-text research context
         # intentionally stay out of the exportable audit evidence.  Their
         # fingerprints still distinguish policy changes without disclosure.
@@ -162,6 +178,7 @@ def build_stage_input_fingerprints(
         "keywords": [[str(key), value] for key, value in keywords.items()],
         "primary_keywords": [str(keyword) for keyword in settings.PRIMARY_KEYWORDS],
         "primary_keyword_entries": _primary_keyword_entries(),
+        "negative_keyword_entries": _negative_keyword_entries(),
         "research_context": str(settings.RESEARCH_CONTEXT),
         "score_settings": {
             "max_score_per_keyword": settings.MAX_SCORE_PER_KEYWORD,

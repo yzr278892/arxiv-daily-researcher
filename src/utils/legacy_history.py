@@ -49,7 +49,7 @@ _BARE_TITLE_RE = re.compile(r'<div class="card-title">(?P<title>.*?)</div>', re.
 _TITLE_INDEX_RE = re.compile(r"^\s*\d+\.\s*")
 _BADGE_RE = re.compile(r'<span class="badge (?:pass|fail)">')
 _SCORE_V1_RE = re.compile(
-    r'Score:</span> <span class="score">(?P<total>[\d.]+)</span> / (?P<passing>[\d.]+)'
+    r'Score:</span> <span class="score">(?P<total>-?[\d.]+)</span> / (?P<passing>[\d.]+)'
 )
 _SCORE_V2_RE = re.compile(
     r'Core relevance:</span> <span class="score">(?P<relevance>[\d.]+)</span> '
@@ -369,6 +369,8 @@ def _parse_analysis_sections(content: str) -> Dict[str, Any]:
 def _parse_score_details(content: str) -> Dict[str, Any]:
     """评分详情表格 → keyword_scores / author_bonus / expert_authors_found."""
     keyword_scores: Dict[str, float] = {}
+    negative_keyword_scores: Dict[str, float] = {}
+    negative_keyword_weights: Dict[str, float] = {}
     author_bonus = 0.0
     experts: List[str] = []
     for row_match in _SCORE_TABLE_ROW_RE.finditer(content):
@@ -396,9 +398,21 @@ def _parse_score_details(content: str) -> Dict[str, Any]:
                 relevance = float(cells[2].split("/")[0])
             except (ValueError, IndexError):
                 continue
+            if cells[0].startswith("不关注："):
+                keyword = cells[0].removeprefix("不关注：").strip()
+                try:
+                    penalty_weight = abs(float(cells[1]))
+                except ValueError:
+                    continue
+                if keyword:
+                    negative_keyword_scores[keyword] = relevance
+                    negative_keyword_weights[keyword] = penalty_weight
+                continue
             keyword_scores[cells[0]] = relevance
     return {
         "keyword_scores": keyword_scores,
+        "negative_keyword_scores": negative_keyword_scores,
+        "negative_keyword_weights": negative_keyword_weights,
         "author_bonus": author_bonus,
         "expert_authors_found": experts,
     }
@@ -604,6 +618,14 @@ def _parse_card(chunk: str, source: str, stamp: datetime, path: Path) -> Optiona
         }
     if score_payload:
         details = _parse_score_details(score_details_raw)
+        if details["negative_keyword_scores"] and not v2_match:
+            score_payload["strategy_id"] = "weighted_keyword_with_penalties_v1"
+            score_payload["negative_keyword_scores"] = details["negative_keyword_scores"]
+            score_payload["negative_keyword_weights"] = details["negative_keyword_weights"]
+            score_payload["negative_keyword_penalty"] = sum(
+                score * details["negative_keyword_weights"][keyword]
+                for keyword, score in details["negative_keyword_scores"].items()
+            )
         reasoning_match = _REASONING_RE.search(chunk)
         score_payload.update(
             {

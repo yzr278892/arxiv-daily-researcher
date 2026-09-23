@@ -23,6 +23,7 @@ from config import settings
 from scoring_policy import (
     CORE_RELEVANCE_V2,
     LEARNED_PREFERENCE_V1,
+    WEIGHTED_KEYWORD_WITH_PENALTIES_V1,
     qualification_threshold_for,
     ranking_score_for,
     uses_core_relevance_v2,
@@ -507,6 +508,17 @@ class Reporter:
                 f"- **学习权重衰减**: {settings.LEARNED_WEIGHT_DAMPENING:.2f}，"
                 f"单项限幅 ±{settings.LEARNED_TERM_WEIGHT_CAP:.1f}"
             )
+        elif settings.normalized_score_strategy() == WEIGHTED_KEYWORD_WITH_PENALTIES_V1:
+            lines.append("- **资格策略**: `weighted_keyword_with_penalties_v1`（加权总分减去不关注关键词扣分）")
+            lines.append(
+                f"- **及格分公式**: {settings.PASSING_SCORE_BASE} + {settings.PASSING_SCORE_WEIGHT_COEFFICIENT} × 加分关键词总权重"
+            )
+            lines.append(f"- **当前及格分**: {passing_score:.1f}")
+            if settings.NEGATIVE_KEYWORDS:
+                lines.append("- **不关注关键词**: " + ", ".join(
+                    f"{markdown_text(keyword, multiline=False)}（权重 {settings.NEGATIVE_KEYWORD_WEIGHTS.get(keyword, 1.0):.2f}）"
+                    for keyword in settings.NEGATIVE_KEYWORDS
+                ))
         else:
             lines.append("- **资格策略**: `legacy_weighted_keyword_v1`")
             lines.append(
@@ -899,6 +911,15 @@ class Reporter:
                         f'<td style="text-align:center;padding:4px 8px;">{weight:.1f}</td>'
                         f'<td style="text-align:center;padding:4px 8px;">{score:.1f}/{max_score_label}</td>'
                         f'<td style="text-align:center;padding:4px 8px;">{weighted:.1f}</td></tr>'
+                    )
+                for kw, score in getattr(sr, "negative_keyword_scores", {}).items():
+                    weight = getattr(sr, "negative_keyword_weights", {}).get(kw, 0)
+                    parts.append(
+                        f'<tr style="border-bottom:1px solid var(--color-border);">'
+                        f'<td style="padding:4px 8px;">不关注：{h(kw)}</td>'
+                        f'<td style="text-align:center;padding:4px 8px;">-{weight:.2f}</td>'
+                        f'<td style="text-align:center;padding:4px 8px;">{score:.1f}/{max_score_label}</td>'
+                        f'<td style="text-align:center;padding:4px 8px;">-{score * weight:.1f}</td></tr>'
                     )
                 preference_bonus = getattr(sr, "author_preference_bonus", sr.author_bonus)
                 if preference_bonus > 0:

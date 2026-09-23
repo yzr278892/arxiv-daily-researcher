@@ -125,6 +125,28 @@ class ReportReliabilityTests(unittest.TestCase):
             self.assertIn("Semantic Scholar TL;DR:", content)
             self.assertIn("External &lt;TLDR&gt;", content)
 
+    def test_html_report_shows_penalty_without_confusing_positive_keywords(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            reporter = Reporter()
+            reporter.report_base_dir = Path(temp_dir)
+            paper = _scored_paper("2501.12345v1", -1, False)
+            score = paper["score_response"]
+            score.strategy_id = "weighted_keyword_with_penalties_v1"
+            score.negative_keyword_scores = {"Noise": 8.0}
+            score.negative_keyword_weights = {"Noise": 0.5}
+            score.negative_keyword_penalty = 4.0
+
+            with patch.object(settings, "ENABLE_MARKDOWN_REPORT", False), patch.object(
+                settings, "ENABLE_HTML_REPORT", True
+            ):
+                paths = reporter.generate_reports_by_source(
+                    {"arxiv": [paper]}, {"keyword": 1.0}
+                )
+
+            content = paths["arxiv_html"].read_text(encoding="utf-8")
+            self.assertIn("不关注：Noise", content)
+            self.assertIn("<td style=\"text-align:center;padding:4px 8px;\">-4.0</td>", content)
+
     def test_html_report_escapes_math_like_text_and_rejects_unsafe_links(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             reporter = Reporter()

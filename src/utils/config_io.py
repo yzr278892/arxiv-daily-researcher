@@ -841,6 +841,9 @@ def build_config_dict(
     primary_keywords: Optional[List[str]] = None,
     primary_keyword_weight: float = 1.0,
     primary_keyword_entries: Optional[List[Dict[str, Any]]] = None,
+    negative_keywords: Optional[List[str]] = None,
+    negative_keyword_weight: float = 1.0,
+    negative_keyword_entries: Optional[List[Dict[str, Any]]] = None,
     enable_reference_extraction: bool = False,
     max_reference_keywords: int = 10,
     similarity_threshold: float = 0.75,
@@ -1087,6 +1090,22 @@ def build_config_dict(
         value_key="weight",
         label="主关键词",
     )
+    negative_entries = _normalize_weighted_entries(
+        negative_keyword_entries
+        if negative_keyword_entries is not None
+        else [
+            {"keyword": keyword, "weight": negative_keyword_weight}
+            for keyword in (negative_keywords or [])
+        ],
+        name_key="keyword",
+        value_key="weight",
+        label="不关注关键词",
+    )
+    if any(entry["weight"] > 1 for entry in negative_entries):
+        raise ValueError("不关注关键词的扣分权重必须在 0–1 之间")
+    primary_keys = {entry["keyword"].casefold() for entry in primary_entries}
+    if any(entry["keyword"].casefold() in primary_keys for entry in negative_entries):
+        raise ValueError("不关注关键词不能与主关键词重复")
     author_entries = _normalize_weighted_entries(
         author_bonus_entries
         if author_bonus_entries is not None
@@ -1134,6 +1153,11 @@ def build_config_dict(
                 "weight": primary_keyword_weight,
                 "keywords": [entry["keyword"] for entry in primary_entries],
                 "entries": primary_entries,
+            },
+            "negative_keywords": {
+                "weight": negative_keyword_weight,
+                "keywords": [entry["keyword"] for entry in negative_entries],
+                "entries": negative_entries,
             },
             "enable_reference_extraction": enable_reference_extraction,
             "reference_keywords_config": {
@@ -1473,6 +1497,30 @@ def flatten_config_dict(config: Dict[str, Any]) -> Dict[str, Any]:
     flat["primary_keyword_entries"] = primary_entries
     flat["primary_keywords"] = [entry["keyword"] for entry in primary_entries]
     flat["primary_keyword_weight"] = legacy_primary_weight
+    negative = kw.get("negative_keywords", {})
+    if not isinstance(negative, dict):
+        negative = {}
+    legacy_negative_weight = negative.get("weight", 1.0)
+    stored_negative_entries = negative.get("entries")
+    if isinstance(stored_negative_entries, list):
+        try:
+            negative_entries = _normalize_weighted_entries(
+                stored_negative_entries,
+                name_key="keyword",
+                value_key="weight",
+                label="不关注关键词",
+            )
+        except ValueError:
+            negative_entries = []
+    else:
+        negative_entries = [
+            {"keyword": keyword, "weight": legacy_negative_weight}
+            for keyword in negative.get("keywords", [])
+            if isinstance(keyword, str) and keyword.strip()
+        ]
+    flat["negative_keyword_entries"] = negative_entries
+    flat["negative_keywords"] = [entry["keyword"] for entry in negative_entries]
+    flat["negative_keyword_weight"] = legacy_negative_weight
     flat["enable_reference_extraction"] = kw.get("enable_reference_extraction", False)
 
     ref = kw.get("reference_keywords_config", {})

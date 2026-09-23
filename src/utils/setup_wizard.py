@@ -418,6 +418,32 @@ def section_keywords(existing_config: dict) -> dict:
     if weight is None:
         raise KeyboardInterrupt
 
+    negative_str = questionary.text(
+        "Downweighted keywords (comma-separated; used by the penalty strategy):",
+        default=", ".join(flat.get("negative_keywords", [])),
+        style=WIZARD_STYLE,
+    ).ask()
+    if negative_str is None:
+        raise KeyboardInterrupt
+    negative_names = [term.strip() for term in negative_str.split(",") if term.strip()]
+    prior_negative = {
+        entry["keyword"]: entry["weight"]
+        for entry in flat.get("negative_keyword_entries", [])
+    }
+    negative_entries = []
+    for term in negative_names:
+        value = questionary.text(
+            f"Penalty weight for {term} (0-1):",
+            default=str(prior_negative.get(term, 1.0)),
+            validate=lambda x: True
+            if _is_float(x) and 0 <= float(x) <= 1
+            else "Enter a number between 0 and 1",
+            style=WIZARD_STYLE,
+        ).ask()
+        if value is None:
+            raise KeyboardInterrupt
+        negative_entries.append({"keyword": term, "weight": float(value)})
+
     enable_ref = questionary.confirm(
         "Enable keyword extraction from reference PDFs?",
         default=flat.get("enable_reference_extraction", False),
@@ -437,6 +463,7 @@ def section_keywords(existing_config: dict) -> dict:
     return {
         "primary_keywords": keywords,
         "primary_keyword_weight": float(weight),
+        "negative_keyword_entries": negative_entries,
         "enable_reference_extraction": enable_ref,
         "research_context": context,
     }
@@ -463,6 +490,10 @@ def section_scoring(existing_config: dict) -> dict:
             questionary.Choice(
                 "Legacy weighted keyword V1 (compatibility / rollback)",
                 value="legacy_weighted_keyword_v1",
+            ),
+            questionary.Choice(
+                "Weighted keywords + downweighted topics V1",
+                value="weighted_keyword_with_penalties_v1",
             ),
         ],
         default=flat.get("score_strategy", "legacy_weighted_keyword_v1"),
@@ -505,7 +536,7 @@ def section_scoring(existing_config: dict) -> dict:
             }
         )
 
-    if strategy == "legacy_weighted_keyword_v1":
+    if strategy in {"legacy_weighted_keyword_v1", "weighted_keyword_with_penalties_v1"}:
         console.print("[dim]Legacy passing score = base_score + weight_coefficient * sum(keyword_weights)[/]")
         base = questionary.text(
             "Passing score base:",
@@ -534,7 +565,7 @@ def section_scoring(existing_config: dict) -> dict:
         raise KeyboardInterrupt
 
     result["enable_author_bonus"] = enable_bonus
-    if strategy == "legacy_weighted_keyword_v1":
+    if strategy in {"legacy_weighted_keyword_v1", "weighted_keyword_with_penalties_v1"}:
         result.update(
             {
                 "passing_score_base": float(base),

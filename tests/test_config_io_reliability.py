@@ -647,6 +647,67 @@ class ConfigIOReliabilityTests(unittest.TestCase):
                 author_bonus_entries=[{"author": "Alice Smith", "points": -1}]
             )
 
+    def test_penalty_keywords_round_trip_and_validate_overlap(self):
+        config = build_config_dict(
+            primary_keyword_entries=[{"keyword": "quantum sensing", "weight": 1.0}],
+            negative_keyword_entries=[
+                {"keyword": "quantum communication", "weight": 0.6},
+                {"keyword": "photonic network", "weight": 0.2},
+            ],
+            score_strategy="weighted_keyword_with_penalties_v1",
+        )
+        flat = flatten_config_dict(config)
+        self.assertEqual(
+            flat["negative_keyword_entries"],
+            [
+                {"keyword": "quantum communication", "weight": 0.6},
+                {"keyword": "photonic network", "weight": 0.2},
+            ],
+        )
+        self.assertEqual(
+            build_config_dict(**flat)["keywords"]["negative_keywords"],
+            config["keywords"]["negative_keywords"],
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "config.json"
+            path.write_text(json.dumps(config), encoding="utf-8")
+            runtime = Settings(PROJECT_ROOT=root)
+            runtime.load_from_search_config(path)
+        self.assertEqual(runtime.SCORE_STRATEGY, "weighted_keyword_with_penalties_v1")
+        self.assertEqual(runtime.NEGATIVE_KEYWORD_WEIGHTS["quantum communication"], 0.6)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "config.json"
+            invalid = json.loads(json.dumps(config))
+            invalid["keywords"]["negative_keywords"]["entries"][0]["weight"] = 1.2
+            path.write_text(json.dumps(invalid), encoding="utf-8")
+            with self.assertRaisesRegex(ConfigurationLoadError, "扣分权重必须在 0–1"):
+                Settings(PROJECT_ROOT=root).load_from_search_config(path)
+
+        with self.assertRaisesRegex(ValueError, "不关注关键词不能与主关键词重复"):
+            build_config_dict(
+                primary_keyword_entries=[{"keyword": "quantum sensing", "weight": 1}],
+                negative_keyword_entries=[{"keyword": "Quantum Sensing", "weight": 0.5}],
+            )
+        with self.assertRaisesRegex(ValueError, "不关注关键词不能重复"):
+            build_config_dict(
+                negative_keyword_entries=[
+                    {"keyword": "noise", "weight": 0.5},
+                    {"keyword": "Noise", "weight": 0.2},
+                ]
+            )
+        with self.assertRaisesRegex(ValueError, "扣分权重必须在 0–1"):
+            build_config_dict(
+                negative_keyword_entries=[{"keyword": "noise", "weight": 1.5}]
+            )
+
+    def test_penalty_keywords_default_empty_for_existing_configs(self):
+        flat = flatten_config_dict({"keywords": {"primary_keywords": {"keywords": ["core"]}}})
+        self.assertEqual(flat["negative_keyword_entries"], [])
+        self.assertEqual(flat["negative_keywords"], [])
+
     def test_custom_path_roots_survive_an_unrelated_config_save_round_trip(self):
         """Global WebUI saves must retain hidden/custom path settings."""
         original = {

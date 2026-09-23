@@ -54,6 +54,11 @@
       "weight": 1.0,
       "keywords": []
     },
+    "negative_keywords": {
+      "weight": 1.0,
+      "keywords": [],
+      "entries": []
+    },
     "enable_reference_extraction": true,
     "reference_keywords_config": {
       "max_keywords": 10,

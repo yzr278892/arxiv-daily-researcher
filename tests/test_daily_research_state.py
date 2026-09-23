@@ -252,6 +252,25 @@ class DailyResearchStateTests(unittest.TestCase):
             second = build_stage_input_fingerprints(paper, {"quantum": 1.0}, {})["score"]
         self.assertNotEqual(first, second)
 
+    def test_penalty_terms_invalidate_only_penalty_strategy_score_fingerprint(self):
+        paper = _paper()
+        with patch.object(settings, "SCORE_STRATEGY", "weighted_keyword_with_penalties_v1"), patch.object(
+            settings, "NEGATIVE_KEYWORDS", ["communication"]
+        ), patch.object(settings, "NEGATIVE_KEYWORD_WEIGHTS", {"communication": 0.5}):
+            first = build_stage_input_fingerprints(paper, {"quantum": 1.0}, {})
+            with patch.object(settings, "NEGATIVE_KEYWORD_WEIGHTS", {"communication": 0.8}):
+                second = build_stage_input_fingerprints(paper, {"quantum": 1.0}, {})
+        self.assertNotEqual(first["score"], second["score"])
+        self.assertEqual(first["translation"], second["translation"])
+
+        with patch.object(settings, "SCORE_STRATEGY", "legacy_weighted_keyword_v1"), patch.object(
+            settings, "NEGATIVE_KEYWORDS", ["communication"]
+        ), patch.object(settings, "NEGATIVE_KEYWORD_WEIGHTS", {"communication": 0.5}):
+            legacy_first = build_stage_input_fingerprints(paper, {"quantum": 1.0}, {})
+            with patch.object(settings, "NEGATIVE_KEYWORD_WEIGHTS", {"communication": 0.8}):
+                legacy_second = build_stage_input_fingerprints(paper, {"quantum": 1.0}, {})
+        self.assertEqual(legacy_first["score"], legacy_second["score"])
+
     def test_pipeline_limit_queues_complete_scan_before_processing_one_paper(self):
         class _KeywordAgent:
             def get_all_keywords(self):

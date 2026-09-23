@@ -214,6 +214,8 @@ class Settings(BaseSettings):
     PRIMARY_KEYWORD_WEIGHT: float = 1.0
     PRIMARY_KEYWORD_WEIGHTS: Dict[str, float] = Field(default_factory=dict)
     PRIMARY_KEYWORD_WEIGHTS_EXPLICIT: bool = False
+    NEGATIVE_KEYWORDS: List[str] = Field(default_factory=list)
+    NEGATIVE_KEYWORD_WEIGHTS: Dict[str, float] = Field(default_factory=dict)
 
     # 是否启用从参考文献提取关键词
     ENABLE_REFERENCE_EXTRACTION: bool = False
@@ -428,6 +430,7 @@ class Settings(BaseSettings):
     PASSING_SCORE_WEIGHT_COEFFICIENT: float = 2.5
 
     # 评分策略。legacy_weighted_keyword_v1 保留旧的加权总分判定，
+    # weighted_keyword_with_penalties_v1 在正向总分上扣除不关注主题，
     # core_relevance_v2 将内容资格与排序偏好分离。新安装默认 V2；
     # 旧 config.json 未声明策略时仍按 legacy 读取，确保可逆升级。
     # Keep an existing config file that predates ``strategy`` on its original
@@ -681,6 +684,24 @@ class Settings(BaseSettings):
                         fallback_value=self.PRIMARY_KEYWORD_WEIGHT,
                         label="主关键词",
                     )
+
+                if "negative_keywords" in kw_config:
+                    negative = kw_config["negative_keywords"]
+                    if not isinstance(negative, dict):
+                        raise ValueError("keywords.negative_keywords 必须是对象")
+                    self.NEGATIVE_KEYWORDS, self.NEGATIVE_KEYWORD_WEIGHTS = _weighted_entries_from_config(
+                        negative.get("entries"),
+                        name_key="keyword",
+                        value_key="weight",
+                        fallback_names=negative.get("keywords", []),
+                        fallback_value=negative.get("weight", 1.0),
+                        label="不关注关键词",
+                    )
+                    if any(weight > 1 for weight in self.NEGATIVE_KEYWORD_WEIGHTS.values()):
+                        raise ValueError("不关注关键词的扣分权重必须在 0–1 之间")
+                    primary_keys = {name.casefold() for name in self.PRIMARY_KEYWORDS}
+                    if any(name.casefold() in primary_keys for name in self.NEGATIVE_KEYWORDS):
+                        raise ValueError("不关注关键词不能与主关键词重复")
 
                 # Reference 提取配置
                 self.ENABLE_REFERENCE_EXTRACTION = kw_config.get(

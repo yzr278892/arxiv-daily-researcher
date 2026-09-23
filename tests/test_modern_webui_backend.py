@@ -12,6 +12,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from modern_webui import backend
+from utils.config_io import flatten_config_dict
 from utils.daily_research_store import DailyResearchStore
 from utils.webui_trigger import enqueue_trigger, trigger_status_directory
 
@@ -282,6 +283,29 @@ class ModernBackendTests(unittest.TestCase):
     def test_save_settings_rejects_unknown_fields_before_writing(self) -> None:
         with self.assertRaisesRegex(backend.ModernWebUIError, "不支持"):
             backend.save_settings({"not_a_real_config_option": True}, {})
+
+    def test_save_settings_round_trips_penalty_strategy_and_individual_weights(self) -> None:
+        current = {
+            "primary_keyword_entries": [{"keyword": "quantum sensing", "weight": 1.0}],
+            "score_strategy": "legacy_weighted_keyword_v1",
+        }
+        updates = {
+            "negative_keyword_entries": [{"keyword": "noise", "weight": 0.6}],
+            "score_strategy": "weighted_keyword_with_penalties_v1",
+        }
+        with patch.object(backend, "flat_config", return_value=current), patch.object(
+            backend, "write_config_json"
+        ) as write, patch.object(backend, "_invalidate_runtime_caches"), patch.object(
+            backend, "read_env", return_value={}
+        ), patch.object(backend, "write_env"), patch.object(
+            backend, "public_settings", return_value={}
+        ):
+            backend.save_settings(updates, {})
+
+        saved = flatten_config_dict(write.call_args.args[0])
+        self.assertEqual(saved["score_strategy"], "weighted_keyword_with_penalties_v1")
+        self.assertEqual(saved["negative_keyword_entries"], updates["negative_keyword_entries"])
+        self.assertEqual(saved["primary_keyword_entries"], current["primary_keyword_entries"])
 
     def test_task_records_read_the_same_trigger_protocol(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -21,6 +21,19 @@ class ReferenceKeywordToggleTests(unittest.TestCase):
 
         self.assertEqual(result, {"primary": 1.0})
 
+    def test_penalty_mode_does_not_readd_downweighted_reference_term(self):
+        agent = KeywordAgent.__new__(KeywordAgent)
+        with patch.object(settings, "SCORE_STRATEGY", "weighted_keyword_with_penalties_v1"), patch.object(
+            settings, "NEGATIVE_KEYWORDS", ["Communication"]
+        ), patch.object(settings, "ENABLE_REFERENCE_EXTRACTION", True), patch.object(
+            type(settings), "get_merged_keywords", return_value={"sensing": 1.0}
+        ), patch.object(
+            agent, "generate_weighted_keywords",
+            return_value={"communication": 0.8, "metrology": 0.3},
+        ):
+            result = agent.get_all_keywords()
+        self.assertEqual(result, {"sensing": 1.0, "metrology": 0.3})
+
 
 if __name__ == "__main__":
     unittest.main()
