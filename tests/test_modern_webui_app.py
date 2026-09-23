@@ -117,6 +117,22 @@ class ModernWebUIAppTests(unittest.TestCase):
             response.text.count('preview.className = "report-preview-host";'), 2
         )
 
+    def test_report_preview_reuses_recently_downloaded_bodies(self) -> None:
+        """Previous/next navigation must not re-download an unchanged report."""
+        script = self.client.get("/assets/app.js").text
+
+        self.assertIn("const REPORT_HTML_CACHE = new Map();", script)
+        self.assertIn("const REPORT_HTML_CACHE_LIMIT = 2;", script)
+        start = script.index("async function fetchReportHtml")
+        end = script.index("function reportDirectoryMarkup", start)
+        loader = script[start:end]
+        self.assertIn("REPORT_HTML_CACHE.get(reportId)", loader)
+        self.assertIn("REPORT_HTML_CACHE.set(reportId, { html, fetchedAt: now });", loader)
+        # A page change or an explicit refresh must not serve a cached body.
+        self.assertIn("function clearReportHtmlCache()", script)
+        self.assertIn("clearReportHtmlCache();\n  state.pagedRenderers.clear();", script)
+        self.assertIn("clearReportHtmlCache();\n    runLocalRefresh(refreshReportsDirectory(root, token));", script)
+
     def test_live_log_keeps_its_collapsed_state_across_refreshes(self) -> None:
         """A rebuilt status card must not force the log panel back open."""
         script = self.client.get("/assets/app.js").text

@@ -2317,7 +2317,27 @@ function buildMarkedReportHtml(rawHtml, papers) {
   };
 }
 
+// Report navigation re-opens the same documents, and one report body can be
+// several hundred KB.  Keep the two most recent bodies briefly so switching
+// "previous/next" does not re-download the file; the short lifetime and the
+// page-change reset keep a repaired or regenerated report from being served
+// stale.
+const REPORT_HTML_CACHE = new Map();
+const REPORT_HTML_CACHE_LIMIT = 2;
+const REPORT_HTML_CACHE_TTL_MS = 90_000;
+
+function clearReportHtmlCache() {
+  REPORT_HTML_CACHE.clear();
+}
+
 async function fetchReportHtml(reportId) {
+  const now = Date.now();
+  const cached = REPORT_HTML_CACHE.get(reportId);
+  if (cached && now - cached.fetchedAt < REPORT_HTML_CACHE_TTL_MS) {
+    REPORT_HTML_CACHE.delete(reportId);
+    REPORT_HTML_CACHE.set(reportId, cached);
+    return cached.html;
+  }
   const response = await fetch(`/api/reports/${encodeURIComponent(reportId)}/file`, {
     credentials: "same-origin",
     signal: state.pageRequestController?.signal,
@@ -2326,7 +2346,12 @@ async function fetchReportHtml(reportId) {
     const text = await response.text().catch(() => "");
     throw new Error(localizedString(text || "读取报告失败。"));
   }
-  return response.text();
+  const html = await response.text();
+  REPORT_HTML_CACHE.set(reportId, { html, fetchedAt: now });
+  while (REPORT_HTML_CACHE.size > REPORT_HTML_CACHE_LIMIT) {
+    REPORT_HTML_CACHE.delete(REPORT_HTML_CACHE.keys().next().value);
+  }
+  return html;
 }
 
 function reportDirectoryMarkup(reports, selected, showNonArxiv) {
@@ -2378,6 +2403,8 @@ function bindReportDirectory(root, reports, token) {
   $("#reports-refresh", root)?.addEventListener("click", () => {
     state.pageData.selectedReport = "";
     state.pageData.reportSelections = {};
+    // An explicit refresh must re-read files the worker may have just rewritten.
+    clearReportHtmlCache();
     runLocalRefresh(refreshReportsDirectory(root, token));
   });
   $$('[data-report-select-option]', root).forEach((button) => button.addEventListener("click", () => chooseReport(button.dataset.reportId)));
@@ -4746,6 +4773,7 @@ async function renderPage(options = {}) {
   state.pageRequestController?.abort();
   state.pageRequestController = new AbortController();
   clearTimers();
+  clearReportHtmlCache();
   state.pagedRenderers.clear();
   if (state.page !== "reports") {
     state.reportMarkAbortController?.abort();
