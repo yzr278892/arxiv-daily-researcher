@@ -902,6 +902,10 @@ function rebuildTranslationLookup() {
 }
 
 function translateEmbeddedText(text, translate) {
+  // Text without authored Chinese cannot match the fragment table, and that
+  // table holds hundreds of entries.  Timestamps, numbers and identifiers
+  // reach this function on every English refresh, so rule them out first.
+  if (!/[\u4e00-\u9fff]/.test(text)) return "";
   if (!state.translationFragments.length) rebuildTranslationLookup();
   let result = text;
   for (const [chinese, english] of state.translationFragments) {

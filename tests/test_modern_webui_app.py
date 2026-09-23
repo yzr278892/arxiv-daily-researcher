@@ -117,6 +117,19 @@ class ModernWebUIAppTests(unittest.TestCase):
             response.text.count('preview.className = "report-preview-host";'), 2
         )
 
+    def test_plain_text_skips_the_translation_fragment_scan(self) -> None:
+        """Timestamps and identifiers must not scan the whole fragment table."""
+        script = self.client.get("/assets/app.js").text
+        start = script.index("function translateEmbeddedText")
+        end = script.index("function localizedString", start)
+        translate = script[start:end]
+
+        self.assertIn('if (!/[\\u4e00-\\u9fff]/.test(text)) return "";', translate)
+        self.assertLess(
+            translate.index('if (!/[\\u4e00-\\u9fff]/.test(text)) return "";'),
+            translate.index("rebuildTranslationLookup()"),
+        )
+
     def test_custom_selects_use_one_delegated_option_handler(self) -> None:
         """Rebuilding a dropdown must not rebind a handler per option row."""
         script = self.client.get("/assets/app.js").text
