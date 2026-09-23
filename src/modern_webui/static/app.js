@@ -1519,15 +1519,12 @@ function refreshPrettySelect(select) {
   const options = Array.from(select.options);
   const selectedIndex = select.selectedIndex;
   $("summary > span", dropdown).textContent = selectedIndex >= 0 ? options[selectedIndex].textContent : "—";
+  // One delegated listener (bound in ``decorateSelect``) serves every option
+  // button, so rebuilding this list on each refresh no longer rebinds one
+  // handler per row.
   optionsHost.innerHTML = options.map((option, index) => (
     `<button type="button" role="option" data-pretty-index="${index}" aria-selected="${index === selectedIndex ? "true" : "false"}" class="${index === selectedIndex ? "is-selected" : ""}">${escapeHtml(option.textContent)}</button>`
   )).join("");
-  $$("button", optionsHost).forEach((button) => button.addEventListener("click", () => {
-    select.selectedIndex = Number(button.dataset.prettyIndex);
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-    dropdown.open = false;
-    refreshPrettySelect(select);
-  }));
   wrapper.classList.toggle("is-disabled", Boolean(select.disabled));
   if (select.disabled) dropdown.open = false;
   applyLocale(wrapper);
@@ -1553,6 +1550,16 @@ function decorateSelect(select) {
   dropdown.addEventListener("toggle", () => {
     if (select.disabled) dropdown.open = false;
   });
+  // 选项列表整体重写，因此用事件委托而不是每个选项按钮各绑一个监听器。
+  const optionsHost = $(".pretty-select-options", dropdown);
+  optionsHost.addEventListener("click", (event) => {
+    const button = event.target?.closest?.("button[data-pretty-index]");
+    if (!button || !optionsHost.contains(button)) return;
+    select.selectedIndex = Number(button.dataset.prettyIndex);
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    dropdown.open = false;
+    refreshPrettySelect(select);
+  });
   // 选项被脚本整体重写时（例如服务商预设、模板列表刷新）保持面板同步。
   const observer = new MutationObserver(() => refreshPrettySelect(select));
   observer.observe(select, { childList: true, attributes: true, attributeFilter: ["disabled"] });
@@ -1565,6 +1572,16 @@ function decorateNativeSelects(root = document) {
   $$("select:not([multiple]):not(.pretty-select-native)", root)
     .filter((select) => !select.closest(".pager"))
     .forEach(decorateSelect);
+}
+
+function releasePrettySelectObservers(root = document) {
+  // The page's selects are about to be discarded.  Detaching their observers
+  // keeps the intent explicit instead of relying on the DOM replacement to
+  // make the whole select/observer cycle unreachable.
+  $$("select.pretty-select-native", root).forEach((select) => {
+    select._prettyObserver?.disconnect?.();
+    delete select._prettyObserver;
+  });
 }
 
 function tableId(key) { return `${state.page}:${key}`; }
@@ -4774,6 +4791,7 @@ async function renderPage(options = {}) {
   state.pageRequestController = new AbortController();
   clearTimers();
   clearReportHtmlCache();
+  releasePrettySelectObservers($("#page-root"));
   state.pagedRenderers.clear();
   if (state.page !== "reports") {
     state.reportMarkAbortController?.abort();

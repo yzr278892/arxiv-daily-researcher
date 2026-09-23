@@ -117,6 +117,19 @@ class ModernWebUIAppTests(unittest.TestCase):
             response.text.count('preview.className = "report-preview-host";'), 2
         )
 
+    def test_custom_selects_use_one_delegated_option_handler(self) -> None:
+        """Rebuilding a dropdown must not rebind a handler per option row."""
+        script = self.client.get("/assets/app.js").text
+        start = script.index("function refreshPrettySelect")
+        end = script.index("function decorateSelect", start)
+        refresh = script[start:end]
+
+        self.assertNotIn('$$("button", optionsHost).forEach', refresh)
+        self.assertIn('optionsHost.addEventListener("click"', script)
+        self.assertIn('button[data-pretty-index]', script)
+        self.assertIn("function releasePrettySelectObservers", script)
+        self.assertIn('releasePrettySelectObservers($("#page-root"));', script)
+
     def test_report_preview_reuses_recently_downloaded_bodies(self) -> None:
         """Previous/next navigation must not re-download an unchanged report."""
         script = self.client.get("/assets/app.js").text
@@ -130,7 +143,7 @@ class ModernWebUIAppTests(unittest.TestCase):
         self.assertIn("REPORT_HTML_CACHE.set(reportId, { html, fetchedAt: now });", loader)
         # A page change or an explicit refresh must not serve a cached body.
         self.assertIn("function clearReportHtmlCache()", script)
-        self.assertIn("clearReportHtmlCache();\n  state.pagedRenderers.clear();", script)
+        self.assertIn("clearReportHtmlCache();\n  releasePrettySelectObservers", script)
         self.assertIn("clearReportHtmlCache();\n    runLocalRefresh(refreshReportsDirectory(root, token));", script)
 
     def test_live_log_keeps_its_collapsed_state_across_refreshes(self) -> None:
