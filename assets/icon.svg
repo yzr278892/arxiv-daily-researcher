@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="ADR — arXiv Daily Researcher">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4C8567"/>
+      <stop offset="1" stop-color="#396B51"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <g transform="translate(-17,0)" fill="none" stroke="#FFFFFF" stroke-width="32" stroke-linecap="round" stroke-linejoin="round">
+    <!-- A: the arXiv chi is woven in as the crossbar -->
+    <path d="M80 340 L146 172 L212 340"/>
+    <path d="M110 264 Q152 296 201 312"/>
+    <path d="M182 264 Q140 296 91 312"/>
+    <!-- D -->
+    <path d="M258 172 V340"/>
+    <path d="M258 172 C322 172 352 212 352 256 C352 300 322 340 258 340"/>
+    <!-- R -->
+    <path d="M392 172 V340"/>
+    <path d="M392 172 C434 172 460 194 460 224 C460 254 434 276 392 276"/>
+    <path d="M416 278 L464 340"/>
+  </g>
+</svg>
