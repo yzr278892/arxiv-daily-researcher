@@ -1311,12 +1311,16 @@ async function api(path, options = {}) {
 }
 
 function toast(text, type = "success") {
-  const node = $("#toast");
-  node.textContent = localizedString(text);
+  const stack = $("#toast");
+  if (!stack) return;
+  // One shared node used to overwrite itself: a burst of polling errors could
+  // hide a "saved" confirmation entirely.  Stack the newest few instead.
+  const node = document.createElement("div");
   node.className = `toast ${type}`;
-  node.hidden = false;
-  window.clearTimeout(node._timer);
-  node._timer = window.setTimeout(() => { node.hidden = true; }, 4200);
+  node.textContent = localizedString(text);
+  stack.appendChild(node);
+  while (stack.children.length > 3) stack.firstElementChild?.remove();
+  window.setTimeout(() => node.remove(), 4200);
 }
 
 function isAbortError(error) {

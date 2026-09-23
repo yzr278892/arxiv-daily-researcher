@@ -117,6 +117,28 @@ class ModernWebUIAppTests(unittest.TestCase):
             response.text.count('preview.className = "report-preview-host";'), 2
         )
 
+    def test_toasts_stack_instead_of_overwriting_each_other(self) -> None:
+        """A burst of polling errors must not hide the latest confirmation."""
+        shell = self.client.get("/")
+        self.assertIn(
+            '<div id="toast" class="toast-stack" role="status" aria-live="polite"></div>',
+            shell.text,
+        )
+
+        script = self.client.get("/assets/app.js").text
+        start = script.index("function toast(")
+        end = script.index("function isAbortError", start)
+        toast_function = script[start:end]
+        self.assertIn('const node = document.createElement("div");', toast_function)
+        self.assertIn(
+            "while (stack.children.length > 3) stack.firstElementChild?.remove();",
+            toast_function,
+        )
+        self.assertIn("window.setTimeout(() => node.remove(), 4200);", toast_function)
+
+        stylesheet = self.client.get("/assets/app.css").text
+        self.assertIn(".toast-stack { position: fixed;", stylesheet)
+
     def test_dirty_indicator_skips_unchanged_updates(self) -> None:
         """Every keystroke must not rescan the document for save hints."""
         script = self.client.get("/assets/app.js").text

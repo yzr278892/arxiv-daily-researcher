@@ -770,7 +770,10 @@ select::-ms-expand { display: none; }
 .auth-card h1 { font-size: 1.68rem; }
 .auth-card .muted { font-size: .88rem; }
 .auth-card .stack-form { margin-top: 22px; }
-.toast { position: fixed; right: 22px; bottom: 22px; z-index: 10; max-width: min(410px, calc(100vw - 44px)); padding: 13px 15px; border: 1px solid #b9dcc2; border-radius: 12px; background: var(--success-soft); color: #2f7048; box-shadow: var(--shadow-md); font-size: .83rem; }
+/* 定位由容器负责：多条提示（例如轮询失败与保存成功同时出现）会依次堆叠，
+ * 而不是互相覆盖。 */
+.toast-stack { position: fixed; right: 22px; bottom: 22px; z-index: 10; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; max-width: min(410px, calc(100vw - 44px)); pointer-events: none; }
+.toast { max-width: 100%; padding: 13px 15px; border: 1px solid #b9dcc2; border-radius: 12px; background: var(--success-soft); color: #2f7048; box-shadow: var(--shadow-md); font-size: .83rem; }
 .toast.error { border-color: #efc4b8; background: var(--danger-soft); color: #a04432; }
 
 /* ================================ 深色模式 ================================ */
