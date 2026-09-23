@@ -117,6 +117,18 @@ class ModernWebUIAppTests(unittest.TestCase):
             response.text.count('preview.className = "report-preview-host";'), 2
         )
 
+    def test_running_trend_task_keeps_refreshing_its_panel(self) -> None:
+        """The trend page must not freeze while its own job is still running."""
+        script = self.client.get("/assets/app.js").text
+        start = script.index("async function refreshTrendStatus")
+        end = script.index("function reportTypeLabel", start)
+        refresh = script[start:end]
+
+        self.assertIn('scheduleRefresh("trend", () => refreshTrendStatus(), 5000);', refresh)
+        self.assertIn('scheduleRefresh("trend", () => refreshTrendStatus(), 15000);', refresh)
+        self.assertIn("state.pageData.trendTaskActive = Boolean(status.is_active);", refresh)
+        self.assertIn('statusCard(status, { kind: "trend" })', script)
+
     def test_search_results_ignore_out_of_order_responses(self) -> None:
         """A slow page response must not overwrite a newer search result."""
         script = self.client.get("/assets/app.js").text

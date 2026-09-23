@@ -1985,11 +1985,13 @@ async function renderTrend(token) {
   let templates = Array.isArray(templateData.items) ? templateData.items : [];
   const form = renderTrendForm(templates);
   const launchMarkup = `<div class="action-row"><button id="trend-start" class="primary-button" ${status.can_start ? "" : "disabled"}>开始运行</button></div>`;
-  const statusMarkup = statusCard(status, { kind: "trend", refresh: false });
+  const statusMarkup = statusCard(status, { kind: "trend" });
+  state.pageData.trendTaskActive = Boolean(status.is_active);
   root.innerHTML = `${pageHeader()}${section("趋势研究", `${form.run}<div id="trend-launch">${launchMarkup}</div><div id="trend-status-content" class="task-status-region">${statusMarkup}</div>`, { icon: "📈" })}${divider()}${section("分析参数", form.parameters, { icon: "🔍" })}${divider()}${section("趋势研究配置", form.configuration, { icon: "⚙️", hint: "输出格式会在保存时转换为兼容配置。" })}`;
   bindCommon(root);
   rememberMarkup($("#trend-launch", root), launchMarkup);
   rememberMarkup($("#trend-status-content", root), statusMarkup);
+  if (status.is_active) scheduleRefresh("trend", () => refreshTrendStatus(), 5000);
   const preserveTrend = () => {
     const prior = state.pageData.trend || {};
     const templateControl = $("#trend-template");
@@ -2149,7 +2151,7 @@ function updateTrendStatus(root, status) {
   const statusHost = $("#trend-status-content", root);
   if (!launch || !statusHost) return false;
   const launchChanged = replaceMarkupIfChanged(launch, `<div class="action-row"><button id="trend-start" class="primary-button" ${status.can_start ? "" : "disabled"}>开始运行</button></div>`);
-  const statusChanged = replaceMarkupIfChanged(statusHost, statusCard(status, { kind: "trend", refresh: false }));
+  const statusChanged = replaceMarkupIfChanged(statusHost, statusCard(status, { kind: "trend" }));
   if (launchChanged) applyLocale(launch);
   if (statusChanged) {
     bindCommon(statusHost);
@@ -2163,6 +2165,10 @@ async function refreshTrendStatus(root = $("#page-root"), token = state.renderTo
   try {
     const status = await fetchStatus("trend");
     if (token !== state.renderToken || !updateTrendStatus(root, status)) return;
+    state.pageData.trendTaskActive = Boolean(status.is_active);
+    // A running trend job keeps its progress card and launch button current
+    // without forcing the operator to leave and re-enter the page.
+    if (status.is_active) scheduleRefresh("trend", () => refreshTrendStatus(), 5000);
     // The run button is replaced with the status fragment above.  Rebind its
     // existing submit handler through a click relay rather than reconstructing
     // the analysis form or discarding its in-progress values.
@@ -2175,6 +2181,9 @@ async function refreshTrendStatus(root = $("#page-root"), token = state.renderTo
   } catch (error) {
     if (!isAbortError(error) && state.page === "trend_tasks") {
       toast(localeText(`状态刷新失败：${error.message}`, `Status refresh failed: ${localizedError(error)}`), "error");
+      if (state.pageData.trendTaskActive) {
+        scheduleRefresh("trend", () => refreshTrendStatus(), 15000);
+      }
     }
   }
 }
