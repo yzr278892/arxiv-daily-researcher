@@ -117,6 +117,33 @@ class ModernWebUIAppTests(unittest.TestCase):
             response.text.count('preview.className = "report-preview-host";'), 2
         )
 
+    def test_status_polling_survives_failures_and_resumes_on_visibility(self) -> None:
+        """Losing one status read must not silently freeze a running task panel."""
+        script = self.client.get("/assets/app.js").text
+
+        daily_start = script.index("async function refreshDailyStatus")
+        daily_end = script.index("async function renderDaily", daily_start)
+        daily = script[daily_start:daily_end]
+        # A failed read keeps polling on a slower cadence while work is active.
+        self.assertIn('scheduleRefresh("daily", refreshDailyStatus, 15000);', daily)
+
+        history_start = script.index("async function refreshHistoryStatus")
+        history_end = script.index("async function renderHistory", history_start)
+        history = script[history_start:history_end]
+        self.assertIn('scheduleRefresh("history", refreshHistoryStatus, 15000);', history)
+
+        # The switch re-reads the live status instead of a render-time snapshot.
+        self.assertIn("else void refreshDailyStatus();", script)
+        self.assertIn("else void refreshHistoryStatus();", script)
+
+        # Both task panels offer the manual refresh control again.
+        self.assertIn('statusCard(status, { kind: "daily" })', script)
+        self.assertIn('statusCard(status, { kind: "history", allowStop: false })', script)
+
+        # Hidden tabs pause polling and resume with one refresh.
+        self.assertIn("function handleVisibilityChange()", script)
+        self.assertIn('document.addEventListener("visibilitychange", handleVisibilityChange);', script)
+
     def test_direct_report_html_is_browser_sandboxed(self) -> None:
         self.env["WEBUI_AUTH_ENABLED"] = "false"
         with tempfile.TemporaryDirectory() as directory:

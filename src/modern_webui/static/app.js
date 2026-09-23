@@ -1696,7 +1696,7 @@ function updateDailyStatus(root, status) {
   const queue = $("#daily-queue-content", root);
   if (!launch || !statusHost || !queue) return false;
   const launchChanged = replaceMarkupIfChanged(launch, dailyLaunch(status));
-  const statusChanged = replaceMarkupIfChanged(statusHost, statusCard(status, { kind: "daily", refresh: false }));
+  const statusChanged = replaceMarkupIfChanged(statusHost, statusCard(status, { kind: "daily" }));
   const queueChanged = replaceMarkupIfChanged(queue, dailyQueue(status));
   // Polling while an active task is waiting on a remote API often returns the
   // same state.  Do not rebuild or relocalize an unchanged card every five
@@ -1719,14 +1719,21 @@ async function refreshDailyStatus() {
   try {
     const status = await fetchStatus("daily");
     if (state.page !== "daily_research" || !updateDailyStatus(root, status)) return;
+    state.pageData.dailyTaskActive = Boolean(status.is_active);
     if (status.is_active && state.pageData.dailyAutoRefresh !== false) {
       scheduleRefresh("daily", refreshDailyStatus, 5000);
     }
   } catch (error) {
     if (isAbortError(error) || state.page !== "daily_research") return;
     // Preserve the usable page and settings form if a transient status read
-    // fails; the next manual refresh or task update can retry it.
+    // fails; the manual refresh button or a retry can recover it.
     toast(localeText(`状态刷新失败：${error.message}`, `Status refresh failed: ${localizedError(error)}`), "error");
+    // A single failed read must not end polling while work is running.  Retry
+    // on a slower cadence so a busy or just-restarted worker is picked up again
+    // without hammering the panel on every miss.
+    if (state.pageData.dailyTaskActive && state.pageData.dailyAutoRefresh !== false) {
+      scheduleRefresh("daily", refreshDailyStatus, 15000);
+    }
   }
 }
 
@@ -1736,8 +1743,9 @@ async function renderDaily(token) {
   const status = await fetchStatus("daily");
   if (token !== state.renderToken) return;
   const autoRefresh = state.pageData.dailyAutoRefresh !== false;
+  state.pageData.dailyTaskActive = Boolean(status.is_active);
   const launchMarkup = dailyLaunch(status);
-  const statusMarkup = statusCard(status, { kind: "daily", refresh: false });
+  const statusMarkup = statusCard(status, { kind: "daily" });
   const queueMarkup = dailyQueue(status);
   root.innerHTML = `${pageHeader()}${section("每日研究", `<div id="daily-launch">${launchMarkup}</div>`, { icon: "🚀" })}${divider()}${section("状态面板", `<label class="toggle-field refresh-row"><span><strong>状态自动刷新</strong><small>开启后，仅在任务运行或刚提交等待接手时每 5 秒刷新状态、队列和日志尾部。</small></span><input id="daily-auto-refresh" type="checkbox" ${autoRefresh ? "checked" : ""}/><i></i></label><div id="daily-status-content" class="task-status-region">${statusMarkup}</div>${divider()}<h3>每日研究队列</h3><div id="daily-queue-content">${queueMarkup}</div>`, { icon: "📊" })}${divider()}${renderDailySettings()}`;
   bindCommon(root);
@@ -1747,7 +1755,9 @@ async function renderDaily(token) {
   $("#daily-auto-refresh", root)?.addEventListener("change", (event) => {
     state.pageData.dailyAutoRefresh = event.target.checked;
     if (!event.target.checked) window.clearTimeout(state.timers.get("daily"));
-    else if (status.is_active) scheduleRefresh("daily", refreshDailyStatus, 5000);
+    // Re-read the live state instead of the snapshot captured at render time:
+    // a task started elsewhere must resume polling when this switch is enabled.
+    else void refreshDailyStatus();
   });
   if (status.is_active && autoRefresh) scheduleRefresh("daily", refreshDailyStatus, 5000);
 }
@@ -3680,7 +3690,7 @@ function historyStatusPanel(data) {
   const latestResult = historyIsLive(data)
     ? '<p class="hint-text">任务完成后显示最近导入结果。</p>'
     : importSummary(data?.last_import);
-  return `${statusCard(status, { kind: "history", refresh: false, allowStop: false })}${divider()}<h3>最近一次导入结果</h3>${latestResult}${divider()}<h3>未完成任务</h3>${pagedTable("history-tasks", [{ label: "任务", value: (row) => localizedString(row.label || row.mode || "—") }, { label: "状态", value: (row) => historyTaskStateLabel(row.state) }, { label: "进度", value: (row) => localizedString(row.progress || "—") }, { label: "开始时间", value: (row) => formatTime(row.started_at || row.created_at) }, { label: "完成时间", value: (row) => formatTime(row.completed_at) }, { label: "问题摘要", value: (row) => localizedString(row.issue || "—") }, { label: "操作", html: (row) => row.retryable ? `<button class="secondary-button compact-button" data-history-retry="${escapeAttribute(row.request_id)}">重试</button>` : "—" }], tasks, { empty: "没有未完成的历史维护任务。" })}`;
+  return `${statusCard(status, { kind: "history", allowStop: false })}${divider()}<h3>最近一次导入结果</h3>${latestResult}${divider()}<h3>未完成任务</h3>${pagedTable("history-tasks", [{ label: "任务", value: (row) => localizedString(row.label || row.mode || "—") }, { label: "状态", value: (row) => historyTaskStateLabel(row.state) }, { label: "进度", value: (row) => localizedString(row.progress || "—") }, { label: "开始时间", value: (row) => formatTime(row.started_at || row.created_at) }, { label: "完成时间", value: (row) => formatTime(row.completed_at) }, { label: "问题摘要", value: (row) => localizedString(row.issue || "—") }, { label: "操作", html: (row) => row.retryable ? `<button class="secondary-button compact-button" data-history-retry="${escapeAttribute(row.request_id)}">重试</button>` : "—" }], tasks, { empty: "没有未完成的历史维护任务。" })}`;
 }
 
 function bindHistoryLaunchers(root) {
@@ -3768,12 +3778,17 @@ async function refreshHistoryStatus() {
   try {
     const data = await api("/api/history");
     if (state.page !== "history_tasks" || !updateHistoryStatus(root, data)) return;
+    state.pageData.historyTaskActive = historyIsLive(data);
     if (historyIsLive(data) && state.pageData.historyAutoRefresh !== false) {
       scheduleRefresh("history", refreshHistoryStatus, 5000);
     }
   } catch (error) {
     if (!isAbortError(error) && state.page === "history_tasks") {
       toast(localeText(`历史状态刷新失败：${error.message}`, `History status refresh failed: ${localizedError(error)}`), "error");
+      // Keep maintenance progress visible across transient read failures.
+      if (state.pageData.historyTaskActive && state.pageData.historyAutoRefresh !== false) {
+        scheduleRefresh("history", refreshHistoryStatus, 15000);
+      }
     }
   }
 }
@@ -3784,6 +3799,7 @@ async function renderHistory(token) {
   const data = await api("/api/history");
   if (token !== state.renderToken) return;
   const autoRefresh = state.pageData.historyAutoRefresh !== false;
+  state.pageData.historyTaskActive = historyIsLive(data);
   const statusMarkup = historyStatusPanel(data);
   root.innerHTML = `${pageHeader()}${section("旧版本历史导入", `<div id="history-actions">${historyActions(data)}</div>`, { icon: "📜" })}${divider()}${section("状态面板", `<label class="toggle-field refresh-row"><span><strong>状态自动刷新</strong><small>运行中每 5 秒更新。</small></span><input id="history-auto-refresh" type="checkbox" ${autoRefresh ? "checked" : ""}/><i></i></label><div id="history-status-content" class="task-status-region">${statusMarkup}</div>`, { icon: "📊" })}`;
   bindCommon(root);
@@ -3805,7 +3821,8 @@ async function renderHistory(token) {
   $("#history-auto-refresh", root)?.addEventListener("change", (event) => {
     state.pageData.historyAutoRefresh = event.target.checked;
     if (!event.target.checked) window.clearTimeout(state.timers.get("history"));
-    else if (historyIsLive(data)) scheduleRefresh("history", refreshHistoryStatus, 5000);
+    // Re-read the live state instead of the snapshot captured at render time.
+    else void refreshHistoryStatus();
   });
   if (historyIsLive(data) && autoRefresh) scheduleRefresh("history", refreshHistoryStatus, 5000);
 }
@@ -4615,6 +4632,24 @@ async function refreshActiveTaskPanels() {
   return undefined;
 }
 
+function autoRefreshEnabledForPage() {
+  if (state.page === "daily_research") return state.pageData.dailyAutoRefresh !== false;
+  if (state.page === "history_tasks") return state.pageData.historyAutoRefresh !== false;
+  return true;
+}
+
+// A hidden tab does not need five-second progress updates, and every poll makes
+// the server read the ledger and tail a log file.  Pause the timers while the
+// page is hidden and refresh once when the operator returns.
+function handleVisibilityChange() {
+  if (document.hidden) {
+    clearTimers();
+    return;
+  }
+  if (!autoRefreshEnabledForPage()) return;
+  runLocalRefresh(refreshActiveTaskPanels());
+}
+
 function bindCommon(root = document) {
   bindFields(root);
   bindPagers(root);
@@ -4784,6 +4819,7 @@ async function initialize() {
     }
   });
   window.addEventListener("hashchange", () => { readLocation(); renderNavigation(); renderPage(); });
+  document.addEventListener("visibilitychange", handleVisibilityChange);
   // 与原生下拉一致：点击面板外部时收起所有展开的自定义下拉。
   document.addEventListener("click", (event) => {
     $$(".pretty-select-dropdown[open], .tag-select-dropdown[open], .scroll-select[open]").forEach((dropdown) => {
