@@ -117,6 +117,49 @@ class ModernWebUIAppTests(unittest.TestCase):
             response.text.count('preview.className = "report-preview-host";'), 2
         )
 
+    def test_chunked_json_upload_cannot_bypass_the_body_budget(self) -> None:
+        """A streamed body must hit the same limit as a declared Content-Length."""
+        self.env["WEBUI_AUTH_ENABLED"] = "false"
+
+        def oversized_body():
+            yield b'{"value": "'
+            yield b"x" * (modern_app._MAX_JSON_BYTES + 1)
+            yield b'"}'
+
+        response = self.client.post("/api/webdav", content=oversized_body())
+
+        self.assertEqual(response.status_code, 413)
+        self.assertIn("请求内容过大", response.json()["detail"])
+
+    def test_backup_restore_aborts_an_oversized_streamed_upload(self) -> None:
+        """Restores must be refused before the whole body is buffered."""
+        self.env["WEBUI_AUTH_ENABLED"] = "false"
+
+        def oversized_body():
+            yield b"PK\x03\x04"
+            yield b"x" * 256
+
+        with patch.object(modern_app, "_MAX_RESTORE_BYTES", 64):
+            response = self.client.post(
+                "/api/backups/restore",
+                content=oversized_body(),
+                headers={"x-file-name": "backup.zip"},
+            )
+
+        self.assertEqual(response.status_code, 413)
+        self.assertIn("请求内容过大", response.json()["detail"])
+
+    def test_backup_restore_rejects_an_oversized_declared_length(self) -> None:
+        self.env["WEBUI_AUTH_ENABLED"] = "false"
+        with patch.object(modern_app, "_MAX_RESTORE_BYTES", 8):
+            response = self.client.post(
+                "/api/backups/restore",
+                content=b"PK\x03\x04payload",
+                headers={"x-file-name": "backup.zip"},
+            )
+
+        self.assertEqual(response.status_code, 413)
+
     def test_status_polling_survives_failures_and_resumes_on_visibility(self) -> None:
         """Losing one status read must not silently freeze a running task panel."""
         script = self.client.get("/assets/app.js").text

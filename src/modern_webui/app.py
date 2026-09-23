@@ -54,6 +54,9 @@ from utils.config_io import DEFAULT_ENV_PATH, read_env, write_env  # noqa: E402
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 _MAX_JSON_BYTES = 1_000_000
+# Keep the upload ceiling identical to the worker-side restore check so a valid
+# backup is never rejected by the presentation layer.
+_MAX_RESTORE_BYTES = 1024 * 1024 * 1024
 _ASSET_VERSION_TOKEN = "__ASSET_VERSION__"
 
 # Every authenticated endpoint resolves the session against ``.env``.  On a
@@ -208,16 +211,36 @@ def _require_owner(request: Request) -> tuple[str, Any]:
     return actor, config
 
 
-async def _payload(request: Request, *, limit: int = _MAX_JSON_BYTES) -> dict[str, Any]:
+async def _bounded_body(request: Request, *, limit: int) -> bytes:
+    """Read a request body under a hard byte budget.
+
+    ``Content-Length`` is inspected first for a cheap early rejection, but a
+    chunked upload carries no such header.  The stream is therefore accumulated
+    incrementally and abandoned as soon as the limit is crossed, so an
+    oversized body can never be fully buffered in server memory.
+    """
     header = request.headers.get("content-length")
     if header:
         try:
-            if int(header) > limit:
-                raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="请求内容过大。")
+            declared = int(header)
         except ValueError:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="请求长度无效。") from None
+        if declared > limit:
+            raise HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail="请求内容过大。")
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in request.stream():
+        total += len(chunk)
+        if total > limit:
+            raise HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail="请求内容过大。")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+async def _payload(request: Request, *, limit: int = _MAX_JSON_BYTES) -> dict[str, Any]:
+    raw = await _bounded_body(request, limit=limit)
     try:
-        value = await request.json()
+        value = json.loads(raw)
     except (TypeError, ValueError, json.JSONDecodeError):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="请求必须是 JSON 对象。") from None
     if not isinstance(value, dict):
@@ -654,7 +677,7 @@ async def backup_export(request: Request) -> Response:
 async def backup_restore(request: Request) -> JSONResponse:
     _require_session(request)
     filename = Path(request.headers.get("x-file-name", "backup.zip")).name
-    body = await request.body()
+    body = await _bounded_body(request, limit=_MAX_RESTORE_BYTES)
     try:
         return JSONResponse(await _blocking_call(backend.restore_database_backup, body, filename))
     except Exception as exc:
