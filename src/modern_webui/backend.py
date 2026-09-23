@@ -275,12 +275,30 @@ _STORE_CACHE: dict[Path, DailyResearchStore] = {}
 _REPORTS_LIST_CACHE: dict[
     tuple[Path, bool], tuple[tuple[Any, ...], dict[str, list[dict[str, Any]]]]
 ] = {}
+# The report artifact trees the browser reads.  Listing them validates its
+# cache with ``_reports_roots_signature``, which only stats these roots and
+# their immediate source directories instead of every archived report.
+_REPORT_ARTIFACT_BASES: tuple[tuple[str, ...], ...] = (
+    ("daily_research", "html"),
+    ("daily_research", "markdown"),
+    ("trend_research", "html"),
+    ("trend_research", "markdown"),
+    ("keyword_trend", "html"),
+    ("other_reports", "supplement", "html"),
+    ("other_reports", "supplement", "markdown"),
+)
 _LEGACY_SUPPLEMENT_CACHE: dict[Path, tuple[int, int, bool]] = {}
 _REPORT_PAPERS_CACHE: dict[Path, tuple[tuple[int, int], list[dict[str, Any]]]] = {}
 _REPORT_ROOT_RESOLVE_CACHE: dict[Path, Path] = {}
 # Parsed trigger-queue and status-receipt rows, keyed by the queue and status
 # directory signatures that produced them.
 _TASK_RECORDS_CACHE: tuple[tuple[Any, ...], list[dict[str, Any]]] | None = None
+# Very short-lived ``run_status`` result, keyed by page kind.  The status cards
+# poll every five seconds while the endpoint globs and parses the trigger queue
+# and lock files, so a short window collapses a burst without hiding a task
+# that was just started or stopped (those write paths clear it eagerly).
+_RUN_STATUS_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+_RUN_STATUS_CACHE_TTL_SECONDS = 1.5
 
 
 class ModernWebUIError(ValueError):
@@ -332,10 +350,18 @@ def _runtime_config_signature() -> tuple[Path, int | None, int | None, int | Non
     return path, stat.st_ino, stat.st_size, stat.st_mtime_ns
 
 
+def _invalidate_run_status_cache() -> None:
+    """Drop the short-lived ``run_status`` result so a write shows up at once."""
+
+    with _RUNTIME_CACHE_LOCK:
+        _RUN_STATUS_CACHE.clear()
+
+
 def _invalidate_runtime_caches(*, clear_config: bool = True, clear_store: bool = True) -> None:
     """Drop process-local read caches after an operation changes their source."""
     global _FLAT_CONFIG_CACHE, _FLAT_CONFIG_CACHE_SIGNATURE
     with _RUNTIME_CACHE_LOCK:
+        _RUN_STATUS_CACHE.clear()
         if clear_config:
             _FLAT_CONFIG_CACHE = None
             _FLAT_CONFIG_CACHE_SIGNATURE = None
@@ -668,6 +694,7 @@ def clear_stale_triggers() -> dict[str, int]:
             continue
         except OSError as exc:
             raise ModernWebUIError(f"清除过期请求失败：{exc}") from exc
+    _invalidate_run_status_cache()
     return {"removed": removed}
 
 
@@ -966,7 +993,22 @@ def run_status(
     ``history_status`` already holds the queue and lock snapshot for its own
     task table; it passes them in so one HTTP request no longer globs and
     parses the same trigger and receipt files twice.
+
+    The unprompted poll repeats the remaining work (lock files, queue depth and
+    a live log tail) every few seconds, so a plain call also reuses the result
+    for ``_RUN_STATUS_CACHE_TTL_SECONDS``.  A caller that already holds a
+    prefetched snapshot bypasses the cache entirely, and every write path calls
+    :func:`_invalidate_run_status_cache`, so a task started or stopped by this
+    panel is visible on the next request.
     """
+    cache_key: str | None = None
+    if records is None and locks is None:
+        cache_key = str(kind)
+        now = time.monotonic()
+        with _RUNTIME_CACHE_LOCK:
+            cached = _RUN_STATUS_CACHE.get(cache_key)
+        if cached is not None and now - cached[0] < _RUN_STATUS_CACHE_TTL_SECONDS:
+            return deepcopy(cached[1])
     if flat is None:
         flat = flat_config()
     if locks is None:
@@ -1162,7 +1204,7 @@ def run_status(
     display_locks = locks if kind == "history" else [
         lock for lock in locks if not _is_history_lock(lock)
     ]
-    return {
+    result = {
         "task": task,
         "is_active": active,
         "can_start": can_start,
@@ -1180,6 +1222,10 @@ def run_status(
         "live_log": _live_log_tail(visible_locks) if active else None,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
+    if cache_key is not None:
+        with _RUNTIME_CACHE_LOCK:
+            _RUN_STATUS_CACHE[cache_key] = (time.monotonic(), deepcopy(result))
+    return result
 
 
 def enqueue_task(
@@ -1196,6 +1242,8 @@ def enqueue_task(
         path = enqueue_trigger(DEFAULT_DATA_DIR, mode, retry_of=retry_of, **safe_args)
     except (TypeError, ValueError) as exc:
         raise ModernWebUIError(str(exc)) from exc
+    # The new request must be visible on the caller's next status poll.
+    _invalidate_run_status_cache()
     return {"queued": True, "request_id": path.stem.rsplit("_", 1)[-1], "mode": mode}
 
 
@@ -1225,6 +1273,7 @@ def stop_active_tasks(kind: str | None = None) -> list[int]:
         # below DEFAULT_DATA_DIR.  A custom database/data path can host run
         # locks, but it does not move the trigger watcher's stop channel.
         request_stop(DEFAULT_DATA_DIR, pid)
+    _invalidate_run_status_cache()
     return pids
 
 
@@ -2418,25 +2467,16 @@ def migrate_supplement_reports() -> dict[str, int | bool]:
 def _reports_directory_snapshot(root: Path) -> tuple[tuple[str, int, int], ...]:
     """Collect a cheap change signature for every tree the browser reads.
 
-    The snapshot covers exactly the artefact directories that feed
-    :func:`list_reports`: daily and supplement HTML/Markdown archives, trend
-    HTML plus its sibling Markdown metadata, and keyword-trend reports.  Each
-    entry is ``(relative path, mtime_ns, size)``, collected with ``os.walk``
-    so a rebuilt listing is only needed when a file is added, removed,
-    renamed, or rewritten.
+    Each entry is ``(relative path, mtime_ns, size)``, collected with
+    ``os.walk`` so a rebuilt listing is only needed when a file is added,
+    removed, renamed, or rewritten.  Rewriting a report in place does not move
+    its parent directory's mtime, so this must keep stat-ing the files
+    themselves rather than relying on directory timestamps.
     """
 
     signature: list[tuple[str, int, int]] = []
-    bases = (
-        root / "daily_research" / "html",
-        root / "daily_research" / "markdown",
-        root / "trend_research" / "html",
-        root / "trend_research" / "markdown",
-        root / "keyword_trend" / "html",
-        root / "other_reports" / "supplement" / "html",
-        root / "other_reports" / "supplement" / "markdown",
-    )
-    for base in bases:
+    for parts in _REPORT_ARTIFACT_BASES:
+        base = root.joinpath(*parts)
         if not base.is_dir():
             continue
         for current, dirnames, filenames in os.walk(base):

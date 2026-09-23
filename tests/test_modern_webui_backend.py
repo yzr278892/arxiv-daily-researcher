@@ -18,6 +18,12 @@ from utils.webui_trigger import enqueue_trigger, trigger_status_directory
 
 
 class ModernBackendTests(unittest.TestCase):
+    def setUp(self) -> None:
+        # ``run_status`` keeps a very short in-process result cache; clear it so
+        # every case observes the mocks it installed instead of a prior poll.
+        backend._RUN_STATUS_CACHE.clear()
+        super().setUp()
+
     def test_analytics_windows_keep_rolling_and_calendar_ranges_distinct(self) -> None:
         now = datetime(2026, 8, 30, 15, 45, 30)
         start, end, bucket, key = backend._analytics_window("24h", now=now)
@@ -1335,6 +1341,42 @@ class ModernBackendTests(unittest.TestCase):
         self.assertTrue(status["is_active"])
         self.assertEqual(status["task"]["label"], "过去日报")
         self.assertEqual(status["task"]["current"], 2)
+
+    def test_run_status_reuses_its_result_within_the_short_ttl(self) -> None:
+        """A poll burst must not rescan locks and the queue every call."""
+        with patch.object(backend, "flat_config", return_value={}), patch.object(
+            backend, "active_locks", return_value=[]
+        ), patch.object(backend, "task_records", return_value=[]) as records, patch.object(
+            backend, "open_store", return_value=None
+        ), patch.object(backend, "_live_log_tail", return_value=None):
+            first = backend.run_status("daily")
+            second = backend.run_status("daily")
+            self.assertEqual(records.call_count, 1)
+            # A write path drops the cached result so the next poll is fresh.
+            backend._invalidate_run_status_cache()
+            backend.run_status("daily")
+            self.assertEqual(records.call_count, 2)
+
+        self.assertEqual(first["task"]["state"], "idle")
+        self.assertEqual(second["task"]["state"], "idle")
+        self.assertFalse(first["is_active"])
+
+    def test_enqueuing_a_task_invalidates_the_status_cache(self) -> None:
+        with patch.object(backend, "flat_config", return_value={}), patch.object(
+            backend, "active_locks", return_value=[]
+        ), patch.object(backend, "task_records", return_value=[]), patch.object(
+            backend, "open_store", return_value=None
+        ), patch.object(backend, "_live_log_tail", return_value=None):
+            backend.run_status("daily")
+            with patch.object(
+                backend,
+                "enqueue_trigger",
+                return_value=Path("/tmp/aaaaaaaaaaaa_abc123.json"),
+            ):
+                result = backend.enqueue_task("daily_research")
+            self.assertEqual(result["request_id"], "abc123")
+
+        self.assertEqual(backend._RUN_STATUS_CACHE, {})
 
     def test_collect_qualified_favorites_uses_the_shared_store(self) -> None:
         store = MagicMock()
