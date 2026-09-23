@@ -113,19 +113,57 @@ class VersionedStaticFiles(StaticFiles):
         return response
 
 
+_SHELL_ASSET_NAMES = ("app.css", "app.js", "icon.svg", "favicon-32.png")
+_SHELL_CACHE_LOCK = threading.Lock()
+_SHELL_CACHE: tuple[tuple[Any, ...], str] | None = None
+
+
+def _static_signature(path: Path) -> tuple[int, int] | None:
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    return (stat.st_mtime_ns, stat.st_size)
+
+
 def _frontend_asset_version() -> str:
     """Return a cheap content-change token for the SPA entry assets."""
 
     parts: list[str] = []
-    for name in ("app.css", "app.js", "icon.svg", "favicon-32.png"):
-        try:
-            stat = (STATIC_DIR / name).stat()
-            parts.append(f"{stat.st_mtime_ns:x}-{stat.st_size:x}")
-        except OSError:
+    for name in _SHELL_ASSET_NAMES:
+        signature = _static_signature(STATIC_DIR / name)
+        if signature is None:
             # A development edit can briefly race with a request.  The HTML
             # still loads normally and the next refresh gets the new token.
             parts.append("missing")
+        else:
+            parts.append(f"{signature[0]:x}-{signature[1]:x}")
     return ".".join(parts)
+
+
+def _shell_body() -> str:
+    """Return the SPA shell with its fingerprinted asset URLs.
+
+    The document and the four asset signatures were re-read on every page
+    load, in the event loop.  The rendered body only changes when one of those
+    files changes, so cache it behind the same signatures.
+    """
+
+    global _SHELL_CACHE
+    index_path = STATIC_DIR / "index.html"
+    signature = (
+        _static_signature(index_path),
+        *(_static_signature(STATIC_DIR / name) for name in _SHELL_ASSET_NAMES),
+    )
+    with _SHELL_CACHE_LOCK:
+        cached = _SHELL_CACHE
+    if cached is not None and cached[0] == signature and signature[0] is not None:
+        return cached[1]
+    html = index_path.read_text(encoding="utf-8")
+    body = html.replace(_ASSET_VERSION_TOKEN, _frontend_asset_version())
+    with _SHELL_CACHE_LOCK:
+        _SHELL_CACHE = (signature, body)
+    return body
 
 
 async def _blocking_call(function: Any, /, *args: Any, **kwargs: Any) -> Any:
@@ -144,8 +182,41 @@ async def _blocking_call(function: Any, /, *args: Any, **kwargs: Any) -> Any:
     return await run_in_threadpool(function, *args)
 
 
+_AUTH_CACHE_LOCK = threading.Lock()
+_AUTH_CACHE_SIGNATURE: tuple[int, int, int] | None = None
+_AUTH_CACHE_CONFIG: Any | None = None
+
+
 def _auth_config():
-    return read_auth_config(_cached_env())
+    """Return the parsed account registry, cached until ``.env`` changes.
+
+    Every authenticated endpoint decodes the base64 registry and rebuilds its
+    account objects on each request, including five-second status polls.  The
+    parsed result only depends on ``.env``, whose signature already keys the
+    environment cache; a replaced ``read_env`` (tests or embedding layers)
+    bypasses this cache so a patched value is honoured immediately.
+    """
+    global _AUTH_CACHE_SIGNATURE, _AUTH_CACHE_CONFIG
+    if read_env is not _ORIGINAL_READ_ENV:
+        return read_auth_config(read_env())
+    values = _cached_env()
+    try:
+        stat = DEFAULT_ENV_PATH.stat()
+        signature: tuple[int, int, int] | None = (
+            stat.st_mtime_ns,
+            stat.st_size,
+            stat.st_ino,
+        )
+    except OSError:
+        signature = None
+    with _AUTH_CACHE_LOCK:
+        if _AUTH_CACHE_CONFIG is not None and _AUTH_CACHE_SIGNATURE == signature:
+            return _AUTH_CACHE_CONFIG
+    config = read_auth_config(values)
+    with _AUTH_CACHE_LOCK:
+        _AUTH_CACHE_SIGNATURE = signature
+        _AUTH_CACHE_CONFIG = config
+    return config
 
 
 def _session_secret() -> str:
@@ -890,13 +961,14 @@ async def frontend(_request: Request) -> Response:
     """Serve a non-cacheable shell with fingerprinted CSS and JavaScript."""
 
     try:
-        html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        # The first read happens outside the event loop; afterwards this is a
+        # cached string comparison.
+        body = await run_in_threadpool(_shell_body)
     except OSError as exc:  # pragma: no cover - packaging failure safeguard
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="无法读取 WebUI 页面。",
         ) from exc
-    body = html.replace(_ASSET_VERSION_TOKEN, _frontend_asset_version())
     return Response(
         body,
         media_type="text/html",
@@ -971,6 +1043,11 @@ app = Starlette(
 # compressed/binary responses, so report downloads and backup exports retain
 # their existing behaviour.
 app.add_middleware(GZipMiddleware, minimum_size=500)
+# The cookie signing key is fixed for this process's lifetime because a
+# middleware instance cannot re-read it per request.  Changing the owner
+# password therefore only rotates the signature after the panel restarts;
+# session validity itself is still checked against the current account hash on
+# every request, so a restart only forces a re-login.
 app.add_middleware(
     SessionMiddleware,
     secret_key=_session_secret(),
