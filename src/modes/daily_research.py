@@ -1621,6 +1621,7 @@ class DailyResearchPipeline:
                                     translation_cache,
                                     cache_lock,
                                     store,
+                                    learned_terms,
                                     (
                                         None
                                         if store or search_agent is None

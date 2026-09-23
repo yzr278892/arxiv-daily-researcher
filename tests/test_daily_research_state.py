@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from agents.analysis_agent import WeightedScoreResponse  # noqa: E402
 from config import settings  # noqa: E402
+from modes import daily_research as daily_research_module  # noqa: E402
 from modes.daily_research import (  # noqa: E402
     DailyResearchPipeline,
     _keyword_configuration_error,
@@ -513,6 +514,123 @@ class DailyResearchStateTests(unittest.TestCase):
             self.assertEqual(failed["retry_count"], 1)
             self.assertIsNotNone(completed["completed_at"])
             self.assertEqual(pending_count, 1)
+
+    def test_concurrent_scoring_forwards_learned_terms_to_every_paper(self):
+        """The pooled branch must forward the learned library, not the legacy hint."""
+
+        class _KeywordAgent:
+            def get_all_keywords(self):
+                return {"quantum": 1.0}
+
+        class _SearchAgent:
+            def __init__(self, **_kwargs):
+                pass
+
+            def get_enabled_sources(self):
+                return ["arxiv"]
+
+            def fetch_all_papers(self, **kwargs):
+                kwargs["scan_receipt_callbacks"]["arxiv"](
+                    {
+                        "source": "arxiv",
+                        "status": "succeeded",
+                        "scanned_at": "2026-08-24T08:00:00+00:00",
+                        "domain_receipts": [],
+                        "total_new_candidates": 2,
+                    }
+                )
+                return {
+                    "arxiv": [
+                        PaperMetadata(
+                            paper_id=f"2501.3000{index}v1",
+                            title=f"Concurrent paper {index}",
+                            authors=["Alice"],
+                            abstract=f"Abstract {index}",
+                            published_date=datetime.now(timezone.utc),
+                            url=f"https://arxiv.org/abs/2501.3000{index}v1",
+                            source="arxiv",
+                        )
+                        for index in range(2)
+                    ]
+                }
+
+            def can_download_pdf(self, _source):
+                return False
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            db_path = root / "daily.db"
+            report_path = root / "ARXIV_Report.html"
+
+            class _Reporter:
+                def generate_reports_by_source(self, **_kwargs):
+                    report_path.write_text("<html>concurrent report</html>", encoding="utf-8")
+                    return {"arxiv_html": report_path}
+
+            learned_terms = {"keyword": {"quantum": 9.9}, "author": {}}
+            received = []
+            original = daily_research_module._score_or_hydrate_paper
+
+            def _recording_score(*args, **kwargs):
+                received.append((args, kwargs))
+                return original(*args, **kwargs)
+
+            overrides = {
+                "TOKEN_TRACKING_ENABLED": False,
+                "DAILY_RESEARCH_DB_PATH": db_path,
+                "ENABLE_NOTIFICATIONS": False,
+                "ENABLED_SOURCES": ["arxiv"],
+                "TARGET_DOMAINS": ["quant-ph"],
+                "TARGET_JOURNALS": [],
+                "ENABLE_REFERENCE_EXTRACTION": False,
+                "PRIMARY_KEYWORDS": ["quantum"],
+                "PRIMARY_KEYWORD_WEIGHT": 1.0,
+                "SCORE_STRATEGY": "legacy_weighted_keyword_v1",
+                "HISTORY_DIR": root / "history",
+                "OPENALEX_API_KEY": "",
+                "ENABLE_SEMANTIC_SCHOLAR_TLDR": False,
+                "SEMANTIC_SCHOLAR_API_KEY": "",
+                "KEYWORD_TRACKER_ENABLED": False,
+                "DAILY_ENABLE_DEEP_ANALYSIS": False,
+                "DAILY_MAX_PAPERS_PER_RUN": 2,
+                "ENABLE_CONCURRENCY": True,
+                "CONCURRENCY_WORKERS": 2,
+                "ENABLE_MARKDOWN_REPORT": False,
+                "ENABLE_HTML_REPORT": True,
+                "REPORTS_DIR": root,
+                # Scoring plumbing must not mirror a test database to a real
+                # WebDAV endpoint configured in the local .env file.
+                "BACKUP_ENABLED": False,
+            }
+            with ExitStack() as stack:
+                for name, value in overrides.items():
+                    stack.enter_context(patch.object(settings, name, value))
+                stack.enter_context(patch("modes.daily_research.KeywordAgent", _KeywordAgent))
+                stack.enter_context(patch("modes.daily_research.SearchAgent", _SearchAgent))
+                stack.enter_context(patch("modes.daily_research.AnalysisAgent", _Agent))
+                stack.enter_context(patch("modes.daily_research.Reporter", _Reporter))
+                stack.enter_context(
+                    patch("modes.daily_research._load_learned_terms", return_value=learned_terms)
+                )
+                stack.enter_context(
+                    patch("modes.daily_research._score_or_hydrate_paper", side_effect=_recording_score)
+                )
+                stack.enter_context(
+                    patch(
+                        "modes.daily_research.deliver_pending_after_report_syncs",
+                        return_value={"claimed": 0},
+                    )
+                )
+                stack.enter_context(
+                    patch("modes.daily_research.after_report_sync_maintenance_entry", return_value=None)
+                )
+                result = DailyResearchPipeline().run()
+
+            self.assertTrue(result.success)
+            self.assertEqual(len(received), 2)
+            for args, kwargs in received:
+                forwarded = kwargs.get("learned_terms", args[8] if len(args) > 8 else None)
+                self.assertIs(forwarded, learned_terms)
 
 
 if __name__ == "__main__":
