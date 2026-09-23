@@ -107,6 +107,15 @@ def _parse_lock_info(content: str):
     return pid, started_at
 
 
+class RunLockWaitTimeout(RuntimeError):
+    """Raised when a caller-supplied gate wait timeout expires without the lock.
+
+    The default wait is deliberately durable (a queued request runs as soon as
+    the holder finishes).  A caller that prefers a visible failure passes an
+    explicit ``wait_timeout_seconds``; there is no implicit timeout anywhere.
+    """
+
+
 def _expired_lock_message(lock_file, task_desc: str, max_age_hours: int) -> Optional[str]:
     """Return a safe diagnostic message for an unusually long held lock.
 
@@ -132,9 +141,20 @@ def _expired_lock_message(lock_file, task_desc: str, max_age_hours: int) -> Opti
         return None
 
     pid_detail = f" PID={pid}" if pid is not None else ""
+    lock_label = str(getattr(lock_file, "name", "") or "")
+    try:
+        mtime_label = datetime.fromtimestamp(
+            os.fstat(lock_file.fileno()).st_mtime
+        ).strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        mtime_label = "未知"
     return (
-        f"⚠️  检测到超龄运行锁（>{max_age_hours}h），任务仍持有内核锁，"
-        f"本次不启动: {task_desc}{pid_detail}。为避免 PID 复用误杀，不会自动终止进程。"
+        f"⚠️  检测到超龄运行锁（已持有约 {age_seconds / 3600.0:.1f}h，"
+        f"超过 {max_age_hours}h 阈值），任务仍持有内核锁，本次不启动: {task_desc}。"
+        f"锁文件: {lock_label or '未知'}（mtime={mtime_label}，"
+        f"记录{pid_detail} started={started_at:%Y-%m-%d %H:%M:%S}）。"
+        f"如确认该任务已卡死，请在运行面板 stop 该任务后重新触发，或重启服务；"
+        f"为避免 PID 复用误杀，不会自动终止进程。"
     )
 
 
@@ -218,11 +238,22 @@ def _activity_gate(
     logger=None,
     wait_note: str = "",
     default_wait_note: str = "任务等待其他任务完成",
+    wait_timeout_seconds: Optional[float] = None,
 ):
-    """Acquire one hidden blocking flock gate and always release it safely."""
+    """Acquire one hidden blocking flock gate and always release it safely.
+
+    ``flock`` remains the sole mutual-exclusion authority: waiting only polls
+    the non-blocking acquire.  The wait is infinite unless the caller passes an
+    explicit ``wait_timeout_seconds`` (a queued request normally starts as soon
+    as the holder finishes; a timeout turns a stuck holder into a visible
+    failure instead of an unbounded queue).  ``time.sleep`` stays
+    interruptible, so a stop request wakes the waiter and it retries at once.
+    """
     gate_path = _lock_dir() / gate_name
     gate_file = gate_path.open("a+")
     acquired = False
+    timeout_seconds = 0.0 if wait_timeout_seconds is None else float(wait_timeout_seconds)
+    deadline = time.monotonic() + timeout_seconds if timeout_seconds > 0 else None
     try:
         waiting_message = wait_note or default_wait_note
         next_wait_log_at = 0.0
@@ -235,6 +266,16 @@ def _activity_gate(
                 if logger is not None and now >= next_wait_log_at:
                     logger.info("%s（仍在等待，每 30 秒更新一次）", waiting_message)
                     next_wait_log_at = now + 30.0
+                if deadline is not None and now >= deadline:
+                    if logger is not None:
+                        logger.warning(
+                            "排队超时（%d 秒），未获得运行权: %s",
+                            int(timeout_seconds),
+                            waiting_message,
+                        )
+                    raise RunLockWaitTimeout(
+                        f"排队超时，未获得运行权: {gate_name}"
+                    )
                 # Do not block indefinitely inside flock: a short retry makes
                 # waiting visible in the run log and remains interruptible by
                 # the WebUI stop request.
@@ -255,6 +296,7 @@ def legacy_import_activity_gate(
     exclusive: bool = False,
     logger=None,
     wait_note: str = "",
+    wait_timeout_seconds: Optional[float] = None,
 ):
     """Atomically coordinate legacy import with normal worker activity.
 
@@ -279,12 +321,15 @@ def legacy_import_activity_gate(
         logger=logger,
         wait_note=wait_note,
         default_wait_note=default_wait_note,
+        wait_timeout_seconds=wait_timeout_seconds,
     ):
         yield
 
 
 @contextmanager
-def daily_workflow_gate(*, logger=None, wait_note: str = ""):
+def daily_workflow_gate(
+    *, logger=None, wait_note: str = "", wait_timeout_seconds: Optional[float] = None
+):
     """Serialize daily, supplement and past-date pipeline executions.
 
     This gate deliberately blocks rather than treating a different daily-style
@@ -298,6 +343,7 @@ def daily_workflow_gate(*, logger=None, wait_note: str = ""):
         logger=logger,
         wait_note=wait_note,
         default_wait_note="每日研究流水线等待其他每日类任务完成",
+        wait_timeout_seconds=wait_timeout_seconds,
     ):
         yield
 
@@ -354,7 +400,7 @@ def run_lock(
     categories: Optional[List[str]] = None,
 ):
     """
-    获取运行锁；若相同任务已在运行则打印提示并以 exit(0) 退出。
+    获取运行锁；若相同任务已在运行则打印提示并以 LOCK_SKIPPED_EXIT_CODE(75) 退出。
 
     用法:
         with run_lock("daily_research"):
