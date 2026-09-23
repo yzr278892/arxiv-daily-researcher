@@ -117,6 +117,15 @@ class ModernWebUIAppTests(unittest.TestCase):
             response.text.count('preview.className = "report-preview-host";'), 2
         )
 
+    def test_translation_cache_stays_bounded(self) -> None:
+        """Changing task details must not grow the session cache forever."""
+        script = self.client.get("/assets/app.js").text
+
+        self.assertIn(
+            "if (state.localizedTextCache.size >= 2000) state.localizedTextCache.clear();",
+            script,
+        )
+
     def test_plain_text_skips_the_translation_fragment_scan(self) -> None:
         """Timestamps and identifiers must not scan the whole fragment table."""
         script = self.client.get("/assets/app.js").text

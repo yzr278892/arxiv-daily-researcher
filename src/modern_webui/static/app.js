@@ -954,6 +954,11 @@ function localizedString(value) {
   }
   if (!translated) translated = translateEmbeddedText(core, translate);
   const result = `${leading}${translated || core}${trailing}`;
+  // Long-lived sessions translate task details and error messages that embed
+  // changing values and never repeat, so keep the map bounded.  Clearing it
+  // wholesale is cheap: the cache only saves the fragment scan for wording
+  // that actually recurs.
+  if (state.localizedTextCache.size >= 2000) state.localizedTextCache.clear();
   state.localizedTextCache.set(source, result);
   return result;
 }
