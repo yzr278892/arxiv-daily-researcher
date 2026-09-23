@@ -1663,6 +1663,12 @@ function triggerNotice(status) {
   return `<div class="issue-box trigger-notice"><strong>${escapeHtml(title)}</strong><p>${escapeHtml(description)}</p></div>`;
 }
 
+function liveLogOpenState(host) {
+  // ``null`` means "no previous card": a first render keeps the log expanded.
+  const details = host?.querySelector("details.live-log");
+  return details ? details.open : null;
+}
+
 function statusCard(status, options = {}) {
   const task = status.task || {};
   const total = Number(task.total);
@@ -1683,7 +1689,11 @@ function statusCard(status, options = {}) {
   const lockLine = relevantLocks.length ? `<p class="status-locks">${escapeHtml(localeText("运行锁：", "Run locks: "))}${relevantLocks.map((lock) => `${escapeHtml(localizedString(lock.name || "—"))}${lock.pid ? ` (PID ${escapeHtml(lock.pid)})` : ""}`).join(" · ")}</p>` : "";
   const relatedLocks = (Array.isArray(status.active_locks) ? status.active_locks : []).filter((lock) => !relevantNames.has(String(lock.name || "")));
   const relatedLine = relatedLocks.length ? `<p class="status-locks">${escapeHtml(localeText("同时运行：", "Also running: "))}${relatedLocks.map((lock) => escapeHtml(localizedString(lock.name || "—"))).join(" · ")}</p>` : "";
-  const liveLog = status.live_log && typeof status.live_log === "object" && status.live_log.content ? `<details class="live-log" open><summary>📜 ${escapeHtml(localizedString(status.live_log.name || localeText("运行日志", "Run log")))} · ${escapeHtml(localeText("日志尾部 15 行", "Last 15 log lines"))}${status.live_log.truncated ? localeText("（已截断）", " (truncated)") : ""}</summary><pre>${escapeHtml(status.live_log.content)}</pre></details>` : "";
+  // The card is rebuilt whenever the counters or log tail change, so carry the
+  // operator's collapsed/expanded choice across refreshes instead of forcing
+  // the panel open again every five seconds.
+  const liveLogOpen = options.liveLogOpen === false ? "" : "open";
+  const liveLog = status.live_log && typeof status.live_log === "object" && status.live_log.content ? `<details class="live-log" ${liveLogOpen}><summary>📜 ${escapeHtml(localizedString(status.live_log.name || localeText("运行日志", "Run log")))} · ${escapeHtml(localeText("日志尾部 15 行", "Last 15 log lines"))}${status.live_log.truncated ? localeText("（已截断）", " (truncated)") : ""}</summary><pre>${escapeHtml(status.live_log.content)}</pre></details>` : "";
   const stop = status.can_stop && options.allowStop !== false
     ? `<button class="danger-button" data-stop-task="${escapeAttribute(status.stop_kind || options.kind || "")}">停止当前任务</button>`
     : "";
@@ -1715,7 +1725,7 @@ function updateDailyStatus(root, status) {
   const queue = $("#daily-queue-content", root);
   if (!launch || !statusHost || !queue) return false;
   const launchChanged = replaceMarkupIfChanged(launch, dailyLaunch(status));
-  const statusChanged = replaceMarkupIfChanged(statusHost, statusCard(status, { kind: "daily" }));
+  const statusChanged = replaceMarkupIfChanged(statusHost, statusCard(status, { kind: "daily", liveLogOpen: liveLogOpenState(statusHost) }));
   const queueChanged = replaceMarkupIfChanged(queue, dailyQueue(status));
   // Polling while an active task is waiting on a remote API often returns the
   // same state.  Do not rebuild or relocalize an unchanged card every five
@@ -2151,7 +2161,7 @@ function updateTrendStatus(root, status) {
   const statusHost = $("#trend-status-content", root);
   if (!launch || !statusHost) return false;
   const launchChanged = replaceMarkupIfChanged(launch, `<div class="action-row"><button id="trend-start" class="primary-button" ${status.can_start ? "" : "disabled"}>开始运行</button></div>`);
-  const statusChanged = replaceMarkupIfChanged(statusHost, statusCard(status, { kind: "trend" }));
+  const statusChanged = replaceMarkupIfChanged(statusHost, statusCard(status, { kind: "trend", liveLogOpen: liveLogOpenState(statusHost) }));
   if (launchChanged) applyLocale(launch);
   if (statusChanged) {
     bindCommon(statusHost);
@@ -3717,13 +3727,13 @@ function historyActions(data) {
   return `${field({ label: "启用完整补全流程", key: "legacy_import_full_repair_enabled", type: "checkbox", fallback: false })}<p id="history-full-repair-hint" class="hint-text">${historyFullRepairHint(fullRepair)}</p><div class="action-row history-maintenance-actions"><button id="history-import" class="primary-button" ${pendingModes.has("legacy_import") ? "disabled" : ""}>读取旧历史</button><button id="history-repair" class="secondary-button compact-button" ${pendingModes.has("history_data_repair") ? "disabled" : ""}>补全历史数据</button><button id="history-omission" class="secondary-button compact-button" ${pendingModes.has("history_omission_scan") ? "disabled" : ""}>扫描历史遗漏</button></div><h3>运行设置</h3>${scheduleFields}<div class="action-row"><button id="history-migrate-supplements" class="secondary-button">迁移已有补充报告</button></div>`;
 }
 
-function historyStatusPanel(data) {
+function historyStatusPanel(data, options = {}) {
   const status = data?.status || {};
   const tasks = historyTasks(data);
   const latestResult = historyIsLive(data)
     ? '<p class="hint-text">任务完成后显示最近导入结果。</p>'
     : importSummary(data?.last_import);
-  return `${statusCard(status, { kind: "history", allowStop: false })}${divider()}<h3>最近一次导入结果</h3>${latestResult}${divider()}<h3>未完成任务</h3>${pagedTable("history-tasks", [{ label: "任务", value: (row) => localizedString(row.label || row.mode || "—") }, { label: "状态", value: (row) => historyTaskStateLabel(row.state) }, { label: "进度", value: (row) => localizedString(row.progress || "—") }, { label: "开始时间", value: (row) => formatTime(row.started_at || row.created_at) }, { label: "完成时间", value: (row) => formatTime(row.completed_at) }, { label: "问题摘要", value: (row) => localizedString(row.issue || "—") }, { label: "操作", html: (row) => row.retryable ? `<button class="secondary-button compact-button" data-history-retry="${escapeAttribute(row.request_id)}">重试</button>` : "—" }], tasks, { empty: "没有未完成的历史维护任务。" })}`;
+  return `${statusCard(status, { kind: "history", allowStop: false, liveLogOpen: options.liveLogOpen })}${divider()}<h3>最近一次导入结果</h3>${latestResult}${divider()}<h3>未完成任务</h3>${pagedTable("history-tasks", [{ label: "任务", value: (row) => localizedString(row.label || row.mode || "—") }, { label: "状态", value: (row) => historyTaskStateLabel(row.state) }, { label: "进度", value: (row) => localizedString(row.progress || "—") }, { label: "开始时间", value: (row) => formatTime(row.started_at || row.created_at) }, { label: "完成时间", value: (row) => formatTime(row.completed_at) }, { label: "问题摘要", value: (row) => localizedString(row.issue || "—") }, { label: "操作", html: (row) => row.retryable ? `<button class="secondary-button compact-button" data-history-retry="${escapeAttribute(row.request_id)}">重试</button>` : "—" }], tasks, { empty: "没有未完成的历史维护任务。" })}`;
 }
 
 function bindHistoryLaunchers(root) {
@@ -3797,7 +3807,7 @@ function updateHistoryStatus(root, data) {
   // unsaved checkbox value.  Keep their DOM nodes and only update their
   // disabled state so an automatic refresh never discards an operator edit.
   updateHistoryActionAvailability(root, data);
-  if (replaceMarkupIfChanged(status, historyStatusPanel(data))) {
+  if (replaceMarkupIfChanged(status, historyStatusPanel(data, { liveLogOpen: liveLogOpenState(status) }))) {
     bindPagers(status);
     bindHistoryRetries(status);
     applyLocale(status);

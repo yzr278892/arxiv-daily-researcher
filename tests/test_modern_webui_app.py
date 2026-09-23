@@ -117,6 +117,18 @@ class ModernWebUIAppTests(unittest.TestCase):
             response.text.count('preview.className = "report-preview-host";'), 2
         )
 
+    def test_live_log_keeps_its_collapsed_state_across_refreshes(self) -> None:
+        """A rebuilt status card must not force the log panel back open."""
+        script = self.client.get("/assets/app.js").text
+
+        self.assertIn("function liveLogOpenState(host)", script)
+        self.assertIn(
+            'const liveLogOpen = options.liveLogOpen === false ? "" : "open";', script
+        )
+        self.assertIn("liveLogOpen: liveLogOpenState(statusHost)", script)
+        self.assertIn("liveLogOpen: liveLogOpenState(status)", script)
+        self.assertIn("historyStatusPanel(data, { liveLogOpen: liveLogOpenState(status) })", script)
+
     def test_running_trend_task_keeps_refreshing_its_panel(self) -> None:
         """The trend page must not freeze while its own job is still running."""
         script = self.client.get("/assets/app.js").text
@@ -220,8 +232,10 @@ class ModernWebUIAppTests(unittest.TestCase):
         self.assertIn("else void refreshHistoryStatus();", script)
 
         # Both task panels offer the manual refresh control again.
-        self.assertIn('statusCard(status, { kind: "daily" })', script)
-        self.assertIn('statusCard(status, { kind: "history", allowStop: false })', script)
+        self.assertIn('statusCard(status, { kind: "daily"', script)
+        self.assertIn('"history", allowStop: false', script)
+        self.assertNotIn('{ kind: "daily", refresh: false }', script)
+        self.assertNotIn('{ kind: "history", refresh: false, allowStop: false }', script)
 
         # Hidden tabs pause polling and resume with one refresh.
         self.assertIn("function handleVisibilityChange()", script)
