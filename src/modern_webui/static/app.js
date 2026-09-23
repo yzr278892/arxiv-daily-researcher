@@ -2627,12 +2627,16 @@ async function renderPaperSearch(token) {
 
 async function loadSearchResults(token) {
   const target = $("#search-results"); if (!target) return;
+  // Rapid page/search clicks issue overlapping requests; only the newest one
+  // may write the result list, otherwise an earlier response can replace a
+  // later page while the pager state has already moved on.
+  const requestVersion = beginLocalRequest("search-results");
   target.innerHTML = '<div class="loading">正在检索 SQLite 历史库…</div>';
   applyLocale(target);
   try {
     const values = state.pageData.search;
     const result = await api(`/api/papers?${searchParamsFromState()}`);
-    if (token !== state.renderToken) return;
+    if (token !== state.renderToken || !isCurrentLocalRequest("search-results", requestVersion)) return;
     if (!result.available) {
       target.innerHTML = '<p class="info-box">SQLite 数据库尚未创建；运行一次每日研究或导入历史后即可检索。</p>';
       applyLocale(target);
@@ -2646,6 +2650,7 @@ async function loadSearchResults(token) {
     $("#search-prev")?.addEventListener("click", () => { values.page -= 1; loadSearchResults(token); });
     $("#search-next")?.addEventListener("click", () => { values.page += 1; loadSearchResults(token); });
   } catch (error) {
+    if (token !== state.renderToken || !isCurrentLocalRequest("search-results", requestVersion)) return;
     target.innerHTML = `<p class="error-message">${escapeHtml(error.message)}</p>`;
     applyLocale(target);
   }

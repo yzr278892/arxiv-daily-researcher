@@ -117,6 +117,18 @@ class ModernWebUIAppTests(unittest.TestCase):
             response.text.count('preview.className = "report-preview-host";'), 2
         )
 
+    def test_search_results_ignore_out_of_order_responses(self) -> None:
+        """A slow page response must not overwrite a newer search result."""
+        script = self.client.get("/assets/app.js").text
+        start = script.index("async function loadSearchResults")
+        end = script.index("function weightedEntries", start)
+        loader = script[start:end]
+
+        self.assertIn('const requestVersion = beginLocalRequest("search-results");', loader)
+        self.assertIn(
+            '!isCurrentLocalRequest("search-results", requestVersion)', loader
+        )
+
     def test_locale_formatters_are_built_once_and_reused(self) -> None:
         """Large tables must not construct an Intl formatter for every cell."""
         script = self.client.get("/assets/app.js").text
