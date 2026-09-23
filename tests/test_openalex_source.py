@@ -208,6 +208,7 @@ class OpenAlexFetchTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             source = OpenAlexSource(Path(temp_dir), journals=["prl"])
             source._api_request = lambda _url, _params: {"results": [work]}
+            source._fetch_arxiv_records = lambda _ids: {}
             source._fetch_from_arxiv = lambda arxiv_id, journal_code, journal_name, doi: _arxiv_metadata(
                 arxiv_id, journal_code, journal_name, doi
             )
@@ -252,6 +253,7 @@ class OpenAlexFetchTests(unittest.TestCase):
             source.history["2501.12345v2"] = "2026-08-01T00:00:00"
             source.set_history_filtering_enabled(False)
             source._api_request = lambda _url, _params: {"results": [work]}
+            source._fetch_arxiv_records = lambda _ids: {}
             source._fetch_from_arxiv = (
                 lambda arxiv_id, journal_code, journal_name, doi: _arxiv_metadata(
                     arxiv_id, journal_code, journal_name, doi
@@ -261,6 +263,60 @@ class OpenAlexFetchTests(unittest.TestCase):
             papers = source.fetch_papers(days=1)
 
         self.assertEqual([work["doi"]], [paper.paper_id for paper in papers])
+
+    def test_one_batched_lookup_resolves_every_arxiv_version_on_a_page(self):
+        """Several arXiv versions on one page must not cost one request each."""
+        works = []
+        for index, arxiv_id in ((11, "2501.10011"), (12, "2501.10012")):
+            work = _work(index)
+            work["locations"] = [
+                {
+                    "source": {"display_name": "arXiv"},
+                    "landing_page_url": f"https://arxiv.org/abs/{arxiv_id}v1",
+                }
+            ]
+            works.append(work)
+
+        def _arxiv_only_record(arxiv_id: str):
+            from sources.base_source import PaperMetadata
+
+            return PaperMetadata(
+                paper_id=f"{arxiv_id}v1",
+                title="Batched arXiv title",
+                authors=["Batched Author"],
+                abstract="Batched arXiv abstract",
+                published_date=datetime(2026, 8, 12),
+                url=f"https://arxiv.org/abs/{arxiv_id}v1",
+                source="arxiv",
+                pdf_url=f"https://arxiv.org/pdf/{arxiv_id}v1",
+                categories=["quant-ph"],
+            )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source = OpenAlexSource(Path(temp_dir), journals=["prl"])
+            source._api_request = lambda _url, _params: {"results": works}
+            calls = []
+
+            def fake_records(arxiv_ids):
+                calls.append(list(arxiv_ids))
+                return {arxiv_id: _arxiv_only_record(arxiv_id) for arxiv_id in arxiv_ids}
+
+            source._fetch_arxiv_records = fake_records
+            source._fetch_from_arxiv = lambda *_args: self.fail(
+                "a prefetched page must not fetch arXiv per paper"
+            )
+
+            papers = source.fetch_papers(days=1)
+
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0], ["2501.10011", "2501.10012"])
+        self.assertEqual(
+            [paper.paper_id for paper in papers], [work["doi"] for work in works]
+        )
+        self.assertEqual([paper.arxiv_id for paper in papers], ["2501.10011", "2501.10012"])
+        for paper in papers:
+            self.assertEqual(paper.title, "Batched arXiv title")
+            self.assertEqual(paper.journal, source.get_journal_info("prl")["full_name"])
 
     def test_search_agent_rejects_unknown_source_instead_of_ignoring_it(self):
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -287,6 +287,12 @@ class SearchAgent:
             if not self.use_legacy_history_filter:
                 openalex_kwargs["load_legacy_history"] = False
             self.sources["openalex"] = OpenAlexSource(**openalex_kwargs)
+            # Journal records are enriched from their arXiv version.  Share the
+            # arXiv source this agent already owns (when arXiv is enabled) so
+            # both paths use one client, proxy and rate budget.
+            arxiv_lookup = self.sources.get("arxiv")
+            if arxiv_lookup is not None:
+                self.sources["openalex"].set_arxiv_lookup_source(arxiv_lookup)
             # 注入代理
             openalex_proxy = _settings.get_proxy_dict("openalex")
             if openalex_proxy:

@@ -23,6 +23,12 @@ _OPENALEX_WORK_ID_RE = re.compile(
     r"^(?:https?://openalex\.org/)?(?P<work_id>W[1-9]\d*)$", re.IGNORECASE
 )
 
+# An OpenAlex location pointing at arXiv carries the identifier in its landing
+# page URL rather than in a structured field.
+_ARXIV_LOCATION_RE = re.compile(
+    r"arxiv\.org/(?:abs|pdf)/(?P<canonical>\d{4}\.\d{4,5})(?P<version>v\d+)?"
+)
+
 
 class OpenAlexFetchError(RuntimeError):
     """Raised when any configured journal cannot be fetched completely."""
@@ -267,11 +273,78 @@ class OpenAlexSource(BasePaperSource):
             all_papers.extend(papers)
         return all_papers
 
+    def set_arxiv_lookup_source(self, source) -> None:
+        """Reuse a caller-owned arXiv source for journal enrichment.
+
+        ``SearchAgent`` already owns an arXiv source (client, proxy and rate
+        budget) when arXiv is enabled; journal enrichment should spend that
+        same budget instead of building a second client.
+        """
+        self._arxiv_lookup = source
+
+    def _arxiv_lookup_source(self):
+        """Return the shared arXiv source used to resolve journal records.
+
+        Constructing a client per paper also meant one client per paper; a
+        single, history-free source now serves the whole journal scan.
+        """
+        source = getattr(self, "_arxiv_lookup", None)
+        if source is None:
+            from .arxiv_source import ArxivSource
+
+            source = ArxivSource(history_dir=self.history_dir, load_legacy_history=False)
+            self._arxiv_lookup = source
+        return source
+
+    def _fetch_arxiv_records(self, arxiv_ids: List[str]) -> Dict[str, PaperMetadata]:
+        """Fetch arXiv metadata for many ids with one batched API lookup."""
+
+        wanted = [str(value).strip() for value in arxiv_ids if str(value).strip()]
+        if not wanted:
+            return {}
+        return self._arxiv_lookup_source().fetch_papers_by_ids(wanted)
+
+    @staticmethod
+    def _journal_metadata_from_arxiv(
+        record: PaperMetadata,
+        *,
+        journal_code: str,
+        journal_name: str,
+        doi: str,
+        arxiv_id: str,
+    ) -> PaperMetadata:
+        """Rebuild one arXiv record under its journal identity.
+
+        Keep the OpenAlex/DOI identity even when the metadata is enriched from
+        arXiv.  ``_fetch_journal_papers`` checks ``is_processed`` with this DOI
+        on the next scan; using the arXiv short id here used to write a
+        different history key and made the same journal article appear new
+        every day.  The arXiv identifier is still retained separately for
+        metadata and PDF access.
+        """
+        return PaperMetadata(
+            paper_id=doi,
+            title=record.title,
+            authors=list(record.authors or []),
+            abstract=record.abstract,  # arXiv 提供完整摘要
+            published_date=record.published_date,
+            url=record.url,
+            source=journal_code,  # 保留期刊代码
+            pdf_url=record.pdf_url,
+            doi=doi,  # 使用期刊的 DOI
+            journal=journal_name,  # 标注期刊名称
+            arxiv_id=arxiv_id,
+            arxiv_url=record.url,
+            categories=list(record.categories or []),
+        )
+
     def _fetch_from_arxiv(
         self, arxiv_id: str, journal_code: str, journal_name: str, doi: str
     ) -> Optional[PaperMetadata]:
         """
         通过 arXiv ID 从 ArXiv 获取论文元数据。
+
+        保留单篇兼容路径：批量预取未命中的论文仍按需单独获取。
 
         参数:
             arxiv_id: arXiv ID
@@ -283,43 +356,21 @@ class OpenAlexSource(BasePaperSource):
             Optional[PaperMetadata]: 论文元数据，失败时返回 None
         """
         try:
-            import arxiv
-
-            # 使用 arXiv API 获取论文
-            search = arxiv.Search(id_list=[arxiv_id])
-            client = arxiv.Client(page_size=1, delay_seconds=3.0, num_retries=2)
-
-            results = list(client.results(search))
-            if not results:
+            record = self._fetch_arxiv_records([arxiv_id]).get(arxiv_id)
+            if record is None:
                 logger.warning(f"    ⚠️  arXiv API 未找到论文: {arxiv_id}")
                 return None
 
-            result = results[0]
-
-            # Keep the OpenAlex/DOI identity even when we enrich its metadata
-            # from arXiv.  ``_fetch_journal_papers`` checks ``is_processed``
-            # with this DOI on the next scan; using ``result.get_short_id()``
-            # here used to write a different history key and made the same
-            # journal article appear new every day.  The arXiv identifier is
-            # still retained separately for metadata and PDF access.
-            metadata = PaperMetadata(
-                paper_id=doi,
-                title=result.title,
-                authors=[author.name for author in result.authors],
-                abstract=result.summary,  # arXiv 提供完整摘要
-                published_date=result.published,
-                url=result.entry_id,
-                source=journal_code,  # 保留期刊代码
-                pdf_url=result.pdf_url,
-                doi=doi,  # 使用期刊的 DOI
-                journal=journal_name,  # 标注期刊名称
+            metadata = self._journal_metadata_from_arxiv(
+                record,
+                journal_code=journal_code,
+                journal_name=journal_name,
+                doi=doi,
                 arxiv_id=arxiv_id,
-                arxiv_url=result.entry_id,
-                categories=list(result.categories) if result.categories else [],
             )
 
             logger.info(
-                f"    ✅ [{result.title[:30]}...] 使用 arXiv 源获取完整元数据 (arXiv:{arxiv_id})"
+                f"    ✅ [{metadata.title[:30]}...] 使用 arXiv 源获取完整元数据 (arXiv:{arxiv_id})"
             )
             return metadata
 
@@ -418,6 +469,128 @@ class OpenAlexSource(BasePaperSource):
             f"OpenAlex {journal_code} 第 {page} 页条目 {item_index} 元数据无效: {exc}"
         )
 
+    def _arxiv_identity(
+        self,
+        item: Dict[str, Any],
+        journal_code: str,
+        page: int,
+        item_index: int,
+        *,
+        strict: bool,
+    ) -> tuple[Optional[str], Optional[str], Optional[str]]:
+        """Return ``(arxiv_id, arxiv_history_id, arxiv_url)`` for one work.
+
+        ``strict`` keeps the scan's validation error for a malformed
+        ``locations`` structure.  The prefetch pass is lenient: a record that
+        the processed-history filter skips must not fail the scan on metadata
+        the scan never reads.
+        """
+        arxiv_id: Optional[str] = None
+        arxiv_history_id: Optional[str] = None
+        arxiv_url: Optional[str] = None
+
+        def _reject(message: str):
+            if strict:
+                raise self._entry_error(
+                    journal_code, page, item_index, OpenAlexFetchError(message)
+                )
+            return None, None, None
+
+        locations = item.get("locations", [])
+        if not isinstance(locations, list):
+            return _reject("locations 不是列表")
+        for loc in locations:
+            if not isinstance(loc, dict):
+                return _reject("locations 包含非对象条目")
+            source_info = loc.get("source", {})
+            if source_info is not None and not isinstance(source_info, dict):
+                return _reject("locations.source 不是对象")
+            if not source_info:
+                continue
+            source_name = source_info.get("display_name", "")
+            if not isinstance(source_name, str):
+                return _reject("locations.source.display_name 不是字符串")
+            # 检查是否是 arXiv 来源
+            if "arxiv" not in source_name.lower():
+                continue
+            loc_url = loc.get("landing_page_url", "")
+            if loc_url is not None and not isinstance(loc_url, str):
+                return _reject("locations.landing_page_url 不是字符串")
+            if not (loc_url and "arxiv.org" in loc_url):
+                continue
+            arxiv_url = loc_url
+            # 使用正则表达式提取 arXiv ID，更健壮
+            try:
+                match = _ARXIV_LOCATION_RE.search(loc_url)
+                if match:
+                    arxiv_id = match.group("canonical")
+                    arxiv_history_id = f"{arxiv_id}{match.group('version') or ''}"
+            except Exception as exc:
+                logger.debug(f"arXiv ID提取失败: {exc}")
+            break
+        return arxiv_id, arxiv_history_id, arxiv_url
+
+    def _prefetch_page_arxiv(
+        self,
+        results: List[Any],
+        journal_code: str,
+        journal_name: str,
+        page: int,
+        *,
+        filter_processed: bool,
+    ) -> Dict[str, PaperMetadata]:
+        """Resolve the arXiv versions of one OpenAlex page with one request.
+
+        Journal pages routinely contain many records that also exist on arXiv.
+        Resolving each of them through its own client and request dominated a
+        journal scan, so the page is collected first and resolved with a
+        batched ``id_list`` lookup.  Only records the scan will keep are
+        requested; a record the API cannot resolve still falls back to the
+        per-paper path at the point of use.
+        """
+        candidates: Dict[str, str] = {}
+        for item_index, item in enumerate(results, start=1):
+            if not isinstance(item, dict):
+                continue
+            try:
+                doi = self._work_identity(item)
+                if filter_processed and self.is_processed(doi):
+                    continue
+                arxiv_id, arxiv_history_id, _url = self._arxiv_identity(
+                    item, journal_code, page, item_index, strict=False
+                )
+                if not arxiv_id:
+                    continue
+                if filter_processed and self._has_legacy_arxiv_history(
+                    arxiv_history_id or arxiv_id
+                ):
+                    continue
+            except Exception:
+                continue
+            candidates.setdefault(arxiv_id, doi)
+        if not candidates:
+            return {}
+        try:
+            records = self._fetch_arxiv_records(list(candidates))
+        except Exception as exc:
+            logger.warning(f"    ⚠️  arXiv 批量补全失败，回退为按需获取: {exc}")
+            return {}
+        prefetched: Dict[str, PaperMetadata] = {}
+        for arxiv_id, doi in candidates.items():
+            record = records.get(arxiv_id)
+            if record is None:
+                continue
+            prefetched[arxiv_id] = self._journal_metadata_from_arxiv(
+                record,
+                journal_code=journal_code,
+                journal_name=journal_name,
+                doi=doi,
+                arxiv_id=arxiv_id,
+            )
+        if prefetched:
+            logger.info("    ⚡ 已批量获取 %d 篇论文的 arXiv 元数据", len(prefetched))
+        return prefetched
+
     def _fetch_journal_papers(
         self,
         issn_list: List[str],
@@ -491,6 +664,17 @@ class OpenAlexSource(BasePaperSource):
                 logger.debug(f"  第 {page} 页无更多结果，停止分页")
                 break
             api_total += len(results)
+
+            # Resolve this page's arXiv versions in one batched lookup before
+            # the per-record loop needs them; the loop still validates each
+            # record and falls back to a single fetch on a miss.
+            prefetched_arxiv = self._prefetch_page_arxiv(
+                results,
+                journal_code,
+                journal_name,
+                page,
+                filter_processed=filter_processed,
+            )
 
             for item_index, item in enumerate(results, start=1):
                 try:
@@ -574,69 +758,9 @@ class OpenAlexSource(BasePaperSource):
                     logger.debug(f"    ✅ [{title[:30]}...] 找到开放获取 PDF")
 
                 # 从 locations 提取 arXiv 信息（使用正则表达式提高健壮性）
-                arxiv_id = None
-                arxiv_history_id = None
-                arxiv_url = None
-                locations = item.get("locations", [])
-                if not isinstance(locations, list):
-                    raise self._entry_error(
-                        journal_code,
-                        page,
-                        item_index,
-                        OpenAlexFetchError("locations 不是列表"),
-                    )
-                for loc in locations:
-                    if not isinstance(loc, dict):
-                        raise self._entry_error(
-                            journal_code,
-                            page,
-                            item_index,
-                            OpenAlexFetchError("locations 包含非对象条目"),
-                        )
-                    source_info = loc.get("source", {})
-                    if source_info is not None and not isinstance(source_info, dict):
-                        raise self._entry_error(
-                            journal_code,
-                            page,
-                            item_index,
-                            OpenAlexFetchError("locations.source 不是对象"),
-                        )
-                    if source_info:
-                        source_name = source_info.get("display_name", "")
-                        if not isinstance(source_name, str):
-                            raise self._entry_error(
-                                journal_code,
-                                page,
-                                item_index,
-                                OpenAlexFetchError("locations.source.display_name 不是字符串"),
-                            )
-                        # 检查是否是 arXiv 来源
-                        if "arxiv" in source_name.lower():
-                            loc_url = loc.get("landing_page_url", "")
-                            if loc_url is not None and not isinstance(loc_url, str):
-                                raise self._entry_error(
-                                    journal_code,
-                                    page,
-                                    item_index,
-                                    OpenAlexFetchError("locations.landing_page_url 不是字符串"),
-                                )
-                            if loc_url and "arxiv.org" in loc_url:
-                                arxiv_url = loc_url
-                                # 使用正则表达式提取 arXiv ID，更健壮
-                                try:
-                                    match = re.search(
-                                        r"arxiv\.org/(?:abs|pdf)/"
-                                        r"(?P<canonical>\d{4}\.\d{4,5})(?P<version>v\d+)?",
-                                        loc_url,
-                                    )
-                                    if match:
-                                        arxiv_id = match.group("canonical")
-                                        arxiv_history_id = (
-                                            f"{arxiv_id}{match.group('version') or ''}"
-                                        )
-                                except Exception as exc:
-                                    logger.debug(f"arXiv ID提取失败: {exc}")
-                                break
+                arxiv_id, arxiv_history_id, arxiv_url = self._arxiv_identity(
+                    item, journal_code, page, item_index, strict=True
+                )
 
                 # 🎯 优先策略：如果找到 arXiv 版本，使用 ArXiv 源获取完整元数据
                 if arxiv_id:
@@ -651,9 +775,11 @@ class OpenAlexSource(BasePaperSource):
                     logger.info(
                         f"    🔄 [{title[:30]}...] 检测到 arXiv 版本: {arxiv_id}，转而使用 ArXiv 源获取完整元数据"
                     )
-                    arxiv_metadata = self._fetch_from_arxiv(
-                        arxiv_id, journal_code, journal_name, doi
-                    )
+                    arxiv_metadata = prefetched_arxiv.get(arxiv_id)
+                    if arxiv_metadata is None:
+                        arxiv_metadata = self._fetch_from_arxiv(
+                            arxiv_id, journal_code, journal_name, doi
+                        )
                     if arxiv_metadata:
                         arxiv_metadata.source_date = published_date.date()
                         papers.append(arxiv_metadata)
