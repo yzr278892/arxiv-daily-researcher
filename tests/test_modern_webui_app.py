@@ -80,6 +80,15 @@ class ModernWebUIAppTests(unittest.TestCase):
         self.assertIn("arXiv Daily Researcher", svg.text)
         self.assertEqual(self.client.get("/assets/favicon-32.png").status_code, 200)
 
+    def test_downweighted_keyword_editor_is_limited_to_penalty_strategy(self) -> None:
+        script = self.client.get("/assets/app.js").text
+        self.assertIn(
+            'const penaltiesEnabled = configValue("score_strategy", "core_relevance_v2") === "weighted_keyword_with_penalties_v1";',
+            script,
+        )
+        self.assertIn('const negativeEditor = penaltiesEnabled ? negativeKeywordEditor() : null;', script)
+        self.assertIn('if (negativeEditor) bindWeightedEntryEditor(root, negativeEditor);', script)
+
     def test_reading_the_account_registry_does_not_derive_a_test_password(self) -> None:
         """Authenticated requests must not run PBKDF2 just to parse .env."""
         owner = modern_auth.Account(

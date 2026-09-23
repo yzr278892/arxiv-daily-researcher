@@ -2632,11 +2632,15 @@ async function renderKeywords(token) {
   const root = $("#page-root");
   const context = escapeHtml(String(configValue("research_context", "") || ""));
   const editor = primaryKeywordEditor();
-  const negativeEditor = negativeKeywordEditor();
-  root.innerHTML = `${pageHeader()}<section class="section-card"><p class="hint-text">研究背景会用于评分和参考文献关键词提取。</p><label class="form-field"><textarea data-field="research_context" data-scope="config" aria-label="研究背景" rows="6" placeholder="描述你的研究问题、方法与关注方向">${context}</textarea></label></section>${divider()}${section("主关键词", `${weightedEntryEditor(editor)}`, { icon: "🏷️", hint: "主关键词参与资格判定与排序；每个关键词可设置 0–1 的独立权重。" })}${divider()}${section("不关注关键词", weightedEntryEditor(negativeEditor), { icon: "➖", hint: "仅在“加权关键词＋扣分”策略下使用；相关度越高，扣分越多。不关注关键词不计入及格线。" })}${divider()}${renderReferenceExtraction()}`;
+  const penaltiesEnabled = configValue("score_strategy", "core_relevance_v2") === "weighted_keyword_with_penalties_v1";
+  const negativeEditor = penaltiesEnabled ? negativeKeywordEditor() : null;
+  const negativeKeywordsSection = negativeEditor
+    ? `${divider()}${section("不关注关键词", weightedEntryEditor(negativeEditor), { icon: "➖", hint: "相关度越高，扣分越多；不计入及格线。" })}`
+    : "";
+  root.innerHTML = `${pageHeader()}<section class="section-card"><p class="hint-text">研究背景会用于评分和参考文献关键词提取。</p><label class="form-field"><textarea data-field="research_context" data-scope="config" aria-label="研究背景" rows="6" placeholder="描述你的研究问题、方法与关注方向">${context}</textarea></label></section>${divider()}${section("主关键词", `${weightedEntryEditor(editor)}`, { icon: "🏷️", hint: "主关键词参与资格判定与排序；每个关键词可设置 0–1 的独立权重。" })}${negativeKeywordsSection}${divider()}${renderReferenceExtraction()}`;
   bindCommon(root);
   bindWeightedEntryEditor(root, editor);
-  bindWeightedEntryEditor(root, negativeEditor);
+  if (negativeEditor) bindWeightedEntryEditor(root, negativeEditor);
   const referenceToggle = $('[data-field="enable_reference_extraction"]', root);
   referenceToggle?.addEventListener("change", (event) => {
     const dependent = $("#reference-extraction-dependent", root);
