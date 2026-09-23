@@ -1,6 +1,7 @@
 import json
 import sqlite3
 import tempfile
+import threading
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -1078,6 +1079,30 @@ class IdentityStoreTests(unittest.TestCase):
 
             source.set_history_filtering_enabled(False)
             self.assertFalse(source.is_processed("2501.12345v1"))
+
+    def test_ledger_reuses_one_connection_per_thread(self):
+        """Hot paths must not open a connection for every store operation."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = DailyResearchStore(Path(temp_dir) / "daily.db")
+            first = store._connect()
+            self.assertIs(first, store._connect())
+            # A completed transaction block keeps the same connection usable.
+            with store._connect() as conn:
+                conn.execute("SELECT 1").fetchone()
+            self.assertIs(first, store._connect())
+
+            observed = []
+
+            def worker():
+                observed.append(store._connect())
+                observed.append(store._connect())
+
+            thread = threading.Thread(target=worker)
+            thread.start()
+            thread.join()
+
+        self.assertIs(observed[0], observed[1])
+        self.assertIsNot(observed[0], first)
 
 
 if __name__ == "__main__":

@@ -51,6 +51,13 @@ class DailyResearchStore:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
+        # One connection per thread, opened on first use and kept for the life
+        # of this store.  Opening (and re-applying the same PRAGMAs to) a fresh
+        # connection for every operation dominated hot paths: scoring one paper
+        # opened six to ten connections and one WebUI status poll opened three.
+        # Connections are never shared between threads, and each call site
+        # keeps its existing ``with conn`` commit/rollback semantics.
+        self._local = threading.local()
         self._init_db()
 
     @staticmethod
@@ -123,10 +130,20 @@ class DailyResearchStore:
         )
 
     def _connect(self):
-        conn = sqlite3.connect(self.db_path, timeout=30, check_same_thread=False)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA busy_timeout=30000")
+        """Return this thread's ledger connection, opening it on first use.
+
+        WAL is a persistent database setting, so the PRAGMAs belong to the
+        lifetime of a connection rather than of a single statement.  Calling
+        this from another thread transparently creates that thread's own
+        connection instead of sharing one.
+        """
+        conn = getattr(self._local, "connection", None)
+        if conn is None:
+            conn = sqlite3.connect(self.db_path, timeout=30, check_same_thread=False)
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA busy_timeout=30000")
+            self._local.connection = conn
         return conn
 
     def _init_db(self):
