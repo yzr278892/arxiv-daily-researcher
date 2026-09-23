@@ -1223,8 +1223,17 @@ function hasUnsavedConfiguration() {
     || state.draft.clearEnv.size > 0;
 }
 
+// Typing in a settings form calls this on every keystroke, and the update
+// queries the whole document for save hints.  The indicator only changes when
+// the dirty flag itself (or the active language) changes.
+let dirtyIndicatorState = null;
+let dirtyIndicatorLanguage = null;
+
 function updateConfigurationDirtyIndicator() {
   const dirty = hasUnsavedConfiguration();
+  if (dirtyIndicatorState === dirty && dirtyIndicatorLanguage === state.language) return;
+  dirtyIndicatorState = dirty;
+  dirtyIndicatorLanguage = state.language;
   const saveButton = $("#save-button");
   if (saveButton) {
     saveButton.classList.toggle("has-unsaved", dirty);

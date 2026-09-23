@@ -117,6 +117,19 @@ class ModernWebUIAppTests(unittest.TestCase):
             response.text.count('preview.className = "report-preview-host";'), 2
         )
 
+    def test_dirty_indicator_skips_unchanged_updates(self) -> None:
+        """Every keystroke must not rescan the document for save hints."""
+        script = self.client.get("/assets/app.js").text
+        start = script.index("function updateConfigurationDirtyIndicator")
+        end = script.index("function markConfigurationDirty", start)
+        indicator = script[start:end]
+
+        self.assertIn(
+            "if (dirtyIndicatorState === dirty && dirtyIndicatorLanguage === state.language) return;",
+            indicator,
+        )
+        self.assertIn("dirtyIndicatorLanguage = state.language;", indicator)
+
     def test_translation_cache_stays_bounded(self) -> None:
         """Changing task details must not grow the session cache forever."""
         script = self.client.get("/assets/app.js").text
