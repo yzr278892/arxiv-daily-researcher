@@ -11,6 +11,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from utils.daily_research_store import DailyResearchStore  # noqa: E402
+from utils.run_lock import database_restore_activity_gate  # noqa: E402
 from utils.webdav_sync import (  # noqa: E402
     DEFAULT_WEBDAV_REQUEST_TIMEOUT_SECONDS,
     WebDAVSync,
@@ -291,6 +292,17 @@ class WebDAVReliabilityTests(unittest.TestCase):
             self.assertFalse(sync._download_daily_research_snapshot(data_dir))
             with sqlite3.connect(local_database) as conn:
                 self.assertEqual(conn.execute("SELECT value FROM marker").fetchone()[0], "local")
+
+    def test_downloaded_sqlite_waits_for_all_worker_modes_to_be_idle(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data_dir = Path(directory) / "data"
+            sync = _sync_shell(Path(directory))
+            sync._check_remote = lambda _remote: True
+            sync._remote = lambda relative: relative
+            with patch.object(sync, "_download_remote_file_to_path") as download:
+                with database_restore_activity_gate(data_dir=data_dir):
+                    self.assertFalse(sync._download_daily_research_snapshot(data_dir))
+            download.assert_not_called()
 
     def test_invalid_webdav_config_download_keeps_the_existing_config(self):
         with tempfile.TemporaryDirectory() as temp_dir:

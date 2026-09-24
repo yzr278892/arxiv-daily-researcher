@@ -1184,29 +1184,18 @@ class WebDAVSync:
 
     @contextmanager
     def _daily_research_restore_lock(self, data_dir: Path):
-        """Prevent a manual restore from replacing a database used by a run.
+        """Use the same restore gate as browser imports and every worker mode."""
+        if fcntl is None:
+            raise RuntimeError("当前平台无法安全检查任务锁，不能恢复 daily_research 数据库")
+        from utils.run_lock import DatabaseRestoreBusyError, database_restore_activity_gate
 
-        ``run_lock`` already holds this flock for the lifetime of a daily run.
-        Taking the same lock here makes a restore either wait-free and safe, or
-        fail clearly without touching the local database.
-        """
-        lock_path = data_dir / "run" / "daily_research.lock"
-        lock_path.parent.mkdir(parents=True, exist_ok=True)
-        lock_file = lock_path.open("a+")
         try:
-            if fcntl is None:
-                raise RuntimeError("当前平台无法安全检查每日研究锁，不能恢复 daily_research 数据库")
-            try:
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError as exc:
-                raise RuntimeError("每日研究任务正在运行，不能恢复 daily_research 数据库") from exc
-            yield
-        finally:
-            try:
-                if fcntl is not None:
-                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
-            finally:
-                lock_file.close()
+            with database_restore_activity_gate(
+                exclusive=True, nonblocking=True, data_dir=data_dir
+            ):
+                yield
+        except DatabaseRestoreBusyError as exc:
+            raise RuntimeError("有运行中的任务，不能恢复 daily_research 数据库") from exc
 
     @staticmethod
     def _validate_sqlite_database(database_path: Path) -> None:
@@ -1254,7 +1243,7 @@ class WebDAVSync:
         """Safely restore the durable daily ledger from a WebDAV snapshot.
 
         The snapshot is downloaded to a temporary file, checked by SQLite, and
-        atomically installed only while the daily-run lock is free.  The prior
+        atomically installed only while the worker activity gate is free. The prior
         local database is preserved as ``*.before_webdav_restore`` so a manual
         recovery cannot silently discard the newer local state.
         """

@@ -3014,15 +3014,20 @@ def webdav_operation(
                 ),
             }
         if operation == "download":
-            return {
-                "ok": True,
-                "result": client.sync_all(
+            try:
+                result = client.sync_all(
                     direction="download",
                     include_reports=_coerce_bool(settings.get("webdav_sync_reports"), False),
                     include_configs=_coerce_bool(settings.get("webdav_sync_configs"), True),
                     include_history=_coerce_bool(settings.get("webdav_sync_history"), True),
                     include_keywords=_coerce_bool(settings.get("webdav_sync_keywords"), True),
-                ),
+                )
+            finally:
+                # A partial download can already have replaced local files.
+                _invalidate_runtime_caches()
+            return {
+                "ok": True,
+                "result": result,
             }
     except Exception as exc:
         raise ModernWebUIError(f"WebDAV {operation} 失败：{exc}") from exc

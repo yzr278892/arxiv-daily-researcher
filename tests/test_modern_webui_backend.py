@@ -956,6 +956,23 @@ class ModernBackendTests(unittest.TestCase):
             include_keywords=False,
         )
 
+    def test_manual_webdav_download_invalidates_caches_even_after_partial_failure(self) -> None:
+        client = MagicMock()
+        settings = {"webdav_enabled": True}
+        with patch.object(backend, "flat_config", return_value=settings), patch.object(
+            backend, "_configured_webdav_client", return_value=client
+        ), patch.object(backend, "_invalidate_runtime_caches") as invalidate:
+            client.sync_all.return_value = {"success": 1, "total": 1}
+            result = backend.webdav_operation("download")
+            self.assertTrue(result["ok"])
+            invalidate.assert_called_once_with()
+
+            invalidate.reset_mock()
+            client.sync_all.side_effect = RuntimeError("partial download failed")
+            with self.assertRaisesRegex(backend.ModernWebUIError, "partial download failed"):
+                backend.webdav_operation("download")
+            invalidate.assert_called_once_with()
+
     def test_manual_webdav_sync_uses_unsaved_form_values_without_persisting(self) -> None:
         client = MagicMock()
         client.sync_all.return_value = {"success": 1, "total": 1}
