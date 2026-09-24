@@ -307,6 +307,7 @@ class ModernWebUIAppTests(unittest.TestCase):
         daily = script[daily_start:daily_end]
         # A failed read keeps polling on a slower cadence while work is active.
         self.assertIn('scheduleRefresh("daily", refreshDailyStatus, 15000);', daily)
+        self.assertIn("if (document.hidden)", script[script.index("function scheduleRefresh("):script.index("function setLocation(")])
 
         history_start = script.index("async function refreshHistoryStatus")
         history_end = script.index("async function renderHistory", history_start)

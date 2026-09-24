@@ -1381,6 +1381,12 @@ function clearTimers() {
 
 function scheduleRefresh(key, callback, milliseconds = 5000) {
   window.clearTimeout(state.timers.get(key));
+  // An in-flight poll can finish after visibilitychange cleared the timers.
+  // Do not let that response restart background polling in a hidden tab.
+  if (document.hidden) {
+    state.timers.delete(key);
+    return;
+  }
   state.timers.set(key, window.setTimeout(callback, milliseconds));
 }
 
