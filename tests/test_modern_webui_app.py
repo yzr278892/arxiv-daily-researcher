@@ -277,7 +277,9 @@ class ModernWebUIAppTests(unittest.TestCase):
             yield b"PK\x03\x04"
             yield b"x" * 256
 
-        with patch.object(modern_app, "_MAX_RESTORE_BYTES", 64):
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            modern_app.backend, "configured_data_dir", return_value=Path(directory)
+        ), patch.object(modern_app, "_MAX_RESTORE_BYTES", 64):
             response = self.client.post(
                 "/api/backups/restore",
                 content=oversized_body(),
@@ -286,6 +288,47 @@ class ModernWebUIAppTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 413)
         self.assertIn("请求内容过大", response.json()["detail"])
+
+    def test_backup_restore_stages_upload_on_disk_and_cleans_it(self) -> None:
+        self.env["WEBUI_AUTH_ENABLED"] = "false"
+        observed = []
+
+        def restore(content, filename):
+            observed.append((isinstance(content, Path), content.read_bytes(), filename, content.exists()))
+            return {"restored": True}
+
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            modern_app.backend, "configured_data_dir", return_value=Path(directory)
+        ), patch.object(
+            modern_app.backend, "restore_database_backup", side_effect=restore
+        ):
+            response = self.client.post(
+                "/api/backups/restore",
+                content=iter([b"first", b"second"]),
+                headers={"x-file-name": "backup.db"},
+            )
+            leftovers = list((Path(directory) / "backups").glob(".restore-upload.*"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(observed, [(True, b"firstsecond", "backup.db", True)])
+        self.assertEqual(leftovers, [])
+
+    def test_backup_restore_cleans_staged_upload_after_backend_error(self) -> None:
+        self.env["WEBUI_AUTH_ENABLED"] = "false"
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            modern_app.backend, "configured_data_dir", return_value=Path(directory)
+        ), patch.object(
+            modern_app.backend, "restore_database_backup", side_effect=ValueError("bad backup")
+        ):
+            response = self.client.post(
+                "/api/backups/restore",
+                content=b"invalid",
+                headers={"x-file-name": "backup.db"},
+            )
+            leftovers = list((Path(directory) / "backups").glob(".restore-upload.*"))
+
+        self.assertNotEqual(response.status_code, 200)
+        self.assertEqual(leftovers, [])
 
     def test_backup_restore_rejects_an_oversized_declared_length(self) -> None:
         self.env["WEBUI_AUTH_ENABLED"] = "false"

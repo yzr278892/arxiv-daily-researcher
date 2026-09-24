@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import sys
+import tempfile
 import threading
 import time
 from functools import partial
@@ -748,9 +749,37 @@ async def backup_export(request: Request) -> Response:
 async def backup_restore(request: Request) -> JSONResponse:
     _require_session(request)
     filename = Path(request.headers.get("x-file-name", "backup.zip")).name
-    body = await _bounded_body(request, limit=_MAX_RESTORE_BYTES)
+    header = request.headers.get("content-length")
+    if header:
+        try:
+            declared = int(header)
+        except ValueError:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="请求长度无效。") from None
+        if declared > _MAX_RESTORE_BYTES:
+            raise HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail="请求内容过大。")
+    staging_dir = backend.configured_data_dir() / "backups"
+    await _blocking_call(staging_dir.mkdir, parents=True, exist_ok=True)
     try:
-        return JSONResponse(await _blocking_call(backend.restore_database_backup, body, filename))
+        # A valid archive may be far larger than the WebUI container's memory
+        # limit. Keep only one ASGI chunk in memory and remove the upload after
+        # the backend has finished validating/restoring it.
+        with tempfile.NamedTemporaryFile(
+            dir=staging_dir, prefix=".restore-upload.", suffix=".tmp"
+        ) as upload:
+            total = 0
+            async for chunk in request.stream():
+                total += len(chunk)
+                if total > _MAX_RESTORE_BYTES:
+                    raise HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail="请求内容过大。")
+                await _blocking_call(upload.write, chunk)
+            await _blocking_call(upload.flush)
+            return JSONResponse(
+                await _blocking_call(
+                    backend.restore_database_backup, Path(upload.name), filename
+                )
+            )
+    except HTTPException:
+        raise
     except Exception as exc:
         raise _safe_error(exc) from exc
 

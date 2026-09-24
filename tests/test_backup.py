@@ -500,6 +500,39 @@ class BackupImportExportTests(unittest.TestCase):
             archived.close()
             self.assertEqual(archived_state, "v2")
 
+    def test_restore_accepts_a_staged_upload_path(self):
+        from utils.backup import export_backup_zip, restore_backup_archive
+
+        with TemporaryDirectory() as directory:
+            data_dir = Path(directory)
+            _seed_database(data_dir)
+            bundle, filename = export_backup_zip(data_dir)
+            upload = data_dir / "upload.zip"
+            upload.write_bytes(bundle)
+            store = DailyResearchStore(data_dir / "daily_research" / "daily_research.db")
+            store.set_app_state("seed", "changed")
+
+            result = restore_backup_archive(data_dir, upload, filename)
+
+            self.assertEqual(result["source_member"], "daily_research.db")
+            self.assertEqual(
+                DailyResearchStore(data_dir / "daily_research" / "daily_research.db").get_app_state("seed"),
+                "v1",
+            )
+
+    def test_restore_rejects_oversized_decompressed_database(self):
+        from unittest.mock import patch
+        from utils import backup
+
+        with TemporaryDirectory() as directory:
+            data_dir = Path(directory)
+            _seed_database(data_dir)
+            archive = data_dir / "oversized.db.gz"
+            archive.write_bytes(gzip.compress(b"SQLite format 3\x00" + b"x" * 200))
+            with patch.object(backup, "_MAX_RESTORED_DATABASE_BYTES", 100):
+                with self.assertRaisesRegex(ValueError, "超过 4 GB"):
+                    backup.restore_backup_archive(data_dir, archive, archive.name)
+
     def test_restore_auto_detects_gzip_and_raw_sqlite(self):
         import gzip as gzip_mod
 
@@ -556,3 +589,15 @@ class BackupImportExportTests(unittest.TestCase):
                 restore_backup_archive(
                     Path(temp_dir), buffer.getvalue(), "empty.zip"
                 )
+
+    def test_corrupt_sqlite_with_a_valid_header_keeps_the_live_database(self):
+        with TemporaryDirectory() as directory:
+            data_dir = Path(directory)
+            _seed_database(data_dir)
+            database = data_dir / "daily_research" / "daily_research.db"
+            with self.assertRaisesRegex(ValueError, "备份文件损坏"):
+                restore_backup_archive(
+                    data_dir, b"SQLite format 3\x00" + b"broken data", "corrupt.db"
+                )
+            self.assertEqual(DailyResearchStore(database).get_app_state("seed"), "v1")
+            self.assertEqual(list(database.parent.glob(".restore.*")), [])

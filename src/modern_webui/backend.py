@@ -2933,8 +2933,17 @@ def export_database_backup() -> tuple[bytes, str]:
         raise ModernWebUIError(f"导出备份失败：{exc}") from exc
 
 
-def restore_database_backup(content: bytes, filename: str) -> dict[str, Any]:
-    if not isinstance(content, bytes) or not content or len(content) > 1024 * 1024 * 1024:
+def restore_database_backup(content: bytes | Path, filename: str) -> dict[str, Any]:
+    if isinstance(content, Path):
+        try:
+            content_size = content.stat().st_size
+        except OSError as exc:
+            raise ModernWebUIError(f"无法读取备份文件：{exc}") from exc
+    elif isinstance(content, bytes):
+        content_size = len(content)
+    else:
+        content_size = 0
+    if not content_size or content_size > 1024 * 1024 * 1024:
         raise ModernWebUIError("备份文件为空或超过 1 GB 限制。")
     safe_name = Path(str(filename or "backup.zip")).name
     if safe_name.lower().split(".")[-1] not in {"zip", "gz", "db"}:

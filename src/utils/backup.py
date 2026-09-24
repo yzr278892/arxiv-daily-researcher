@@ -18,12 +18,15 @@ from __future__ import annotations
 
 import gzip
 import hashlib
+import io
 import json
 import os
 import re
 import sqlite3
 import tempfile
 import threading
+import zipfile
+import zlib
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -38,6 +41,7 @@ _GZIP_CHUNK_BYTES = 1024 * 1024
 _HASH_CHUNK_BYTES = 1024 * 1024
 _BACKUP_NAME_RE = re.compile(r"^daily_research_(\d{8}_\d{6})(?:_(\d+))?\.db\.gz$")
 _UPLOAD_STATE_FILENAME = "webdav_upload_state.json"
+_MAX_RESTORED_DATABASE_BYTES = 4 * 1024 * 1024 * 1024
 
 _backup_lock = threading.Lock()
 
@@ -518,33 +522,54 @@ def export_backup_zip(
         snapshot_path.unlink(missing_ok=True)
 
 
-def _extract_database_bytes(data: bytes, filename: str) -> tuple[bytes, str]:
-    """从 zip / gzip / 原始 SQLite 文件自动提取数据库内容。"""
-    import gzip as gzip_module
-    import io
-    import zipfile as zipfile_module
+def _copy_restored_database(source, destination) -> int:
+    """Copy an extracted SQLite image without allowing decompression bombs."""
+    total = 0
+    while chunk := source.read(_GZIP_CHUNK_BYTES):
+        total += len(chunk)
+        if total > _MAX_RESTORED_DATABASE_BYTES:
+            raise ValueError("解压后的数据库超过 4 GB 限制。")
+        destination.write(chunk)
+    return total
 
-    if zipfile_module.is_zipfile(io.BytesIO(data)):
-        with zipfile_module.ZipFile(io.BytesIO(data)) as archive:
-            members = [name for name in archive.namelist() if not name.endswith("/")]
-            pool = [
-                name
-                for name in members
-                if Path(name).name == "daily_research.db"
-                or Path(name).suffix.lower() in _DB_SUFFIXES
-            ]
-            if not pool:
-                raise ValueError("压缩包里没有找到数据库文件（.db/.sqlite/.sqlite3）")
-            member = sorted(pool)[0]
-            return archive.read(member), member
-    if data[:2] == b"\x1f\x8b":
-        return gzip_module.decompress(data), filename
-    return data, filename
+
+def _extract_database_to_path(data: bytes | Path, filename: str, target: Path) -> str:
+    """Stream the selected zip/gzip/raw SQLite member to a staging file."""
+    input_path = Path(data) if isinstance(data, Path) else None
+    zip_source = input_path if input_path is not None else io.BytesIO(data)
+    with target.open("wb") as destination:
+        if zipfile.is_zipfile(zip_source):
+            with zipfile.ZipFile(zip_source) as archive:
+                members = [info for info in archive.infolist() if not info.is_dir()]
+                pool = [
+                    info for info in members
+                    if Path(info.filename).name == "daily_research.db"
+                    or Path(info.filename).suffix.lower() in _DB_SUFFIXES
+                ]
+                if not pool:
+                    raise ValueError("压缩包里没有找到数据库文件（.db/.sqlite/.sqlite3）")
+                member = sorted(pool, key=lambda info: info.filename)[0]
+                if member.file_size > _MAX_RESTORED_DATABASE_BYTES:
+                    raise ValueError("解压后的数据库超过 4 GB 限制。")
+                with archive.open(member) as source:
+                    _copy_restored_database(source, destination)
+                return member.filename
+
+        source = input_path.open("rb") if input_path is not None else io.BytesIO(data)
+        with source:
+            header = source.read(2)
+            source.seek(0)
+            if header == b"\x1f\x8b":
+                with gzip.GzipFile(fileobj=source) as unpacked:
+                    _copy_restored_database(unpacked, destination)
+            else:
+                _copy_restored_database(source, destination)
+    return filename
 
 
 def restore_backup_archive(
     data_dir: Path,
-    data: bytes,
+    data: bytes | Path,
     filename: str = "import",
     *,
     database: Optional[Path] = None,
@@ -555,53 +580,50 @@ def restore_backup_archive(
     （本地轮转备份格式）与原始 SQLite 文件。导入前做完整性校验；原数据库
     先通过一致性快照存档（连同 WAL 中已提交的内容），绝不删除数据。
     """
-    database_bytes, source = _extract_database_bytes(data, filename)
-    if database_bytes[:16] != _SQLITE_HEADER:
-        raise ValueError(f"导入内容不是有效的 SQLite 数据库（来源：{source}）")
-
-    verify_fd, verify_name = tempfile.mkstemp(suffix=".sqlite")
+    selected_database = _backup_database_path(data_dir, database)
+    selected_database.parent.mkdir(parents=True, exist_ok=True)
+    verify_fd, verify_name = tempfile.mkstemp(
+        dir=selected_database.parent, prefix=".restore.", suffix=".sqlite"
+    )
     os.close(verify_fd)
     verify_path = Path(verify_name)
     try:
-        verify_path.write_bytes(database_bytes)
-        conn = sqlite3.connect(str(verify_path))
         try:
-            row = conn.execute("PRAGMA quick_check").fetchone()
-        finally:
-            conn.close()
+            source = _extract_database_to_path(data, filename, verify_path)
+            size_bytes = verify_path.stat().st_size
+            with verify_path.open("rb") as handle:
+                if handle.read(16) != _SQLITE_HEADER:
+                    raise ValueError(f"导入内容不是有效的 SQLite 数据库（来源：{source}）")
+            conn = sqlite3.connect(str(verify_path))
+            try:
+                row = conn.execute("PRAGMA quick_check").fetchone()
+            finally:
+                conn.close()
+        except (zipfile.BadZipFile, EOFError, zlib.error, sqlite3.DatabaseError) as exc:
+            raise ValueError(f"备份文件损坏或无法解压：{exc}") from exc
         if not row or str(row[0]).lower() != "ok":
             detail = row[0] if row else "unknown"
             raise ValueError(f"导入数据库完整性校验未通过：{detail}")
 
-        selected_database = _backup_database_path(data_dir, database)
         archived: Optional[Path] = None
         if selected_database.exists():
             stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             archived = backups_directory(data_dir) / f"pre_import_{stamp}.db"
             archived.parent.mkdir(parents=True, exist_ok=True)
             _create_consistent_snapshot(selected_database, archived)
-        else:
-            selected_database.parent.mkdir(parents=True, exist_ok=True)
-
-        staged_fd, staged_name = tempfile.mkstemp(
-            dir=str(selected_database.parent), suffix=".import"
-        )
-        os.close(staged_fd)
-        staged = Path(staged_name)
-        try:
-            staged.write_bytes(database_bytes)
-            # 旧库的 WAL/SHM 属于旧文件的派生状态，残留会导致新库被旧日志回放。
-            os.replace(staged, selected_database)
-            for suffix in ("-wal", "-shm"):
-                Path(str(selected_database) + suffix).unlink(missing_ok=True)
-        finally:
-            staged.unlink(missing_ok=True)
+        # The verified file is already on the database filesystem. Replace it
+        # directly instead of keeping a second full-size copy in memory/disk.
+        os.replace(verify_path, selected_database)
+        for suffix in ("-wal", "-shm"):
+            Path(str(selected_database) + suffix).unlink(missing_ok=True)
 
         return {
             "restored": True,
             "source_member": source,
-            "size_bytes": len(database_bytes),
+            "size_bytes": size_bytes,
             "archived_previous": str(archived) if archived else None,
         }
     finally:
         verify_path.unlink(missing_ok=True)
+        for suffix in ("-wal", "-shm"):
+            Path(str(verify_path) + suffix).unlink(missing_ok=True)
