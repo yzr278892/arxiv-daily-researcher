@@ -22,7 +22,64 @@ class ModernBackendTests(unittest.TestCase):
         # ``run_status`` keeps a very short in-process result cache; clear it so
         # every case observes the mocks it installed instead of a prior poll.
         backend._RUN_STATUS_CACHE.clear()
+        backend._VERSION_STATUS_CACHE = None
         super().setUp()
+
+    def test_version_status_caches_new_release_and_respects_proxy_scope(self) -> None:
+        release_url = "https://github.com/yzr278892/arxiv-daily-researcher/releases/tag/v4.7"
+        config = {
+            "auto_update_enabled": True,
+            "proxy_enabled": True,
+            "proxy_update_check": True,
+            "proxy_url": "http://proxy.example.test:3128",
+        }
+        with patch.object(backend, "flat_config", return_value=config), patch.object(
+            backend.updater, "_get_local_version", return_value="4.6"
+        ), patch.object(
+            backend.updater, "_fetch_latest_release", return_value=("4.7", release_url, "")
+        ) as fetch:
+            first = backend.version_status()
+            second = backend.version_status()
+
+        self.assertEqual(first, second)
+        self.assertEqual(first["current_version"], "4.6")
+        self.assertEqual(first["latest_version"], "4.7")
+        self.assertTrue(first["update_available"])
+        self.assertTrue(first["checked"])
+        self.assertEqual(first["release_url"], release_url)
+        fetch.assert_called_once()
+        self.assertEqual(fetch.call_args.args[0].proxies["https"], config["proxy_url"])
+
+    def test_version_status_does_not_report_equal_older_or_untrusted_release(self) -> None:
+        with patch.object(backend, "flat_config", return_value={}), patch.object(
+            backend.updater, "_get_local_version", return_value="4.6"
+        ), patch.object(backend.updater, "_fetch_latest_release") as fetch:
+            for latest, url in (
+                ("4.6", "https://github.com/yzr278892/arxiv-daily-researcher/releases/tag/v4.6"),
+                ("4.5", "https://github.com/yzr278892/arxiv-daily-researcher/releases/tag/v4.5"),
+                ("4.7", "https://example.test/releases/tag/v4.7"),
+            ):
+                with self.subTest(latest=latest, url=url):
+                    backend._VERSION_STATUS_CACHE = None
+                    fetch.return_value = (latest, url, "")
+                    status = backend.version_status()
+                    self.assertFalse(status["update_available"])
+
+    def test_version_status_honors_disabled_check_and_caches_network_failure(self) -> None:
+        with patch.object(backend, "flat_config", return_value={"auto_update_enabled": False}), patch.object(
+            backend.updater, "_get_local_version", return_value="4.6"
+        ), patch.object(backend.updater, "_fetch_latest_release") as fetch:
+            self.assertFalse(backend.version_status()["checked"])
+            fetch.assert_not_called()
+
+        with patch.object(backend, "flat_config", return_value={}), patch.object(
+            backend.updater, "_get_local_version", return_value="4.6"
+        ), patch.object(backend.updater, "_fetch_latest_release", side_effect=TimeoutError) as fetch:
+            first = backend.version_status()
+            second = backend.version_status()
+            self.assertFalse(first["update_available"])
+            self.assertFalse(second["checked"])
+            fetch.assert_called_once()
 
     def test_analytics_windows_keep_rolling_and_calendar_ranges_distinct(self) -> None:
         now = datetime(2026, 8, 30, 15, 45, 30)

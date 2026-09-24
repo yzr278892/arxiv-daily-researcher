@@ -454,6 +454,11 @@ async def settings_get(request: Request) -> JSONResponse:
     return JSONResponse(await _blocking_call(backend.public_settings))
 
 
+async def version_get(request: Request) -> JSONResponse:
+    _require_session(request)
+    return JSONResponse(await _blocking_call(backend.version_status))
+
+
 async def settings_put(request: Request) -> JSONResponse:
     _require_session(request)
     payload = await _payload(request)
@@ -1018,6 +1023,7 @@ app = Starlette(
         Route("/api/auth/login", login, methods=["POST"]),
         Route("/api/auth/logout", logout, methods=["POST"]),
         Route("/api/settings", settings_get, methods=["GET"]),
+        Route("/api/version", version_get, methods=["GET"]),
         Route("/api/settings", settings_put, methods=["PUT"]),
         Route("/api/system/restart-worker", restart_worker, methods=["POST"]),
         Route("/api/status/{kind}", status_get, methods=["GET"]),

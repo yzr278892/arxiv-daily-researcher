@@ -151,6 +151,8 @@ h3 { margin: 0 0 14px; font-size: .92rem; font-weight: 700; line-height: 1.45; }
 .sidebar-actions { display: grid; gap: 8px; margin-top: 30px; }
 .sidebar-meta { margin-top: auto; padding: 19px 9px 0; border-top: 1px solid var(--line); color: var(--muted); font-size: .72rem; }
 .sidebar-meta p { margin: 0; line-height: 1.5; }
+.sidebar-meta #current-version { margin-top: 8px; font-variant-numeric: tabular-nums; }
+.sidebar-meta #version-update { display: inline-block; margin-top: 5px; color: var(--brand-strong); font-size: .76rem; }
 
 .main-area { min-width: 0; }
 /* 顶部页面页签：浅色条 + 白胶囊激活 */
@@ -1160,7 +1162,9 @@ select::-ms-expand { display: none; }
   .brand { padding: 0 0 15px; }
   .group-navigation { display: flex; overflow-x: auto; }
   .group-button { width: auto; padding: 9px 12px; white-space: nowrap; }
-  .sidebar-actions, .sidebar-meta { display: none; }
+  .sidebar-actions, .sidebar-meta #file-status { display: none; }
+  .sidebar-meta { padding: 8px 0 0; border-top: 0; }
+  .sidebar-meta #current-version { margin-top: 0; }
   .top-tabs { min-height: 56px; padding: 9px 16px; }
   .top-tab { min-height: 38px; padding: 0 11px; }
   .page-root { width: min(100% - 32px, 720px); padding-top: 22px; }

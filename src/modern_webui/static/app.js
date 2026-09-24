@@ -859,6 +859,10 @@ const storedTheme = window.localStorage.getItem("adr-modern-theme");
 const state = {
   auth: null,
   settings: null,
+  versionStatus: null,
+  versionCheckedAt: 0,
+  versionRequest: null,
+  versionGeneration: 0,
   draft: { config: {}, env: {}, clearEnv: new Set() },
   group: "run",
   page: "daily_research",
@@ -1133,6 +1137,7 @@ async function toggleLanguage() {
     await renderPage({ preserveScroll: true });
   }
   applyLocale(document);
+  renderVersionStatus();
   updateConfigurationDirtyIndicator();
   applyTheme();
 }
@@ -4719,6 +4724,12 @@ async function saveAll(showMessage = true) {
     const submittedEnv = { ...state.draft.env };
     const result = await api("/api/settings", { method: "PUT", body: { config: normalizeForSave(), env: state.draft.env, clear_env: Array.from(state.draft.clearEnv) } });
     state.settings = result;
+    state.versionStatus = null;
+    state.versionCheckedAt = 0;
+    state.versionGeneration += 1;
+    state.versionRequest = null;
+    renderVersionStatus();
+    void refreshVersionStatus();
     state.draft = { config: {}, env: {}, clearEnv: new Set() };
     state.configurationDirty = false;
     state.pageData.sources = undefined;
@@ -4755,6 +4766,43 @@ function autoRefreshEnabledForPage() {
   return true;
 }
 
+function renderVersionStatus() {
+  const current = String(state.settings?.current_version || state.versionStatus?.current_version || "unknown");
+  const currentLabel = current === "unknown" ? localeText("未知", "unknown") : `v${current.replace(/^v/i, "")}`;
+  $("#current-version").textContent = localeText(`当前版本 ${currentLabel}`, `Current version ${currentLabel}`);
+
+  const link = $("#version-update");
+  const status = state.versionStatus;
+  link.hidden = true;
+  if (!booleanValue(state.settings?.config?.auto_update_enabled, true)) return;
+  if (!status?.update_available || !status.release_url) return;
+  try {
+    const url = new URL(status.release_url);
+    if (url.origin !== "https://github.com" || !/^\/yzr278892\/arxiv-daily-researcher\/releases\/tag\/[^/]+$/.test(url.pathname)) return;
+    const latest = `v${String(status.latest_version || "").replace(/^v/i, "")}`;
+    link.href = url.href;
+    link.textContent = localeText(`发现新版本 ${latest}`, `Update available: ${latest}`);
+    link.hidden = false;
+  } catch (_) {
+    // An invalid URL should never create a misleading or unsafe update link.
+  }
+}
+
+async function refreshVersionStatus() {
+  if (!state.settings || !state.auth?.authenticated || document.hidden) return;
+  if (!booleanValue(state.settings?.config?.auto_update_enabled, true)) return;
+  if (state.versionRequest) return state.versionRequest;
+  const interval = state.versionStatus?.checked ? 6 * 60 * 60 * 1000 : 10 * 60 * 1000;
+  if (Date.now() - state.versionCheckedAt < interval) return;
+  const generation = state.versionGeneration;
+  const request = api("/api/version", { method: "GET" })
+    .then((status) => { if (generation === state.versionGeneration) { state.versionStatus = status; renderVersionStatus(); } })
+    .catch(() => { /* Keep the packaged version visible when GitHub is unavailable. */ })
+    .finally(() => { if (generation === state.versionGeneration) { state.versionCheckedAt = Date.now(); state.versionRequest = null; } });
+  state.versionRequest = request;
+  return request;
+}
+
 // A hidden tab does not need five-second progress updates, and every poll makes
 // the server read the ledger and tail a log file.  Pause the timers while the
 // page is hidden and refresh once when the operator returns.
@@ -4763,6 +4811,7 @@ function handleVisibilityChange() {
     clearTimers();
     return;
   }
+  void refreshVersionStatus();
   if (!autoRefreshEnabledForPage()) return;
   runLocalRefresh(refreshActiveTaskPanels());
 }
@@ -4854,7 +4903,9 @@ function showApp() {
   renderNavigation();
   updateConfigurationDirtyIndicator();
   applyLocale(document);
+  renderVersionStatus();
   applyTheme();
+  void refreshVersionStatus();
 }
 
 function showAuth(auth) {
@@ -4883,7 +4934,12 @@ function showAuth(auth) {
 
 async function loadSettings() {
   state.settings = await api("/api/settings");
+  state.versionStatus = null;
+  state.versionCheckedAt = 0;
+  state.versionGeneration += 1;
+  state.versionRequest = null;
   $("#version-label").textContent = "现代管理面板";
+  renderVersionStatus();
 }
 
 async function loginSubmit(event) {

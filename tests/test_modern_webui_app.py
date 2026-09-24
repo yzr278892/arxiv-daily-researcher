@@ -49,6 +49,41 @@ class ModernWebUIAppTests(unittest.TestCase):
         self.assertEqual(settings.status_code, 503)
         self.assertIn("尚未初始化", settings.json()["detail"])
 
+        version = self.client.get("/api/version")
+        self.assertEqual(version.status_code, 503)
+
+    def test_version_endpoint_returns_read_only_status_after_authentication(self) -> None:
+        self.env["WEBUI_AUTH_ENABLED"] = "false"
+        expected = {
+            "current_version": "4.6",
+            "latest_version": "4.7",
+            "update_available": True,
+            "release_url": "https://github.com/yzr278892/arxiv-daily-researcher/releases/tag/v4.7",
+            "checked": True,
+        }
+        with patch.object(modern_app.backend, "version_status", return_value=expected) as check:
+            response = self.client.get("/api/version")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), expected)
+        check.assert_called_once_with()
+
+    def test_sidebar_version_and_semantic_translation_controls_are_localized(self) -> None:
+        shell = self.client.get("/").text
+        script = self.client.get("/assets/app.js").text
+        stylesheet = self.client.get("/assets/app.css").text
+        catalogue = self.client.get("/api/i18n").json()["items"]
+
+        self.assertIn('id="current-version"', shell)
+        self.assertIn('id="version-update"', shell)
+        self.assertIn('api("/api/version", { method: "GET" })', script)
+        self.assertIn('`Current version ${currentLabel}`', script)
+        self.assertIn('`Update available: ${latest}`', script)
+        self.assertIn('.sidebar-meta #current-version', stylesheet)
+        self.assertIn('key: "TRANSLATE_SEMANTIC_SCHOLAR_TLDR"', script)
+        self.assertIn('id="semantic-dependent" ${semanticEnabled ? "" : "hidden"}', script)
+        self.assertEqual(catalogue["semantic_scholar_translate_label"]["en"],
+                         "Translate TL;DRs into Chinese")
+
     def test_shared_translation_catalogue_is_available_before_sign_in(self) -> None:
         response = self.client.get("/api/i18n")
 

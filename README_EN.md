@@ -70,7 +70,7 @@ SQLite stores paper progress, delivery records, and favourites. Import legacy HT
 
 ### 🖥️ Management panel
 
-The WebUI covers task state, settings, reports, backups, diagnostics, and token usage. It supports Chinese and English, light and dark themes, and administrator accounts. Token usage separates non-cached input, cached input, and output.
+The WebUI covers task state, settings, reports, backups, diagnostics, and token usage. It supports Chinese and English, light and dark themes, and administrator accounts. The sidebar shows the installed version and available updates. Token usage separates non-cached input, cached input, and output.
 
 </td>
 </tr>

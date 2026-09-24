@@ -117,6 +117,7 @@ COPY src/utils/run_lock.py ./src/utils/
 COPY src/utils/safe_url.py ./src/utils/
 COPY src/utils/safe_markdown.py ./src/utils/
 COPY src/utils/source_registry.py ./src/utils/
+COPY src/utils/updater.py ./src/utils/
 COPY src/utils/webdav_sync.py ./src/utils/
 COPY src/utils/webui_trigger.py ./src/utils/
 COPY src/utils/container_health.py ./src/utils/

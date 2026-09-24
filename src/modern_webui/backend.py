@@ -59,6 +59,7 @@ from utils.source_registry import (
     source_display_names,
 )
 from utils.webdav_sync import WebDAVSync
+from utils import updater
 from utils.webui_trigger import (
     SUPPORTED_MODES,
     enqueue_trigger,
@@ -300,6 +301,10 @@ _TASK_RECORDS_CACHE: tuple[tuple[Any, ...], list[dict[str, Any]]] | None = None
 # that was just started or stopped (those write paths clear it eagerly).
 _RUN_STATUS_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 _RUN_STATUS_CACHE_TTL_SECONDS = 1.5
+_VERSION_STATUS_LOCK = RLock()
+_VERSION_STATUS_CACHE: tuple[tuple[str, bool, str], float, dict[str, Any]] | None = None
+_VERSION_SUCCESS_TTL_SECONDS = 6 * 60 * 60
+_VERSION_FAILURE_TTL_SECONDS = 10 * 60
 
 
 class ModernWebUIError(ValueError):
@@ -480,6 +485,7 @@ def public_settings() -> dict[str, Any]:
     env = read_env()
     flat = flat_config()
     return {
+        "current_version": updater._get_local_version(),
         "config": flat,
         "env": {key: str(env.get(key) or "") for key in PUBLIC_ENV_FIELDS},
         "secrets": {key: bool(str(env.get(key) or "").strip()) for key in SECRET_ENV_FIELDS},
@@ -502,6 +508,62 @@ def public_settings() -> dict[str, Any]:
             for code in ARXIV_CATEGORIES
         ],
     }
+
+
+def version_status() -> dict[str, Any]:
+    """Return a cached, read-only GitHub Release check for the sidebar."""
+    import requests
+
+    current = updater._get_local_version()
+    config = flat_config()
+    enabled = _coerce_bool(config.get("auto_update_enabled"), True)
+    result: dict[str, Any] = {
+        "current_version": current,
+        "latest_version": None,
+        "update_available": False,
+        "release_url": None,
+        "checked": False,
+    }
+    if not enabled or current == "unknown":
+        return result
+
+    proxy_url = ""
+    if _coerce_bool(config.get("proxy_enabled")) and _coerce_bool(
+        config.get("proxy_update_check")
+    ):
+        proxy_url = str(config.get("proxy_url") or "").strip()
+    cache_key = (current, enabled, proxy_url)
+    global _VERSION_STATUS_CACHE
+    with _VERSION_STATUS_LOCK:
+        now = time.monotonic()
+        cached = _VERSION_STATUS_CACHE
+        if cached and cached[0] == cache_key and cached[1] > now:
+            return dict(cached[2])
+
+        ttl = _VERSION_FAILURE_TTL_SECONDS
+        try:
+            with requests.Session() as session:
+                # The saved proxy scope is authoritative; do not inherit an
+                # unrelated process-level HTTP(S)_PROXY for this request.
+                session.trust_env = False
+                if proxy_url:
+                    session.proxies.update({"http": proxy_url, "https": proxy_url})
+                release = updater._fetch_latest_release(session, lambda *_args: None)
+            if release is not None:
+                latest, url, _body = release
+                validated = updater._release_from_redirect(url)
+                if validated and validated[0] == latest:
+                    result["latest_version"] = latest
+                    result["release_url"] = validated[1]
+                    result["update_available"] = updater._is_remote_newer(latest, current) is True
+                    result["checked"] = True
+                    ttl = _VERSION_SUCCESS_TTL_SECONDS
+        except Exception as exc:
+            # Network and proxy errors may contain credentials; log only their type.
+            logger.warning("WebUI version check failed (%s)", type(exc).__name__)
+
+        _VERSION_STATUS_CACHE = (cache_key, time.monotonic() + ttl, dict(result))
+        return result
 
 
 def save_settings(
