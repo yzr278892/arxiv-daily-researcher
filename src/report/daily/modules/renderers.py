@@ -253,10 +253,11 @@ class TldrSemanticScholarRenderer(BaseModuleRenderer):
         score_resp = data.get('score_response')
         translated = (
             getattr(score_resp, 'semantic_scholar_tldr_cn', None)
-            if getattr(score_resp, 'semantic_scholar_tldr_source', None) == tldr
+            if settings.TRANSLATE_SEMANTIC_SCHOLAR_TLDR
+            and getattr(score_resp, 'semantic_scholar_tldr_source', None) == tldr
             else None
         )
-        if not translated and not has_chinese_text(tldr):
+        if not translated and not has_chinese_text(tldr) and settings.TRANSLATE_SEMANTIC_SCHOLAR_TLDR:
             return [
                 "<details><summary>Semantic Scholar TL;DR（原文）</summary>",
                 "",
@@ -268,6 +269,8 @@ class TldrSemanticScholarRenderer(BaseModuleRenderer):
         label = self.get_label(config)
         if translated:
             label += "（译文）"
+        elif not has_chinese_text(tldr):
+            label += "（原文）"
         lines = []
         display_text = translated or tldr
 

@@ -474,6 +474,14 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "zh": "关闭后不会请求 Semantic Scholar，也不会把其 TL;DR 用于后续处理。",
         "en": "When off, Semantic Scholar is never queried and its TL;DR is not used for subsequent processing.",
     },
+    "semantic_scholar_translate_label": {
+        "zh": "将 TL;DR 翻译为中文",
+        "en": "Translate TL;DRs into Chinese",
+    },
+    "semantic_scholar_translate_help": {
+        "zh": "关闭后报告显示来源原文，不请求 LLM 翻译。",
+        "en": "When off, reports show the source text without requesting an LLM translation.",
+    },
     "test_semantic_scholar_btn": {
         "zh": "测试 Semantic Scholar 连接",
         "en": "Test Semantic Scholar Connection",

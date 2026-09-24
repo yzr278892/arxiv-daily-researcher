@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Capture privacy-safe screenshots from the modern WebUI for the README.
 
-The script deliberately avoids API and notification pages. The backup image
-hides the WebDAV card before capture because a local installation can contain
-an endpoint or account name there. Credentials are accepted only through
-environment variables and are never written to an image or to stdout.
+The script avoids API and notification pages unless explicitly run against an
+isolated fixture with ADR_SCREENSHOT_ISOLATED=1. The backup image hides the
+WebDAV card because a local installation can contain an endpoint or account
+name there. Credentials are accepted only through environment variables and
+are never written to an image or to stdout.
 """
 
 from __future__ import annotations
@@ -89,8 +90,12 @@ def main() -> int:
         show_page(page, "configuration", "scoring")
         capture(page, "webui_scoring_v4.png")
 
-        show_page(page, "configuration", "advanced")
-        capture(page, "webui_advanced_v4.png")
+        if os.environ.get("ADR_SCREENSHOT_ISOLATED") == "1":
+            if not os.environ.get("ADR_SCREENSHOT_BASE_URL"):
+                raise RuntimeError("Set ADR_SCREENSHOT_BASE_URL to an isolated demo WebUI.")
+            show_page(page, "configuration", "api")
+            page.locator("#semantic-dependent").scroll_into_view_if_needed()
+            capture(page, "webui_api_semantic_v4.png")
 
         show_page(page, "system", "backup_sync")
         hide_card(page, "WebDAV")

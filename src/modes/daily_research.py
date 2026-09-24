@@ -400,6 +400,11 @@ def _ensure_semantic_scholar_tldr_translation(
     source=None,
 ):
     """Translate external English text once while retaining its provenance."""
+    if not (
+        settings.ENABLE_SEMANTIC_SCHOLAR_TLDR
+        and settings.TRANSLATE_SEMANTIC_SCHOLAR_TLDR
+    ):
+        return
     original = str(getattr(paper, "semantic_scholar_tldr", None) or "").strip()
     if not original or has_chinese_text(original):
         return

@@ -46,7 +46,7 @@ ArXiv Daily Researcher 定期检索 arXiv 和已启用的其他来源，按研�
 
 ### 🔍 摘要与 PDF 分析
 
-使用两组可独立配置的 LLM 处理评分、摘要译文、关键词、评分生成的中文 TL;DR 与深度分析。Semantic Scholar 的英文 TL;DR 在报告中显示中文译文；译文不可用时，原文折叠显示。PDF 可由本地 PyMuPDF 或 MinerU 解析；处理失败的阶段可重试。
+使用两组可独立配置的 LLM 处理评分、摘要译文、关键词、评分生成的中文 TL;DR 与深度分析。Semantic Scholar 的英文 TL;DR 默认翻译为中文，可在 API 配置中关闭；译文不可用时，原文折叠显示。PDF 可由本地 PyMuPDF 或 MinerU 解析；处理失败的阶段可重试。
 
 </td>
 <td width="50%" valign="top">
@@ -156,7 +156,7 @@ docker compose exec arxiv-daily-researcher python src/utils/setup_wizard.py
     <td align="center" width="33%"><img src="assets/webui_scoring_v4.png" alt="论文评分策略" width="100%" /><br /><sub>评分设置</sub></td>
   </tr>
   <tr>
-    <td align="center" width="33%"><img src="assets/webui_advanced_v4.png" alt="高级设置" width="100%" /><br /><sub>高级设置</sub></td>
+    <td align="center" width="33%"><img src="assets/webui_api_semantic_v4.png" alt="Semantic Scholar TL;DR 翻译设置" width="100%" /><br /><sub>API 配置</sub></td>
     <td align="center" width="33%"><img src="assets/webui_data_management_v4.png" alt="备份与同步" width="100%" /><br /><sub>备份与同步</sub></td>
     <td align="center" width="33%"><img src="assets/webui_history_import_v4.png" alt="历史维护" width="100%" /><br /><sub>历史维护</sub></td>
   </tr>

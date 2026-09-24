@@ -46,7 +46,7 @@ Select papers by primary-keyword relevance, weighted keywords, or learned prefer
 
 ### 🔍 Abstract and PDF analysis
 
-Configure two LLM roles for scoring, abstract translation, keywords, scoring-generated Chinese TL;DRs, and deeper analysis. Reports translate English Semantic Scholar TL;DRs into Chinese; if translation is unavailable, the source text stays collapsed. Parse PDFs locally with PyMuPDF or through MinerU. Failed processing stages can be retried.
+Configure two LLM roles for scoring, abstract translation, keywords, scoring-generated Chinese TL;DRs, and deeper analysis. English Semantic Scholar TL;DRs are translated by default; this can be turned off under API settings. If translation is unavailable, the source text stays collapsed. Parse PDFs locally with PyMuPDF or through MinerU. Failed processing stages can be retried.
 
 </td>
 <td width="50%" valign="top">
@@ -156,7 +156,7 @@ It covers LLMs, paper sources, research context, scoring, notifications, and run
     <td align="center" width="33%"><img src="assets/webui_scoring_v4.png" alt="Paper scoring policy" width="100%" /><br /><sub>Scoring settings</sub></td>
   </tr>
   <tr>
-    <td align="center" width="33%"><img src="assets/webui_advanced_v4.png" alt="Advanced settings" width="100%" /><br /><sub>Advanced settings</sub></td>
+    <td align="center" width="33%"><img src="assets/webui_api_semantic_v4.png" alt="Semantic Scholar TL;DR translation setting" width="100%" /><br /><sub>API settings</sub></td>
     <td align="center" width="33%"><img src="assets/webui_data_management_v4.png" alt="Backup and sync" width="100%" /><br /><sub>Backup and sync</sub></td>
     <td align="center" width="33%"><img src="assets/webui_history_import_v4.png" alt="History maintenance" width="100%" /><br /><sub>History maintenance</sub></td>
   </tr>

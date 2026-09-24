@@ -206,6 +206,7 @@ class Settings(BaseSettings):
 
     # Semantic Scholar 配置
     ENABLE_SEMANTIC_SCHOLAR_TLDR: bool = True  # 是否获取AI生成的TLDR
+    TRANSLATE_SEMANTIC_SCHOLAR_TLDR: bool = True  # 是否翻译 Semantic Scholar 的英文 TL;DR
     SEMANTIC_SCHOLAR_API_KEY: str = ""  # Semantic Scholar API Key（可选）
 
     # ==================== 关键词配置 ====================

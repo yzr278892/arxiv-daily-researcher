@@ -871,7 +871,8 @@ class Reporter:
                 semantic_scholar_tldr = str(semantic_scholar_tldr).strip()
                 translated_tldr = (
                     sr.semantic_scholar_tldr_cn
-                    if sr.semantic_scholar_tldr_source == semantic_scholar_tldr
+                    if settings.TRANSLATE_SEMANTIC_SCHOLAR_TLDR
+                    and sr.semantic_scholar_tldr_source == semantic_scholar_tldr
                     else None
                 )
                 if translated_tldr:
@@ -888,6 +889,11 @@ class Reporter:
                     if has_chinese_text(semantic_scholar_tldr):
                         parts.append(
                             '<div class="tldr"><strong>Semantic Scholar TL;DR:</strong> '
+                            f"{self._hm(semantic_scholar_tldr)}</div>"
+                        )
+                    elif not settings.TRANSLATE_SEMANTIC_SCHOLAR_TLDR:
+                        parts.append(
+                            '<div class="tldr"><strong>Semantic Scholar TL;DR（原文）:</strong> '
                             f"{self._hm(semantic_scholar_tldr)}</div>"
                         )
                     else:

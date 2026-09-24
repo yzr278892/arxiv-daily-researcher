@@ -236,6 +236,20 @@ class ModernBackendTests(unittest.TestCase):
         self.assertGreater(len(categories), 100)
         self.assertEqual(categories["quant-ph"], "quant-ph · Quantum Physics")
 
+    def test_semantic_translation_setting_round_trips_through_saved_env(self) -> None:
+        saved = {}
+        with patch.object(backend, "flat_config", return_value={}), patch.object(
+            backend, "write_config_json"
+        ), patch.object(backend, "_invalidate_runtime_caches"), patch.object(
+            backend, "read_env", side_effect=lambda: dict(saved)
+        ), patch.object(backend, "write_env", side_effect=lambda values: saved.update(values)), patch.object(
+            backend, "persistence_info", return_value={}
+        ):
+            response = backend.save_settings({}, {"TRANSLATE_SEMANTIC_SCHOLAR_TLDR": False})
+
+        self.assertEqual(saved["TRANSLATE_SEMANTIC_SCHOLAR_TLDR"], "false")
+        self.assertEqual(response["env"]["TRANSLATE_SEMANTIC_SCHOLAR_TLDR"], "false")
+
     def test_flat_config_cache_reuses_parse_and_detects_file_change(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config_path = Path(directory) / "config.json"

@@ -611,6 +611,8 @@ const MODERN_EN_TRANSLATIONS = Object.freeze({
   "同时运行：": "Also running:",
   "启用 OpenAlex 来源": "Enable OpenAlex Source",
   "启用 Semantic Scholar TL;DR 增强": "Enable Semantic Scholar TL;DR Enrichment",
+  "将 TL;DR 翻译为中文": "Translate TL;DRs into Chinese",
+  "关闭后报告显示来源原文，不请求 LLM 翻译。": "When off, reports show the source text without requesting an LLM translation.",
   "因互斥跳过": "Skipped due to mutual exclusion",
   "备份文件": "Backup Files",
   "多": "High",
@@ -3275,7 +3277,7 @@ function thirdPartySection() {
   const openAlexEnabled = booleanValue(envValue("ENABLE_OPENALEX"), true);
   const semanticEnabled = booleanValue(envValue("ENABLE_SEMANTIC_SCHOLAR_TLDR"), true);
   const openAlexFields = `<p class="hint-text">免费 API Key 可将每日 API 额度提高到匿名使用的 10 倍，并可查看用量。</p>${field({ label: "OpenAlex API Key", key: "OPENALEX_API_KEY", scope: "env", type: "secret" })}<div class="action-row"><button class="secondary-button" data-test-third="openalex">测试 OpenAlex 连接</button><a href="https://openalex.org/settings/api" target="_blank" rel="noreferrer">打开 OpenAlex API 控制台 ↗</a><span id="openalex-test-result" class="inline-result"></span></div>`;
-  const semanticFields = `<p class="hint-text">用于可选 TL;DR 增强。匿名额度由所有用户共享；API Key 初始限额为每秒 1 次，应用会自动按此节奏请求。</p>${field({ label: "Semantic Scholar API Key", key: "SEMANTIC_SCHOLAR_API_KEY", scope: "env", type: "secret" })}<div class="action-row"><button class="secondary-button" data-test-third="semantic_scholar">测试 Semantic Scholar 连接</button><a href="https://www.semanticscholar.org/product/api#api-key-form" target="_blank" rel="noreferrer">打开 Semantic Scholar API 申请页 ↗</a><span id="semantic_scholar-test-result" class="inline-result"></span></div>`;
+  const semanticFields = `<p class="hint-text">用于可选 TL;DR 增强。匿名额度由所有用户共享；API Key 初始限额为每秒 1 次，应用会自动按此节奏请求。</p>${field({ label: "将 TL;DR 翻译为中文", key: "TRANSLATE_SEMANTIC_SCHOLAR_TLDR", scope: "env", type: "checkbox", fallback: true, help: "关闭后报告显示来源原文，不请求 LLM 翻译。" })}${field({ label: "Semantic Scholar API Key", key: "SEMANTIC_SCHOLAR_API_KEY", scope: "env", type: "secret" })}<div class="action-row"><button class="secondary-button" data-test-third="semantic_scholar">测试 Semantic Scholar 连接</button><a href="https://www.semanticscholar.org/product/api#api-key-form" target="_blank" rel="noreferrer">打开 Semantic Scholar API 申请页 ↗</a><span id="semantic_scholar-test-result" class="inline-result"></span></div>`;
   const content = [
     '<p class="hint-text">开启来源后才会调用对应服务；关闭时会隐藏其配置，已保存的密钥不会被清除。</p>',
     `<div class="subsection"><h3>📚 OpenAlex</h3><label class="toggle-field"><span>启用 OpenAlex 来源<span class="field-help">关闭后不会请求 OpenAlex。开启后，还需在“数据源 → 额外数据源”中选择期刊来源。</span></span><input id="openalex-enabled" type="checkbox" ${openAlexEnabled ? "checked" : ""}/><i></i></label><div id="openalex-dependent" ${openAlexEnabled ? "" : "hidden"}>${openAlexFields}</div></div>`,

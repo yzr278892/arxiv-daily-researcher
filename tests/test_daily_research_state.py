@@ -10,7 +10,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from agents.analysis_agent import WeightedScoreResponse  # noqa: E402
-from config import settings  # noqa: E402
+from config import Settings, settings  # noqa: E402
 from modes import daily_research as daily_research_module  # noqa: E402
 from modes.daily_research import (  # noqa: E402
     DailyResearchPipeline,
@@ -77,6 +77,9 @@ class _Agent:
 
 
 class DailyResearchStateTests(unittest.TestCase):
+    def test_semantic_scholar_translation_defaults_to_enabled(self):
+        self.assertTrue(Settings.model_fields["TRANSLATE_SEMANTIC_SCHOLAR_TLDR"].default)
+
     def test_reference_extraction_can_be_the_only_keyword_source(self):
         self.assertIsNone(_keyword_configuration_error(None, [], True))
         self.assertIsNone(
@@ -227,6 +230,40 @@ class DailyResearchStateTests(unittest.TestCase):
             updated = json.loads(store.get_paper_record("arxiv", paper.paper_id)["score_json"])
             self.assertEqual(updated["semantic_scholar_tldr_source"],
                              changed.semantic_scholar_tldr)
+
+    def test_semantic_scholar_translation_switch_skips_llm_and_can_be_reenabled(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = DailyResearchStore(Path(temp_dir) / "daily.db")
+            paper = _paper()
+            paper.semantic_scholar_tldr = "An English external summary."
+            disabled_agent = _Agent()
+            with patch.object(settings, "ENABLE_SEMANTIC_SCHOLAR_TLDR", True), patch.object(
+                settings, "TRANSLATE_SEMANTIC_SCHOLAR_TLDR", False
+            ):
+                disabled = self._run_score_or_hydrate(
+                    store, store.start_run(1), paper, disabled_agent, {"quantum": 1.0}
+                )
+            self.assertEqual(disabled_agent.external_tldr_calls, 0)
+            self.assertIsNone(disabled["score_response"].semantic_scholar_tldr_cn)
+
+            enabled_agent = _Agent()
+            with patch.object(settings, "ENABLE_SEMANTIC_SCHOLAR_TLDR", True), patch.object(
+                settings, "TRANSLATE_SEMANTIC_SCHOLAR_TLDR", True
+            ):
+                enabled = self._run_score_or_hydrate(
+                    store, store.start_run(1), _paper(), enabled_agent, {"quantum": 1.0}
+                )
+            self.assertEqual(enabled_agent.external_tldr_calls, 1)
+            self.assertEqual(enabled_agent.score_calls, 0)
+            self.assertEqual(enabled["score_response"].semantic_scholar_tldr_source,
+                             paper.semantic_scholar_tldr)
+
+            retry_agent = _Agent()
+            with patch.object(settings, "TRANSLATE_SEMANTIC_SCHOLAR_TLDR", True):
+                self._run_score_or_hydrate(
+                    store, store.start_run(1), _paper(), retry_agent, {"quantum": 1.0}
+                )
+            self.assertEqual(retry_agent.external_tldr_calls, 0)
 
     def test_semantic_scholar_translation_failure_does_not_block_daily_paper(self):
         with tempfile.TemporaryDirectory() as temp_dir:

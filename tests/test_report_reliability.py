@@ -150,6 +150,31 @@ class ReportReliabilityTests(unittest.TestCase):
                 self.assertIn("Semantic Scholar 原文", content)
             self.assertIn("External &lt;TLDR&gt;", html_content)
 
+    def test_semantic_scholar_translation_switch_shows_original_even_with_cached_translation(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            reporter = Reporter()
+            reporter.report_base_dir = Path(temp_dir)
+            paper = _scored_paper("2501.12345v1", 9, True)
+            paper["paper_metadata"].semantic_scholar_tldr = "External <TLDR>"
+            score = paper["score_response"]
+            score.semantic_scholar_tldr_source = "External <TLDR>"
+            score.semantic_scholar_tldr_cn = "外部摘要译文。"
+
+            with patch.object(settings, "ENABLE_MARKDOWN_REPORT", True), patch.object(
+                settings, "ENABLE_HTML_REPORT", True
+            ), patch.object(settings, "TRANSLATE_SEMANTIC_SCHOLAR_TLDR", False):
+                paths = reporter.generate_reports_by_source(
+                    {"arxiv": [paper]}, {"keyword": 1.0}
+                )
+
+            html_content = paths["arxiv_html"].read_text(encoding="utf-8")
+            markdown_content = paths["arxiv"].read_text(encoding="utf-8")
+            self.assertIn("Semantic Scholar TL;DR（原文）", html_content)
+            self.assertIn("External &lt;TLDR&gt;", html_content)
+            self.assertIn("External &lt;TLDR&gt;", markdown_content)
+            self.assertNotIn("外部摘要译文。", html_content)
+            self.assertNotIn("外部摘要译文。", markdown_content)
+
     def test_html_report_shows_penalty_without_confusing_positive_keywords(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             reporter = Reporter()
