@@ -1,7 +1,9 @@
 import io
 import json
 import os
+import subprocess
 import tempfile
+import threading
 import unittest
 from datetime import datetime
 from pathlib import Path
@@ -470,6 +472,78 @@ class SkippedBusyMappingTests(unittest.TestCase):
 
 
 class ChildOutputForwardingTests(unittest.TestCase):
+    def test_short_flushed_output_is_forwarded_before_child_exits(self):
+        from utils import webui_trigger
+
+        received = threading.Event()
+        tail = []
+
+        class _Capture(io.StringIO):
+            def write(self, value):
+                if "ready\n" in value:
+                    received.set()
+                return super().write(value)
+
+        child = subprocess.Popen(
+            [
+                sys.executable, "-u", "-c",
+                "import sys; print('ready', flush=True); sys.stdin.read(1)",
+            ],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT, text=True, encoding="utf-8", bufsize=1,
+        )
+        capture = _Capture()
+        try:
+            with patch("sys.stdout", capture):
+                forwarder = threading.Thread(
+                    target=lambda: tail.extend(webui_trigger._forward_child_output(child)),
+                    daemon=True,
+                )
+                forwarder.start()
+                self.assertTrue(received.wait(5), "short output waited for child EOF")
+                self.assertIsNone(child.poll())
+                child.stdin.write("x")
+                child.stdin.flush()
+                child.stdin.close()
+                child.wait(timeout=2)
+                forwarder.join(timeout=2)
+            self.assertEqual(tail, ["ready\n"])
+        finally:
+            if child.poll() is None:
+                child.terminate()
+                child.wait(timeout=2)
+            if child.stdin and not child.stdin.closed:
+                child.stdin.close()
+
+    def test_utf8_characters_split_between_pipe_reads_are_preserved(self):
+        from types import SimpleNamespace
+
+        from utils import webui_trigger
+
+        class _ChunkedBuffer:
+            def __init__(self):
+                self.chunks = [b"hello \xe4", b"\xbd\xa0\xe5", b"\xa5\xbd\n", b""]
+
+            def read1(self, _size):
+                return self.chunks.pop(0)
+
+        class _ChunkedTextStream(io.TextIOBase):
+            def __init__(self):
+                self.buffer = _ChunkedBuffer()
+
+            @property
+            def encoding(self):
+                return "utf-8"
+
+        output = io.StringIO()
+        with patch("sys.stdout", output):
+            tail = webui_trigger._forward_child_output(
+                SimpleNamespace(stdout=_ChunkedTextStream())
+            )
+
+        self.assertEqual(output.getvalue(), "hello 你好\n")
+        self.assertEqual(tail, ["hello 你好\n"])
+
     def test_output_is_forwarded_in_chunks_with_a_bounded_tail(self):
         """A redraw-only progress stream must not grow the retained buffer."""
         from types import SimpleNamespace

@@ -9,6 +9,7 @@ the Worker so malformed files cannot turn into shell input.
 from __future__ import annotations
 
 import argparse
+import codecs
 from collections import deque
 import io
 import json
@@ -301,9 +302,29 @@ def _forward_child_output(child: subprocess.Popen) -> list[str]:
 
     tail: deque[str] = deque(maxlen=_STATUS_OUTPUT_TAIL_LINES)
     pending = ""
+    read_available = getattr(getattr(stream, "buffer", None), "read1", None)
+    if callable(read_available):
+        # TextIOWrapper.read(n) waits for n characters or EOF. The underlying
+        # buffered pipe's read1(n) returns after one available chunk, so a
+        # short flushed log line appears immediately while the child runs.
+        decoder = codecs.getincrementaldecoder(stream.encoding or "utf-8")(
+            errors=stream.errors or "replace"
+        )
+
+        def read_chunk() -> str:
+            while True:
+                raw = read_available(_OUTPUT_CHUNK_CHARS)
+                decoded = decoder.decode(raw, final=not raw)
+                if decoded or not raw:
+                    return decoded
+    else:
+        # StringIO and legacy text streams used by tests/integrations.
+        def read_chunk() -> str:
+            return stream.read(_OUTPUT_CHUNK_CHARS)
+
     try:
         while True:
-            chunk = stream.read(_OUTPUT_CHUNK_CHARS)
+            chunk = read_chunk()
             if not chunk:
                 break
             sys.stdout.write(chunk)
