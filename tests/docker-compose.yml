@@ -1,4 +1,5 @@
-# Local source build used only for development and verification. The root
+# Local source build. This host's running test services and mounted data are
+# also used by the owner; never treat them as disposable fixtures. The root
 # docker-compose.yml is the user-facing GHCR deployment definition.
 name: arxiv-daily-researcher-test
 
