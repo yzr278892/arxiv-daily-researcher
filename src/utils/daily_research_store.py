@@ -51,6 +51,7 @@ class DailyResearchStore:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
+        self._connection_guard = threading.RLock()
         # One connection per thread, opened on first use and kept for the life
         # of this store.  Opening (and re-applying the same PRAGMAs to) a fresh
         # connection for every operation dominated hot paths: scoring one paper
@@ -58,6 +59,10 @@ class DailyResearchStore:
         # Connections are never shared between threads, and each call site
         # keeps its existing ``with conn`` commit/rollback semantics.
         self._local = threading.local()
+        self._database_identity: tuple[int, int] | None = None
+        self._coverage_connection: sqlite3.Connection | None = None
+        self._coverage_identity: tuple[int, int] | None = None
+        self._coverage_data_version: int | None = None
         # ``daily_papers`` and ``paper_entities`` are aligned once the backfill
         # has run.  Probing for gaps means scanning the whole paper table, which
         # every archive read did; remember the confirmed state and invalidate it
@@ -134,6 +139,13 @@ class DailyResearchStore:
             normalized_version,
         )
 
+    def _file_identity(self) -> tuple[int, int] | None:
+        try:
+            stat = self.db_path.stat()
+        except OSError:
+            return None
+        return stat.st_dev, stat.st_ino
+
     def _connect(self):
         """Return this thread's ledger connection, opening it on first use.
 
@@ -142,14 +154,29 @@ class DailyResearchStore:
         this from another thread transparently creates that thread's own
         connection instead of sharing one.
         """
-        conn = getattr(self._local, "connection", None)
-        if conn is None:
+        with self._connection_guard:
+            identity = self._file_identity()
+            conn = getattr(self._local, "connection", None)
+            if conn is not None and identity == getattr(self._local, "identity", None):
+                return conn
+            if conn is not None:
+                conn.close()
             conn = sqlite3.connect(self.db_path, timeout=30, check_same_thread=False)
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA busy_timeout=30000")
+            identity = self._file_identity()
             self._local.connection = conn
-        return conn
+            self._local.identity = identity
+            if self._database_identity is None:
+                self._database_identity = identity
+            elif identity != self._database_identity:
+                # A restore or WebDAV download atomically replaced the file.
+                # Old SQLite handles keep referring to its previous inode.
+                self._database_identity = identity
+                self._entity_coverage_valid = False
+                self._init_db()
+            return conn
 
     def _init_db(self):
         with self._connect() as conn:
@@ -1409,9 +1436,24 @@ class DailyResearchStore:
     def _ensure_paper_entity_coverage(self) -> None:
         """Backfill rows inserted by older tools or direct compatibility callers."""
         with self._lock:
-            if self._entity_coverage_valid:
+            conn = self._connect()
+            identity = self._file_identity()
+            if self._coverage_connection is None or identity != self._coverage_identity:
+                if self._coverage_connection is not None:
+                    self._coverage_connection.close()
+                self._coverage_connection = sqlite3.connect(
+                    self.db_path, timeout=30, check_same_thread=False
+                )
+                self._coverage_identity = identity
+                self._coverage_data_version = None
+                self._entity_coverage_valid = False
+            # This dedicated connection observes commits from every ordinary
+            # store connection and from other processes. Its data_version is
+            # comparable across calls because the connection itself persists.
+            version = int(self._coverage_connection.execute("PRAGMA data_version").fetchone()[0])
+            if self._entity_coverage_valid and version == self._coverage_data_version:
                 return
-            with self._connect() as conn:
+            with conn:
                 missing = conn.execute(
                     """
                     SELECT 1 FROM daily_papers
@@ -1425,7 +1467,13 @@ class DailyResearchStore:
                 ).fetchone()
                 if missing is not None:
                     self._migrate_paper_entities(conn)
-                self._entity_coverage_valid = True
+            version_after = int(
+                self._coverage_connection.execute("PRAGMA data_version").fetchone()[0]
+            )
+            self._coverage_data_version = version_after
+            # A different connection may have inserted a legacy-shaped row
+            # after the gap query. Never cache that unobserved state as valid.
+            self._entity_coverage_valid = version_after == version
 
     @staticmethod
     def _migrate_delivery_identity(conn):
@@ -4341,9 +4389,12 @@ class DailyResearchStore:
             with self._connect() as conn:
                 rows = conn.execute(
                     "SELECT trim(entry.value) AS name, COUNT(*) AS total "
-                    "FROM paper_preferences p, json_each(p." + column + ") entry "
+                    "FROM paper_preferences p, json_each("
+                    "CASE WHEN json_valid(p." + column + ") THEN "
+                    "CASE WHEN json_type(p." + column + ") = 'array' "
+                    "THEN p." + column + " ELSE '[]' END "
+                    "ELSE '[]' END) entry "
                     "WHERE p.preference = 'like' "
-                    "AND json_type(p." + column + ") = 'array' "
                     "AND entry.type = 'text' AND trim(entry.value) <> '' "
                     "GROUP BY name"
                 ).fetchall()
@@ -4395,10 +4446,11 @@ class DailyResearchStore:
                 "FROM paper_preferences p "
                 "JOIN daily_papers d "
                 "ON d.source = p.source AND d.paper_id = p.paper_id, "
-                "json_each(d.score_json, '$.extracted_keywords') keyword "
+                "json_each(CASE WHEN json_valid(d.score_json) "
+                "THEN d.score_json ELSE '{}' END, '$.extracted_keywords') keyword "
                 "WHERE p.preference = 'like' "
-                "AND d.score_json IS NOT NULL AND json_valid(d.score_json) "
-                "AND json_type(d.score_json, '$.extracted_keywords') = 'array' "
+                "AND json_type(CASE WHEN json_valid(d.score_json) "
+                "THEN d.score_json ELSE '{}' END, '$.extracted_keywords') = 'array' "
                 "AND keyword.type = 'text' AND trim(keyword.value) <> '' "
                 "GROUP BY keyword ORDER BY total DESC, keyword ASC LIMIT ?",
                 (bounded_limit,),

@@ -1,4 +1,5 @@
 import json
+import os
 import sqlite3
 import tempfile
 import threading
@@ -621,6 +622,76 @@ class IdentityStoreTests(unittest.TestCase):
             self.assertFalse(store._entity_coverage_valid)
             store._ensure_paper_entity_coverage()
             self.assertTrue(store._entity_coverage_valid)
+
+    def test_entity_coverage_notices_a_commit_from_another_connection(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db_path = Path(directory) / "daily.db"
+            store = DailyResearchStore(db_path)
+            store._ensure_paper_entity_coverage()
+            with sqlite3.connect(db_path) as external:
+                external.execute(
+                    "INSERT INTO daily_papers(source, paper_id, first_seen_at, "
+                    "last_seen_at, paper_json) VALUES (?, ?, ?, ?, ?)",
+                    ("arxiv", "2501.70001v1", "2026-01-01", "2026-01-01", "{}"),
+                )
+
+            self.assertIsNotNone(store.get_paper_entity("arxiv", "2501.70001v1"))
+
+    def test_entity_coverage_does_not_cache_a_concurrent_insert(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db_path = Path(directory) / "daily.db"
+            store = DailyResearchStore(db_path)
+            store._ensure_paper_entity_coverage()
+
+            class _ConcurrentInsertProbe:
+                def __init__(self, connection):
+                    self.connection = connection
+                    self.calls = 0
+
+                def execute(self, statement):
+                    self.calls += 1
+                    if self.calls == 2:
+                        with sqlite3.connect(db_path) as external:
+                            external.execute(
+                                "INSERT INTO daily_papers(source, paper_id, first_seen_at, "
+                                "last_seen_at, paper_json) VALUES (?, ?, ?, ?, ?)",
+                                ("arxiv", "2501.70002v1", "2026-01-01", "2026-01-01", "{}"),
+                            )
+                    return self.connection.execute(statement)
+
+            store._coverage_connection = _ConcurrentInsertProbe(store._coverage_connection)
+            store._entity_coverage_valid = False
+            store._ensure_paper_entity_coverage()
+
+            self.assertFalse(store._entity_coverage_valid)
+            self.assertIsNotNone(store.get_paper_entity("arxiv", "2501.70002v1"))
+
+    def test_reused_connection_reopens_after_database_file_is_replaced(self):
+        with tempfile.TemporaryDirectory() as directory:
+            database = Path(directory) / "daily.db"
+            replacement = Path(directory) / "replacement.db"
+            store = DailyResearchStore(database)
+            store.set_app_state("generation", "old")
+            other = DailyResearchStore(replacement)
+            other.set_app_state("generation", "new")
+            other._connect().execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            other._connect().close()
+            os.replace(replacement, database)
+            for suffix in ("-wal", "-shm"):
+                Path(str(database) + suffix).unlink(missing_ok=True)
+
+            self.assertEqual(store.get_app_state("generation"), "new")
+
+    def test_malformed_saved_preference_does_not_break_aggregates(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = DailyResearchStore(Path(directory) / "daily.db")
+            with store._connect() as conn:
+                conn.execute(
+                    "INSERT INTO paper_preferences(source, paper_id, preference, "
+                    "title, authors_json, categories_json, created_at, updated_at) "
+                    "VALUES ('arxiv', 'bad', 'like', 'Bad', 'broken json', '[]', '2026', '2026')"
+                )
+            self.assertEqual(store.aggregate_liked_preferences(), {"authors": [], "categories": []})
 
     def test_thin_image_leaves_identity_migration_unrecorded(self):
         """The WebUI image must not claim a backfill it could not run."""
