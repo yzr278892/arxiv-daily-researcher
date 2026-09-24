@@ -421,7 +421,7 @@ select::-ms-expand { display: none; }
 .trend-disabled-hint { margin: 16px 0 0; padding: 11px 13px; border: 1px dashed var(--line-strong); border-radius: 10px; background: var(--card-soft); }
 .narrow-field { width: min(225px, 100%); margin-bottom: 14px; }
 
-/* 开关：名称与按钮紧邻排布，避免整行两端拉开 */
+/* 开关跟随文字区域排列，保留间距，不分布到整行两端 */
 .toggle-field { position: relative; display: flex; align-items: center; justify-content: flex-start; gap: 12px; min-height: var(--control-height); color: var(--text-secondary); font-size: .81rem; font-weight: 650; }
 .toggle-field > span { flex: 0 1 auto; }
 .form-grid > .toggle-field { align-self: end; }
@@ -430,11 +430,6 @@ select::-ms-expand { display: none; }
 .toggle-field i::after { position: absolute; top: 3px; left: 3px; width: 19px; height: 19px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(73, 84, 58, .2); content: ""; transition: transform .18s var(--ease); }
 .toggle-field input:checked + i { background: var(--brand); }
 .toggle-field input:checked + i::after { transform: translateX(17px); }
-.toggle-field-with-help { display: grid; grid-template-columns: minmax(0, max-content) 42px minmax(0, 1fr); column-gap: 12px; row-gap: 4px; justify-content: start; }
-.toggle-field-with-help > span:first-child, .toggle-field-with-help > i { grid-row: 1; }
-.toggle-field-with-help > span:first-child { grid-column: 1; }
-.toggle-field-with-help > i { grid-column: 2; }
-.toggle-field-with-help > .field-help { grid-column: 1 / -1; grid-row: 2; margin-top: 0; }
 #semantic-dependent > .toggle-field { margin: 18px 0; }
 .refresh-row { display: flex; align-items: center; justify-content: space-between; gap: 15px; margin-top: 17px; padding: 15px 0 16px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .refresh-row span { display: grid; gap: 4px; }

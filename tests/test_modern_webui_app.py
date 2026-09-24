@@ -84,14 +84,15 @@ class ModernWebUIAppTests(unittest.TestCase):
         self.assertEqual(catalogue["semantic_scholar_translate_label"]["en"],
                          "Translate TL;DRs into Chinese")
 
-    def test_helped_switches_keep_controls_next_to_the_label(self) -> None:
+    def test_helped_switches_follow_the_existing_toggle_layout(self) -> None:
         script = self.client.get("/assets/app.js").text
         stylesheet = self.client.get("/assets/app.css").text
 
-        self.assertIn('class="toggle-field toggle-field-with-help"', script)
-        self.assertIn('>${hint}</label>`;', script)
-        self.assertIn('.toggle-field-with-help > i { grid-column: 2; }', stylesheet)
-        self.assertIn('.toggle-field-with-help > .field-help { grid-column: 1 / -1;', stylesheet)
+        self.assertIn('<span>${escapeHtml(label)}${hint}</span><input type="checkbox"', script)
+        self.assertNotIn('toggle-field-with-help', script)
+        self.assertNotIn('toggle-field-with-help', stylesheet)
+        self.assertIn('.toggle-field { position: relative; display: flex;', stylesheet)
+        self.assertIn('justify-content: flex-start; gap: 12px;', stylesheet)
         self.assertNotIn('#semantic-dependent > .toggle-field { justify-content: space-between;', stylesheet)
 
     def test_shared_translation_catalogue_is_available_before_sign_in(self) -> None:

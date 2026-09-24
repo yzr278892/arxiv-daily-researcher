@@ -1481,9 +1481,6 @@ function field(options) {
   const data = `data-field="${escapeAttribute(key)}" data-scope="${scope}"`;
   const hint = help ? `<span class="field-help">${escapeHtml(help)}</span>` : "";
   if (type === "checkbox") {
-    if (help) {
-      return `<label class="toggle-field toggle-field-with-help"><span>${escapeHtml(label)}</span><input type="checkbox" ${data} ${booleanValue(value, fallback) ? "checked" : ""}/><i></i>${hint}</label>`;
-    }
     return `<label class="toggle-field"><span>${escapeHtml(label)}${hint}</span><input type="checkbox" ${data} ${booleanValue(value, fallback) ? "checked" : ""}/><i></i></label>`;
   }
   if (type === "textarea" || type === "lines") {
