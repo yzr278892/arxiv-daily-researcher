@@ -406,7 +406,70 @@ class ArxivFetchTests(unittest.TestCase):
 
         self.assertEqual(len(results), 4)
         self.assertEqual(receipt["pages_observed"], 2)
+        self.assertTrue(receipt["truncated"])
         self.assertTrue(any("页数上限" in line for line in logs.output))
+
+    def test_page_budget_does_not_truncate_when_next_result_is_before_cutoff(self):
+        moment = datetime(2026, 9, 1, tzinfo=timezone.utc)
+        old = datetime(2026, 6, 1, tzinfo=timezone.utc)
+
+        class _Client:
+            page_size = 2
+
+            def results(self, _search):
+                return iter(
+                    [_FakeResult(f"2501.{index:05d}v1", moment, moment) for index in range(4)]
+                    + [_FakeResult("2501.99999v1", old, old)]
+                )
+
+        source = ArxivSource.__new__(ArxivSource)
+        source.client = _Client()
+        results, receipt = source._fetch_query_results(
+            object(), datetime(2026, 7, 1, tzinfo=timezone.utc),
+            "updated", 0, max_pages=2,
+        )
+        self.assertEqual(len(results), 4)
+        self.assertFalse(receipt["truncated"])
+
+    def test_truncated_updated_scan_records_failure_and_cannot_advance_checkpoint(self):
+        from sources import arxiv_source
+
+        moment = datetime.now(timezone.utc)
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            arxiv_source, "_ARXIV_MAX_UPDATED_QUERY_PAGES", 2
+        ):
+            source = ArxivSource(Path(directory), load_legacy_history=False)
+            source.client = _FakeClient(
+                [], [_FakeResult(f"2501.{index:05d}v1", moment, moment) for index in range(5)]
+            )
+            source.client.page_size = 2
+            receipts = []
+            with self.assertRaisesRegex(arxiv_source.ArxivFetchError, "未扫描完整"):
+                source.fetch_papers(
+                    days=2, domains=["cs.AI"], fetch_timeout_seconds=0,
+                    scan_receipt_callback=receipts.append,
+                )
+        self.assertEqual(len(receipts), 1)
+        self.assertEqual(receipts[0]["status"], "failed")
+        self.assertTrue(receipts[0]["domain_receipts"][0]["queries"]["updated"]["truncated"])
+
+    def test_page_budget_failure_does_not_cool_down_before_next_domain(self):
+        from sources import arxiv_source
+
+        moment = datetime.now(timezone.utc)
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            arxiv_source, "_ARXIV_MAX_UPDATED_QUERY_PAGES", 2
+        ), patch.object(arxiv_source.time, "sleep") as sleep:
+            source = ArxivSource(Path(directory), load_legacy_history=False)
+            source.client = _FakeClient(
+                [], [_FakeResult(f"2501.{index:05d}v1", moment, moment) for index in range(5)]
+            )
+            source.client.page_size = 2
+            with self.assertRaises(arxiv_source.ArxivFetchError):
+                source.fetch_papers(
+                    days=2, domains=["cs.AI", "cs.LG"], fetch_timeout_seconds=0
+                )
+            sleep.assert_not_called()
 
 
 class ArxivTimeoutGuardTests(unittest.TestCase):

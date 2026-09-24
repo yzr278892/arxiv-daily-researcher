@@ -99,6 +99,10 @@ class ArxivScanReceiptError(ArxivFetchError):
     """Raised when a complete arXiv scan cannot produce an audit receipt."""
 
 
+class ArxivPageLimitError(ArxivFetchError):
+    """A bounded query ended before it reached its time boundary."""
+
+
 class _timeout_guard:
     """使用 SIGALRM 对阻塞调用设置硬超时（Linux 主线程可用）。
 
@@ -288,7 +292,7 @@ class ArxivSource(BasePaperSource):
         page_size: Optional[int] = None,
         max_pages: Optional[int] = None,
         context: str = "",
-    ) -> tuple[list, Dict[str, int]]:
+    ) -> tuple[list, Dict[str, Any]]:
         """
         获取一个无数量上限的查询结果。
 
@@ -301,6 +305,7 @@ class ArxivSource(BasePaperSource):
         api_total = 0
         in_window_count = 0
         page_count = 0
+        truncated = False
         # arxiv.py does not expose page callbacks.  Its Client results iterator
         # still walks pages in fixed ``client.page_size`` chunks, so derive the
         # number of observed result pages from consumed API entries.  This is
@@ -315,9 +320,15 @@ class ArxivSource(BasePaperSource):
                 guard.touch()
                 api_total += 1
                 page_count = ((api_total - 1) // configured_page_size) + 1
+                boundary = getattr(result, boundary_field)
+                if boundary < cutoff_date:
+                    # A boundary result on the next page proves the requested
+                    # window was completely scanned, even at the page budget.
+                    break
                 if max_pages is not None and page_count > max_pages:
                     api_total -= 1
                     page_count = max_pages
+                    truncated = True
                     logger.warning(
                         "    ⚠️  [ArXiv] 领域 %s 的 updated 查询达到页数上限 %d 页，"
                         "已停止继续分页（已检查约 %d 条 API 条目，截止日期 %s）",
@@ -327,16 +338,13 @@ class ArxivSource(BasePaperSource):
                         cutoff_date.isoformat(),
                     )
                     break
-                boundary = getattr(result, boundary_field)
-                if boundary < cutoff_date:
-                    # 两个查询都按边界字段降序排列，可以安全地停止后续分页。
-                    break
                 in_window_count += 1
                 results.append(result)
         return results, {
             "api_entries_checked": api_total,
             "pages_observed": page_count,
             "window_entries": in_window_count,
+            "truncated": truncated,
         }
 
     @staticmethod
@@ -491,6 +499,7 @@ class ArxivSource(BasePaperSource):
             max_retries = 3
             retry_count = 0
             domain_failed = False
+            page_budget_failed = False
             last_error_msg = ""
 
             while retry_count <= max_retries:
@@ -519,6 +528,11 @@ class ArxivSource(BasePaperSource):
                             context=domain,
                         )
                         domain_receipt["queries"][query_kind].update(query_receipt)
+                        if query_receipt.get("truncated"):
+                            raise ArxivPageLimitError(
+                                f"领域 {domain} 的 {query_kind} 查询超过 "
+                                f"{_ARXIV_MAX_UPDATED_QUERY_PAGES} 页，时间窗口未扫描完整"
+                            )
                         domain_receipt["queries"][query_kind]["error"] = None
                         for result in query_results:
                             paper_id = result.get_short_id()
@@ -579,6 +593,11 @@ class ArxivSource(BasePaperSource):
                     if active_query_kind is not None:
                         domain_receipt["queries"][active_query_kind]["error"] = error_msg[:1000]
                     retry_count += 1
+                    if isinstance(e, ArxivPageLimitError):
+                        logger.error("    领域 %s 抓取不完整: %s", domain, error_msg)
+                        domain_failed = True
+                        page_budget_failed = True
+                        break
                     if retry_count <= max_retries:
                         wait_time = _arxiv_retry_wait(e, retry_count)
                         if isinstance(e, _ArxivTimeoutError):
@@ -609,7 +628,7 @@ class ArxivSource(BasePaperSource):
                 failed_domains.append((domain, last_error_msg))
                 # arXiv 限流按 IP 计；一个领域打满重试仍失败时，先冷却
                 # 再扫描下一领域，避免连环触发限流把剩余领域也拖垮。
-                if domain != domains[-1]:
+                if domain != domains[-1] and not page_budget_failed:
                     logger.warning(
                         f"    领域 {domain} 失败后冷却 {_POST_FAILURE_COOLDOWN_SECONDS}s "
                         f"再继续下一领域"
