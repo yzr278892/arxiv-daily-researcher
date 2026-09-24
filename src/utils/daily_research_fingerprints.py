@@ -16,7 +16,7 @@ from config import settings
 from scoring_policy import WEIGHTED_KEYWORD_WITH_PENALTIES_V1
 # New score audit records derive the identifier from settings for each actual
 # decision; historical audit JSON continues to carry its own fixed value.
-SCORE_PROMPT_REVISION = "daily-keyword-score-v3"
+SCORE_PROMPT_REVISION = "daily-keyword-score-v4"
 
 
 def configured_score_strategy_id() -> str:

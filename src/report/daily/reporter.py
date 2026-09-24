@@ -35,6 +35,7 @@ from utils.deep_analysis_contract import (
     is_pdf_grounded_analysis,
 )
 from utils.safe_url import safe_http_url
+from utils.text_language import has_chinese_text
 from utils.source_registry import source_display_names
 from .modules.base_module import FormatHelper
 from .modules.renderers import ModuleRendererFactory
@@ -867,10 +868,34 @@ class Reporter:
                 else paper.get("semantic_scholar_tldr", "")
             )
             if semantic_scholar_tldr:
-                parts.append(
-                    '<div class="tldr"><strong>Semantic Scholar TL;DR:</strong> '
-                    f"{self._hm(semantic_scholar_tldr)}</div>"
+                semantic_scholar_tldr = str(semantic_scholar_tldr).strip()
+                translated_tldr = (
+                    sr.semantic_scholar_tldr_cn
+                    if sr.semantic_scholar_tldr_source == semantic_scholar_tldr
+                    else None
                 )
+                if translated_tldr:
+                    parts.append(
+                        '<div class="tldr"><strong>Semantic Scholar TL;DR（译文）:</strong> '
+                        f"{self._hm(translated_tldr)}</div>"
+                    )
+                    parts.append(
+                        '<details><summary>Semantic Scholar 原文</summary>'
+                        f'<div class="analysis-content"><p>{self._hm(semantic_scholar_tldr)}</p>'
+                        '</div></details>'
+                    )
+                else:
+                    if has_chinese_text(semantic_scholar_tldr):
+                        parts.append(
+                            '<div class="tldr"><strong>Semantic Scholar TL;DR:</strong> '
+                            f"{self._hm(semantic_scholar_tldr)}</div>"
+                        )
+                    else:
+                        parts.append(
+                            '<details><summary>Semantic Scholar TL;DR（原文）</summary>'
+                            f'<div class="analysis-content"><p>{self._hm(semantic_scholar_tldr)}</p>'
+                            '</div></details>'
+                        )
             if sr.tldr and sr.tldr != "评分失败，无法生成摘要":
                 parts.append(f'<div class="tldr"><strong>TL;DR:</strong> {self._hm(sr.tldr)}</div>')
 

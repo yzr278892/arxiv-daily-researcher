@@ -20,7 +20,7 @@ def _score_payload(**overrides):
     payload = {
         "keyword_scores": {"quantum sensing": 8, "noise": 2.5},
         "reasoning": "The paper directly studies quantum sensing under noise.",
-        "tldr": "It improves a quantum sensing protocol under realistic noise.",
+        "tldr": "该论文改进了真实噪声条件下的量子传感方案。",
         "extracted_keywords": ["quantum sensing", "noise", "metrology"],
     }
     payload.update(overrides)
@@ -55,6 +55,37 @@ class ScoringValidationTests(unittest.TestCase):
             self._agent_with_response(payload).score_paper_with_keywords(
                 "title", ["Alice"], "abstract", {"quantum sensing": 1, "noise": 1}
             )
+
+    def test_translates_english_tldr_without_repeating_scoring(self):
+        agent = self._agent_with_response(
+            _score_payload(tldr="It improves quantum sensing under realistic noise.")
+        )
+        calls = []
+
+        def translate(tldr):
+            calls.append(tldr)
+            return "该论文改进了真实噪声条件下的量子传感方案。"
+
+        agent.translate_tldr = translate
+        result = agent.score_paper_with_keywords(
+            "title", ["Alice"], "abstract", {"quantum sensing": 1, "noise": 1}
+        )
+        self.assertEqual(result.tldr, "该论文改进了真实噪声条件下的量子传感方案。")
+        self.assertEqual(calls, ["It improves quantum sensing under realistic noise."])
+
+    def test_rejects_untranslated_english_tldr(self):
+        agent = self._agent_with_response(_score_payload(tldr="English summary."))
+        agent._call_cheap_llm_plain = lambda *_args, **_kwargs: "Still English."
+        with self.assertRaisesRegex(RuntimeError, "TL;DR 翻译未返回中文"):
+            agent.score_paper_with_keywords(
+                "title", ["Alice"], "abstract", {"quantum sensing": 1, "noise": 1}
+            )
+
+    def test_history_tldr_translation_fallback_returns_chinese(self):
+        agent = AnalysisAgent.__new__(AnalysisAgent)
+        responses = iter(["The method improves precision.", "该方法提高了精度。"])
+        agent._call_cheap_llm_plain = lambda *_args, **_kwargs: next(responses)
+        self.assertEqual(agent.generate_tldr("title", "abstract"), "该方法提高了精度。")
 
     def test_expert_bonus_uses_only_real_configured_authors_once(self):
         payload = _score_payload(

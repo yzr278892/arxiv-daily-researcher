@@ -57,6 +57,7 @@ class _Agent:
         self.translation_result = translation_result
         self.score_calls = 0
         self.translation_calls = 0
+        self.external_tldr_calls = 0
 
     def score_paper_with_keywords(self, **_kwargs):
         self.score_calls += 1
@@ -69,6 +70,10 @@ class _Agent:
         if isinstance(self.translation_result, BaseException):
             raise self.translation_result
         return self.translation_result
+
+    def translate_tldr(self, _tldr):
+        self.external_tldr_calls += 1
+        return "这篇论文给出了外部摘要所述的主要结果。"
 
 
 class DailyResearchStateTests(unittest.TestCase):
@@ -179,6 +184,65 @@ class DailyResearchStateTests(unittest.TestCase):
             self.assertEqual(retry_agent.score_calls, 0)
             self.assertEqual(retry_agent.translation_calls, 0)
             self.assertEqual(result["abstract_cn"], "中文摘要")
+
+    def test_semantic_scholar_translation_is_persisted_and_reused(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = DailyResearchStore(Path(temp_dir) / "daily.db")
+            paper = _paper()
+            paper.semantic_scholar_tldr = "The method improves precision."
+            first_agent = _Agent()
+            first_run = store.start_run(1)
+            result = self._run_score_or_hydrate(
+                store, first_run, paper, first_agent, {"quantum": 1.0}
+            )
+            self.assertEqual(first_agent.external_tldr_calls, 1)
+            self.assertEqual(
+                result["score_response"].semantic_scholar_tldr_cn,
+                "这篇论文给出了外部摘要所述的主要结果。",
+            )
+            stored = json.loads(store.get_paper_record("arxiv", paper.paper_id)["score_json"])
+            self.assertEqual(stored["semantic_scholar_tldr_source"], paper.semantic_scholar_tldr)
+
+            retry = _paper()
+            retry_agent = _Agent()
+            retry_run = store.start_run(1)
+            result = self._run_score_or_hydrate(
+                store, retry_run, retry, retry_agent, {"quantum": 1.0}
+            )
+            self.assertEqual(retry.semantic_scholar_tldr, paper.semantic_scholar_tldr)
+            self.assertEqual(retry_agent.external_tldr_calls, 0)
+            self.assertEqual(retry_agent.score_calls, 0)
+            self.assertEqual(result["score_response"].semantic_scholar_tldr_source,
+                             paper.semantic_scholar_tldr)
+
+            changed = _paper()
+            changed.semantic_scholar_tldr = "A newer external summary."
+            changed_agent = _Agent()
+            changed_run = store.start_run(1)
+            self._run_score_or_hydrate(
+                store, changed_run, changed, changed_agent, {"quantum": 1.0}
+            )
+            self.assertEqual(changed_agent.score_calls, 0)
+            self.assertEqual(changed_agent.external_tldr_calls, 1)
+            updated = json.loads(store.get_paper_record("arxiv", paper.paper_id)["score_json"])
+            self.assertEqual(updated["semantic_scholar_tldr_source"],
+                             changed.semantic_scholar_tldr)
+
+    def test_semantic_scholar_translation_failure_does_not_block_daily_paper(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = DailyResearchStore(Path(temp_dir) / "daily.db")
+            paper = _paper()
+            paper.semantic_scholar_tldr = "An English summary."
+            agent = _Agent()
+            agent.translate_tldr = lambda _text: "Still English."
+            run_id = store.start_run(1)
+            result = self._run_score_or_hydrate(
+                store, run_id, paper, agent, {"quantum": 1.0}
+            )
+            self.assertEqual(store.get_paper_record("arxiv", paper.paper_id)["score_status"],
+                             "succeeded")
+            self.assertEqual(result["abstract_cn"], "中文摘要")
+            self.assertIsNone(result["score_response"].semantic_scholar_tldr_cn)
 
     def test_optional_enrichment_is_hydrated_before_one_fingerprinted_upsert(self):
         """A retry must not need a preliminary SQLite write to restore a PDF URL."""

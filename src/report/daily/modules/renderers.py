@@ -6,6 +6,7 @@
 
 from typing import List, Dict, Any, Optional
 from config import settings
+from utils.text_language import has_chinese_text
 from scoring_policy import qualification_threshold_for, ranking_score_for, uses_core_relevance_v2
 from utils.deep_analysis_contract import (
     FULL_TEXT_TLDR_FIELD,
@@ -247,16 +248,46 @@ class TldrSemanticScholarRenderer(BaseModuleRenderer):
 
         if not tldr:
             return []
+        tldr = str(tldr).strip()
 
+        score_resp = data.get('score_response')
+        translated = (
+            getattr(score_resp, 'semantic_scholar_tldr_cn', None)
+            if getattr(score_resp, 'semantic_scholar_tldr_source', None) == tldr
+            else None
+        )
+        if not translated and not has_chinese_text(tldr):
+            return [
+                "<details><summary>Semantic Scholar TL;DR（原文）</summary>",
+                "",
+                markdown_text(tldr),
+                "",
+                "</details>",
+                "",
+            ]
         label = self.get_label(config)
+        if translated:
+            label += "（译文）"
         lines = []
+        display_text = translated or tldr
 
         if self.get_format(config) == "inline":
-            lines.append(f"**{markdown_text(label, multiline=False)}**: {markdown_text(tldr)}")
+            lines.append(f"**{markdown_text(label, multiline=False)}**: {markdown_text(display_text)}")
             lines.append("")
         else:
-            content_lines = self.apply_format(tldr, config)
+            modified_config = dict(config, label=label)
+            content_lines = self.apply_format(display_text, modified_config)
             lines.extend(content_lines)
+
+        if translated:
+            lines.extend([
+                "<details><summary>Semantic Scholar 原文</summary>",
+                "",
+                markdown_text(tldr),
+                "",
+                "</details>",
+                "",
+            ])
 
         return lines
 

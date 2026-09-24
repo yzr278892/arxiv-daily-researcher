@@ -6267,6 +6267,36 @@ class DailyResearchStore:
             )
             self._sync_paper_entity_for_record(conn, source, paper_id)
 
+    def update_semantic_scholar_tldr_translation(
+        self,
+        run_id: str,
+        source: str,
+        paper_id: str,
+        original: str,
+        translated: str,
+    ) -> None:
+        """Persist an external TL;DR translation without changing the score."""
+        if not original.strip() or not translated.strip():
+            raise ValueError("Semantic Scholar TL;DR and translation must be non-empty")
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT score_json, score_status FROM daily_papers "
+                "WHERE source = ? AND paper_id = ?",
+                (source, paper_id),
+            ).fetchone()
+            if row is None or row["score_status"] != "succeeded" or not row["score_json"]:
+                raise RuntimeError("评分未完成，无法保存 Semantic Scholar TL;DR 译文")
+            payload = json.loads(row["score_json"])
+            if not isinstance(payload, dict):
+                raise ValueError("评分 JSON 必须是对象")
+            payload["semantic_scholar_tldr_source"] = original
+            payload["semantic_scholar_tldr_cn"] = translated
+            conn.execute(
+                "UPDATE daily_papers SET run_id = ?, score_json = ? "
+                "WHERE source = ? AND paper_id = ?",
+                (run_id, json.dumps(payload, ensure_ascii=False), source, paper_id),
+            )
+
     def update_translation(
         self,
         run_id: str,

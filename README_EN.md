@@ -46,7 +46,7 @@ Select papers by primary-keyword relevance, weighted keywords, or learned prefer
 
 ### 🔍 Abstract and PDF analysis
 
-Configure two LLM roles for scoring, translation, keywords, TL;DRs, and deeper analysis. Parse PDFs locally with PyMuPDF or through MinerU. Failed processing stages can be retried.
+Configure two LLM roles for scoring, abstract translation, keywords, scoring-generated Chinese TL;DRs, and deeper analysis. Reports translate English Semantic Scholar TL;DRs into Chinese; if translation is unavailable, the source text stays collapsed. Parse PDFs locally with PyMuPDF or through MinerU. Failed processing stages can be retried.
 
 </td>
 <td width="50%" valign="top">

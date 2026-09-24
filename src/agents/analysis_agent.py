@@ -29,6 +29,7 @@ from utils.llm_endpoint_capabilities import (
 from utils.llm_health import LLMHealthRecorder
 from utils.llm_usage import record_token_usage as record_llm_token_usage
 from utils.safe_download import download_external_bytes
+from utils.text_language import has_chinese_text
 from utils.deep_analysis_contract import (
     ANALYSIS_META_KEY,
     CONTENT_SOURCE_ABSTRACT_FALLBACK,
@@ -153,6 +154,11 @@ class WeightedScoreResponse(BaseModel):
     reasoning: str
     tldr: str
     extracted_keywords: List[str]
+    # Optional translation of a separately sourced Semantic Scholar TL;DR.
+    # Keep its original text as a cache key so a changed enrichment cannot
+    # accidentally reuse an older translation.
+    semantic_scholar_tldr_source: Optional[str] = None
+    semantic_scholar_tldr_cn: Optional[str] = None
     # Fields below were introduced by ``core_relevance_v2``.  Defaults make
     # Pydantic hydration of pre-V2 SQLite score_json fully backwards
     # compatible; callers use explicit legacy fallbacks when they are absent.
@@ -1017,7 +1023,7 @@ class AnalysisAgent:
    - 0分: 完全无关
    - {max_score / 2:g}分: 有一定关联
    - {max_score:g}分: 高度相关，核心内容
-3. 用一句话总结论文研究的问题和结果（TLDR）
+3. 用一句中文总结论文研究的问题和结果（TLDR）
 4. 从标题和摘要中提取5-8个核心关键词（英文）
 
 作者加分由系统根据原始作者列表做确定性精确校验；不要猜测专家作者，
@@ -1039,7 +1045,7 @@ class AnalysisAgent:
 - keyword_scores 必须且只能包含给定的所有关键词，键名必须逐字一致
 - 每个关键词的评分范围: 0-{max_score:g}
 - reasoning 应简明扼要地说明论文与关键词的相关性
-- tldr 应该是一句完整的话，包含研究问题和主要结果
+- tldr 必须是中文完整句子，包含研究问题和主要结果；专有名词可保留英文
 - extracted_keywords 应提取5-8个最能代表论文内容的关键词或短语
 """
         prompt = f"""论文信息:
@@ -1107,6 +1113,10 @@ class AnalysisAgent:
             if not isinstance(tldr, str) or not tldr.strip():
                 raise ScoreValidationError("tldr 必须是非空字符串")
             tldr = tldr.strip()
+            if not has_chinese_text(tldr):
+                # A valid score need not be repeated just because the model
+                # ignored the output language. Translate only this field.
+                tldr = self.translate_tldr(tldr)
 
             extracted_keywords = data.get("extracted_keywords", [])
             if not isinstance(extracted_keywords, list) or not all(
@@ -1331,6 +1341,25 @@ class AnalysisAgent:
     # 摘要翻译
     # ======================================================================
 
+    def translate_tldr(self, tldr: str) -> str:
+        """Translate an English TL;DR without changing its scientific claims."""
+        original = str(tldr or "").strip()
+        if not original:
+            raise ValueError("TL;DR 不能为空")
+        if has_chinese_text(original):
+            return original
+        translated = self._call_cheap_llm_plain(
+            f"待翻译的 TL;DR：\n{original}",
+            system_prompt=(
+                "请将学术论文 TL;DR 准确翻译为一句中文。保留必要的英文专有名词、"
+                "符号和数值；不要补充原文没有的结论。只输出译文。"
+            ),
+        )
+        translated = " ".join(str(translated or "").split())
+        if not has_chinese_text(translated):
+            raise ValueError("TL;DR 翻译未返回中文")
+        return translated
+
     def generate_tldr(self, title: str, abstract: str) -> str:
         """Generate only a missing one-sentence TL;DR for history repair.
 
@@ -1363,6 +1392,8 @@ class AnalysisAgent:
         # Keep a compact one-line report field while preserving meaningful
         # punctuation in Chinese and English scientific names.
         text = " ".join(text.split())
+        if not has_chinese_text(text):
+            text = self.translate_tldr(text)
         return text[:1200]
 
     def translate_abstract(self, abstract: str) -> str:

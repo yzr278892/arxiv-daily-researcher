@@ -46,7 +46,7 @@ ArXiv Daily Researcher 定期检索 arXiv 和已启用的其他来源，按研�
 
 ### 🔍 摘要与 PDF 分析
 
-使用两组可独立配置的 LLM 处理评分、译文、关键词、TL;DR 与深度分析。PDF 可由本地 PyMuPDF 或 MinerU 解析；处理失败的阶段可重试。
+使用两组可独立配置的 LLM 处理评分、摘要译文、关键词、评分生成的中文 TL;DR 与深度分析。Semantic Scholar 的英文 TL;DR 在报告中显示中文译文；译文不可用时，原文折叠显示。PDF 可由本地 PyMuPDF 或 MinerU 解析；处理失败的阶段可重试。
 
 </td>
 <td width="50%" valign="top">

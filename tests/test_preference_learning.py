@@ -202,7 +202,7 @@ def _score_payload():
         {
             "keyword_scores": {"quantum sensing": 8, "noise": 2.5},
             "reasoning": "The paper directly studies quantum sensing under noise.",
-            "tldr": "It improves a quantum sensing protocol under realistic noise.",
+            "tldr": "该论文改进了真实噪声条件下的量子传感方案。",
             "extracted_keywords": ["quantum sensing", "noise", "metrology"],
         }
     )

@@ -30,6 +30,7 @@ from config import settings
 from utils.logger import setup_logger
 from utils.token_counter import token_counter
 from agents import KeywordAgent, AnalysisAgent
+from utils.text_language import has_chinese_text
 from scoring_policy import LEARNED_PREFERENCE_V1, LEGACY_WEIGHTED_KEYWORD_V1
 from sources import (
     ArxivFetchError,
@@ -323,6 +324,7 @@ def _score_single_paper(
     translate=True,
     learned_terms=None,
     learning_store=None,
+    translate_external_tldr=True,
 ):
     """
     对单篇论文进行评分和翻译（供并发调用）。
@@ -340,6 +342,11 @@ def _score_single_paper(
             )
         except Exception as exc:
             raise paper_stage_error("score", exc) from exc
+
+    if translate_external_tldr:
+        _ensure_semantic_scholar_tldr_translation(
+            paper, score_response, analysis_agent, translation_cache, cache_lock
+        )
 
     if abstract_cn is None:
         abstract_cn = ""
@@ -379,6 +386,54 @@ def _score_single_paper(
     _record_v1_learning_signals(learning_store, source, paper, score_response)
 
     return scored
+
+
+def _ensure_semantic_scholar_tldr_translation(
+    paper,
+    score_response,
+    analysis_agent,
+    translation_cache,
+    cache_lock,
+    *,
+    store=None,
+    run_id=None,
+    source=None,
+):
+    """Translate external English text once while retaining its provenance."""
+    original = str(getattr(paper, "semantic_scholar_tldr", None) or "").strip()
+    if not original or has_chinese_text(original):
+        return
+    if (
+        score_response.semantic_scholar_tldr_source == original
+        and has_chinese_text(score_response.semantic_scholar_tldr_cn or "")
+    ):
+        return
+
+    cache_key = "semantic_tldr:" + hashlib.sha256(original.encode("utf-8")).hexdigest()
+    with cache_lock:
+        translated = translation_cache.get(cache_key)
+    if not translated:
+        try:
+            translated = analysis_agent.translate_tldr(original)
+        except Exception as exc:
+            logger.warning("Semantic Scholar TL;DR 译文暂不可用 [%s]: %s", paper.paper_id, exc)
+            return
+        translated = str(translated or "").strip()
+        if not has_chinese_text(translated):
+            logger.warning("Semantic Scholar TL;DR 未返回中文译文 [%s]", paper.paper_id)
+            return
+        with cache_lock:
+            translation_cache[cache_key] = translated
+    if store is not None:
+        try:
+            store.update_semantic_scholar_tldr_translation(
+                run_id, source, paper.paper_id, original, translated
+            )
+        except Exception as exc:
+            logger.warning("Semantic Scholar TL;DR 译文未能保存 [%s]: %s", paper.paper_id, exc)
+            return
+    score_response.semantic_scholar_tldr_source = original
+    score_response.semantic_scholar_tldr_cn = translated
 
 
 def _score_or_translate_stage_error(stage: str, exc: BaseException) -> PaperStageError:
@@ -519,6 +574,7 @@ def _score_or_hydrate_paper(
                 translate=False,
                 learned_terms=learned_terms,
                 learning_store=store,
+                translate_external_tldr=False,
             )
             store.update_score(
                 run_id,
@@ -532,6 +588,17 @@ def _score_or_hydrate_paper(
                 ),
             )
             score_is_new = True
+
+        _ensure_semantic_scholar_tldr_translation(
+            paper,
+            scored["score_response"],
+            analysis_agent,
+            translation_cache,
+            cache_lock,
+            store=store,
+            run_id=run_id,
+            source=source,
+        )
 
         _auto_favorite_qualified_paper(
             store, source, paper, scored["score_response"]
