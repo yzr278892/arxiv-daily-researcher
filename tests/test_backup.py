@@ -500,6 +500,26 @@ class BackupImportExportTests(unittest.TestCase):
             archived.close()
             self.assertEqual(archived_state, "v2")
 
+    def test_export_zip_to_file_matches_the_in_memory_variant(self):
+        import zipfile
+
+        from utils.backup import export_backup_zip, export_backup_zip_to_file
+
+        with TemporaryDirectory() as temp_dir:
+            data_dir = Path(temp_dir)
+            _seed_database(data_dir)
+
+            bundle, _memory_name = export_backup_zip(data_dir)
+            zip_path, file_name = export_backup_zip_to_file(data_dir)
+            try:
+                self.assertTrue(file_name.endswith(".zip"))
+                self.assertTrue(file_name.startswith("daily_research_export_"))
+                self.assertEqual(zip_path.read_bytes(), bundle)
+                with zipfile.ZipFile(zip_path) as archive:
+                    self.assertIn("daily_research.db", archive.namelist())
+            finally:
+                zip_path.unlink(missing_ok=True)
+
     def test_restore_accepts_a_staged_upload_path(self):
         from utils.backup import export_backup_zip, restore_backup_archive
 

@@ -497,29 +497,46 @@ _SQLITE_HEADER = b"SQLite format 3\x00"
 _DB_SUFFIXES = (".db", ".sqlite", ".sqlite3")
 
 
-def export_backup_zip(
+def export_backup_zip_to_file(
     data_dir: Path, *, database: Optional[Path] = None
-) -> tuple[bytes, str]:
-    """把当前数据库的一致性快照打包为 zip，返回 (压缩包字节, 文件名)。"""
-    import io
-    import zipfile
+) -> tuple[Path, str]:
+    """把当前数据库的一致性快照打包为临时 zip 文件，返回 (路径, 文件名)。
 
+    数据库可达数百 MB；内存版导出会把整个压缩包再持有一份字节拷贝。
+    面板改用流式响应发送该临时文件，结束后由调用方删除。
+    """
     selected_database = _backup_database_path(data_dir, database)
     if not selected_database.exists():
         raise FileNotFoundError("数据库不存在，无法导出")
 
+    zip_fd, zip_name = tempfile.mkstemp(suffix=".zip")
+    os.close(zip_fd)
+    zip_path = Path(zip_name)
     snapshot_fd, snapshot_name = tempfile.mkstemp(suffix=".sqlite")
     os.close(snapshot_fd)
     snapshot_path = Path(snapshot_name)
     try:
         _create_consistent_snapshot(selected_database, snapshot_path)
-        buffer = io.BytesIO()
-        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as archive:
             archive.write(snapshot_path, arcname="daily_research.db")
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        return buffer.getvalue(), f"daily_research_export_{stamp}.zip"
+        return zip_path, f"daily_research_export_{stamp}.zip"
+    except BaseException:
+        zip_path.unlink(missing_ok=True)
+        raise
     finally:
         snapshot_path.unlink(missing_ok=True)
+
+
+def export_backup_zip(
+    data_dir: Path, *, database: Optional[Path] = None
+) -> tuple[bytes, str]:
+    """把当前数据库的一致性快照打包为 zip，返回 (压缩包字节, 文件名)。"""
+    zip_path, filename = export_backup_zip_to_file(data_dir, database=database)
+    try:
+        return zip_path.read_bytes(), filename
+    finally:
+        zip_path.unlink(missing_ok=True)
 
 
 def _copy_restored_database(source, destination) -> int:

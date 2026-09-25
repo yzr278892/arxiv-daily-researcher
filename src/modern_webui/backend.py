@@ -30,6 +30,7 @@ from utils.backup import (
     LOCAL_BACKUP_SAME_DAY_MAX_COUNT,
     create_backup,
     export_backup_zip,
+    export_backup_zip_to_file,
     list_local_backups,
     restore_backup_archive,
 )
@@ -3057,6 +3058,17 @@ def export_database_backup() -> tuple[bytes, str]:
     settings = flat_config()
     try:
         return export_backup_zip(
+            configured_data_dir(settings), database=configured_db_path(settings)
+        )
+    except (OSError, ValueError) as exc:
+        raise ModernWebUIError(f"导出备份失败：{exc}") from exc
+
+
+def export_database_backup_file() -> tuple[Path, str]:
+    """Export through a temporary file so the panel streams instead of buffering."""
+    settings = flat_config()
+    try:
+        return export_backup_zip_to_file(
             configured_data_dir(settings), database=configured_db_path(settings)
         )
     except (OSError, ValueError) as exc:

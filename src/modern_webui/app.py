@@ -17,6 +17,7 @@ from typing import Any
 
 from starlette import status
 from starlette.applications import Starlette
+from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException
 from starlette.middleware.gzip import GZipMiddleware
@@ -738,10 +739,17 @@ async def backup_create(request: Request) -> JSONResponse:
 async def backup_export(request: Request) -> Response:
     _require_session(request)
     try:
-        content, filename = await _blocking_call(backend.export_database_backup)
+        path, filename = await _blocking_call(backend.export_database_backup_file)
     except Exception as exc:
         raise _safe_error(exc) from exc
-    return Response(content, media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+    # Stream the zip from its temporary file and unlink it after the response;
+    # buffering multi-hundred-MB databases in memory would peak at two copies.
+    return FileResponse(
+        path,
+        media_type="application/zip",
+        filename=filename,
+        background=BackgroundTask(path.unlink, missing_ok=True),
+    )
 
 
 async def backup_restore(request: Request) -> JSONResponse:
@@ -1069,8 +1077,11 @@ app = Starlette(
 # translation catalogue compress very well; without middleware every full
 # load transfers their uncompressed payloads. Starlette skips already
 # compressed/binary responses, so report downloads and backup exports retain
-# their existing behaviour.
-app.add_middleware(GZipMiddleware, minimum_size=500)
+# their existing behaviour. Level 4 halves the CPU cost of compressing the
+# few-hundred-KiB report previews versus the default 9 while keeping their
+# transfer size within a couple of percent; payloads above 128 KiB are
+# already compressed off the event loop by this middleware.
+app.add_middleware(GZipMiddleware, minimum_size=500, compresslevel=4)
 # The cookie signing key is fixed for this process's lifetime because a
 # middleware instance cannot re-read it per request.  Changing the owner
 # password therefore only rotates the signature after the panel restarts;
