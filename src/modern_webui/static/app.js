@@ -1511,9 +1511,21 @@ function field(options) {
   return `<label class="form-field"><span>${escapeHtml(label)}${hint}</span><input type="${type === "range" ? "range" : type}" ${data}${attrs} value="${escapeAttribute(value)}" placeholder="${escapeAttribute(placeholder)}" /></label>`;
 }
 
+function updateRangeFill(element) {
+  const min = element.min === "" ? 0 : Number(element.min);
+  const max = element.max === "" ? 100 : Number(element.max);
+  const value = Number(element.value);
+  const ratio = Number.isFinite(min) && Number.isFinite(max) && max > min && Number.isFinite(value)
+    ? (value - min) / (max - min)
+    : 0;
+  const percent = Math.min(100, Math.max(0, Math.round(ratio * 100)));
+  element.style.setProperty("--range-fill", `${percent}%`);
+}
+
 function bindFields(root = document) {
   $$("[data-field]", root).forEach((element) => {
     const eventName = element.type === "checkbox" || element.tagName === "SELECT" ? "change" : "input";
+    if (element.type === "range") updateRangeFill(element);
     element.addEventListener(eventName, () => {
       const scope = element.dataset.scope || "config";
       const key = element.dataset.field;
@@ -1537,6 +1549,7 @@ function bindFields(root = document) {
         // engines.  Updating the text node keeps the value visible in the
         // browser as the slider moves.
         if (output) output.textContent = element.value;
+        updateRangeFill(element);
       }
     });
   });
@@ -3286,8 +3299,8 @@ function thirdPartySection() {
   const semanticFields = `<p class="hint-text">用于可选 TL;DR 增强。匿名额度由所有用户共享；API Key 初始限额为每秒 1 次，应用会自动按此节奏请求。</p>${field({ label: "将 TL;DR 翻译为中文", key: "TRANSLATE_SEMANTIC_SCHOLAR_TLDR", scope: "env", type: "checkbox", fallback: true, help: "关闭后报告显示来源原文，不请求 LLM 翻译。" })}${field({ label: "Semantic Scholar API Key", key: "SEMANTIC_SCHOLAR_API_KEY", scope: "env", type: "secret" })}<div class="action-row"><button class="secondary-button" data-test-third="semantic_scholar">测试 Semantic Scholar 连接</button><a href="https://www.semanticscholar.org/product/api#api-key-form" target="_blank" rel="noreferrer">打开 Semantic Scholar API 申请页 ↗</a><span id="semantic_scholar-test-result" class="inline-result"></span></div>`;
   const content = [
     '<p class="hint-text">开启来源后才会调用对应服务；关闭时会隐藏其配置，已保存的密钥不会被清除。</p>',
-    `<div class="subsection"><h3>📚 OpenAlex</h3><label class="toggle-field"><span>启用 OpenAlex 来源<span class="field-help">关闭后不会请求 OpenAlex。开启后，还需在“数据源 → 额外数据源”中选择期刊来源。</span></span><input id="openalex-enabled" type="checkbox" ${openAlexEnabled ? "checked" : ""}/><i></i></label><div id="openalex-dependent" ${openAlexEnabled ? "" : "hidden"}>${openAlexFields}</div></div>`,
-    `<div class="subsection"><h3>🧠 Semantic Scholar</h3><label class="toggle-field"><span>启用 Semantic Scholar TL;DR 增强<span class="field-help">关闭后不会请求 Semantic Scholar，也不会把其 TL;DR 用于后续处理。</span></span><input id="semantic-enabled" type="checkbox" ${semanticEnabled ? "checked" : ""}/><i></i></label><div id="semantic-dependent" ${semanticEnabled ? "" : "hidden"}>${semanticFields}</div></div>`,
+    `<div class="subsection"><div class="card-heading-row"><h3>📚 OpenAlex</h3><label class="toggle-field"><span>启用 OpenAlex 来源</span><input id="openalex-enabled" type="checkbox" ${openAlexEnabled ? "checked" : ""}/><i></i></label></div><p class="hint-text">关闭后不会请求 OpenAlex。开启后，还需在“数据源 → 额外数据源”中选择期刊来源。</p><div id="openalex-dependent" ${openAlexEnabled ? "" : "hidden"}>${openAlexFields}</div></div>`,
+    `<div class="subsection"><div class="card-heading-row"><h3>🧠 Semantic Scholar</h3><label class="toggle-field"><span>启用 Semantic Scholar TL;DR 增强</span><input id="semantic-enabled" type="checkbox" ${semanticEnabled ? "checked" : ""}/><i></i></label></div><p class="hint-text">关闭后不会请求 Semantic Scholar，也不会把其 TL;DR 用于后续处理。</p><div id="semantic-dependent" ${semanticEnabled ? "" : "hidden"}>${semanticFields}</div></div>`,
   ].join("");
   return `${divider()}${section("第三方 API 密钥", content, { icon: "🔑" })}`;
 }
@@ -3361,7 +3374,7 @@ function renderNotifications() {
     return `<details class="channel-card" ${configValue(key, false) ? "open" : ""}><summary>${escapeHtml(localizedLabel)}</summary>${field({ label: enabledLabel, key, type: "checkbox", fallback: false })}${fields}${testAction(channelId)}</details>`;
   };
   const emailFields = `<div class="form-grid three">${field({ label: "SMTP 主机", key: "SMTP_HOST", scope: "env" })}${field({ label: "端口", key: "SMTP_PORT", scope: "env", type: "number", min: 1, max: 65535, fallback: 587 })}${field({ label: "使用 TLS", key: "SMTP_USE_TLS", scope: "env", type: "checkbox", fallback: true })}${field({ label: "用户名", key: "SMTP_USER", scope: "env" })}${field({ label: "密码", key: "SMTP_PASSWORD", scope: "env", type: "secret" })}${field({ label: "发件人", key: "SMTP_FROM", scope: "env" })}${field({ label: "收件人（逗号分隔）", key: "SMTP_TO", scope: "env" })}</div>`;
-  const mainBody = `${field({ label: "启用通知", key: "notifications_enabled", type: "checkbox", fallback: false })}<div class="form-grid three">${field({ label: "任务成功通知", key: "notify_on_success", type: "checkbox", fallback: true })}${field({ label: "任务失败通知", key: "notify_on_failure", type: "checkbox", fallback: true })}${field({ label: "通知中展示论文数量", key: "notification_top_n", type: "number", min: 1, max: 50, fallback: 5 })}</div>${field({ label: "附加报告文件", key: "notify_attach_reports", type: "checkbox", fallback: false })}`;
+  const mainBody = `<div class="form-grid two">${field({ label: "启用通知", key: "notifications_enabled", type: "checkbox", fallback: false })}${field({ label: "通知中展示论文数量", key: "notification_top_n", type: "number", min: 1, max: 50, fallback: 5 })}</div><div class="form-grid three">${field({ label: "任务成功通知", key: "notify_on_success", type: "checkbox", fallback: true })}${field({ label: "任务失败通知", key: "notify_on_failure", type: "checkbox", fallback: true })}${field({ label: "附加报告文件", key: "notify_attach_reports", type: "checkbox", fallback: false })}</div>`;
   const channels = section("通知渠道", `${channel("notify_email_enabled", "邮件", "email", emailFields)}${channel("notify_wechat_enabled", "企业微信", "wechat_work", field({ label: "Webhook URL", key: "WECHAT_WEBHOOK_URL", scope: "env", type: "secret" }))}${channel("notify_dingtalk_enabled", "钉钉", "dingtalk", `${field({ label: "Webhook URL", key: "DINGTALK_WEBHOOK_URL", scope: "env", type: "secret" })}${field({ label: "签名密钥（可选）", key: "DINGTALK_SECRET", scope: "env", type: "secret" })}`)}${channel("notify_telegram_enabled", "Telegram", "telegram", `<div class="form-grid two">${field({ label: "Bot Token", key: "TELEGRAM_BOT_TOKEN", scope: "env", type: "secret" })}${field({ label: "Chat ID", key: "TELEGRAM_CHAT_ID", scope: "env" })}</div>`)}${channel("notify_slack_enabled", "Slack", "slack", field({ label: "Webhook URL", key: "SLACK_WEBHOOK_URL", scope: "env", type: "secret" }))}${channel("notify_generic_webhook_enabled", "通用 Webhook", "generic", field({ label: "Webhook URL", key: "GENERIC_WEBHOOK_URL", scope: "env", type: "secret" }))}`, { icon: "📣" });
   return `${section("通知设置", mainBody, { icon: "🔔" })}${divider()}${channels}`;
 }
@@ -4721,6 +4734,13 @@ function normalizeForSave() {
 
 async function saveAll(showMessage = true) {
   if (!state.settings) return null;
+  const saveButton = $("#save-button");
+  const setSaveBusy = (busy) => {
+    if (!saveButton) return;
+    saveButton.disabled = busy;
+    saveButton.classList.toggle("is-busy", busy);
+  };
+  setSaveBusy(true);
   try {
     const submittedEnv = { ...state.draft.env };
     const result = await api("/api/settings", { method: "PUT", body: { config: normalizeForSave(), env: state.draft.env, clear_env: Array.from(state.draft.clearEnv) } });
@@ -4749,6 +4769,8 @@ async function saveAll(showMessage = true) {
   } catch (error) {
     if (showMessage) toast(error.message, "error");
     throw error;
+  } finally {
+    setSaveBusy(false);
   }
 }
 
