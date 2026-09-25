@@ -19,8 +19,13 @@ data/
 logs/
 
 # Environment files with secrets
-.env
-.env.local
+.env*
+!.env.example
+
+# Runtime and legacy configuration must only come from mounted volumes.
+runtime/
+configs/config.json*
+*.bak
 
 # OS
 .DS_Store
