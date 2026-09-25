@@ -260,6 +260,7 @@ const MODERN_EN_TRANSLATIONS = Object.freeze({
   "不关注关键词": "Downweighted Keywords",
   "扣分权重（0–1）": "Penalty weight (0–1)",
   "添加不关注关键词": "Add downweighted keyword",
+  "相关度越高，扣分越多；不计入及格线。": "Higher relevance produces a larger penalty. These terms do not raise the passing threshold.",
   "仅在“加权关键词＋扣分”策略下使用；相关度越高，扣分越多。不关注关键词不计入及格线。": "Used only by the Weighted Keywords + Penalties strategy. Higher relevance produces a larger penalty. These terms do not raise the passing threshold.",
   "加权关键词＋扣分 V1": "Weighted Keywords + Penalties V1",
   "按加权关键词 V1 计算主关键词、参考关键词与作者加分，再按相关度和独立权重扣除不关注关键词。及格线仅由加分关键词权重决定。": "Adds primary and reference keyword scores plus author bonuses as in Weighted Keywords V1, then subtracts each downweighted term's relevance times its weight. Only positive keyword weights determine the passing threshold.",
