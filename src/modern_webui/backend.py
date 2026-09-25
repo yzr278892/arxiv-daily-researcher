@@ -301,6 +301,23 @@ _TASK_RECORDS_CACHE: tuple[tuple[Any, ...], list[dict[str, Any]]] | None = None
 # that was just started or stopped (those write paths clear it eagerly).
 _RUN_STATUS_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 _RUN_STATUS_CACHE_TTL_SECONDS = 1.5
+# The history page prefetches its own queue/lock snapshot and therefore
+# bypasses ``run_status``'s debounce cache, only to repeat roughly nine SQL
+# queries plus a log-tree scan on every five-second poll.  Debounce the whole
+# payload with the same short window and eager invalidation as ``run_status``.
+_HISTORY_STATUS_CACHE: tuple[float, dict[str, Any]] | None = None
+_HISTORY_STATUS_CACHE_TTL_SECONDS = 1.5
+# Newest-run-log lookup, keyed by the requested name prefixes.  A busy status
+# card re-runs the recursive log scan on every poll; a short window collapses
+# that burst, and a newly started task invalidates it through the trigger
+# write path anyway.
+_NEWEST_LOG_CACHE: dict[tuple[str, ...], tuple[float, Path | None]] = {}
+_NEWEST_LOG_CACHE_TTL_SECONDS = 1.5
+# Distinct paper sources shown by the search filter.  The list only changes
+# when a run writes papers, so a half-minute window is invisible in practice.
+_SOURCE_LIST_CACHE: tuple[float, list[str]] | None = None
+_SOURCE_LIST_CACHE_TTL_SECONDS = 30.0
+_CONTAINER_WEBUI_CACHE: bool | None = None
 _VERSION_STATUS_LOCK = RLock()
 _VERSION_STATUS_CACHE: tuple[tuple[str, bool, str], float, dict[str, Any]] | None = None
 _VERSION_SUCCESS_TTL_SECONDS = 6 * 60 * 60
@@ -356,11 +373,27 @@ def _runtime_config_signature() -> tuple[Path, int | None, int | None, int | Non
     return path, stat.st_ino, stat.st_size, stat.st_mtime_ns
 
 
-def _invalidate_run_status_cache() -> None:
-    """Drop the short-lived ``run_status`` result so a write shows up at once."""
+def _clear_runtime_caches() -> None:
+    """Reset every short-lived in-process cache.
 
+    Task write paths call this so a started, stopped, or cleared request is
+    visible on the next poll.  Each entry here only survives for a short TTL,
+    so clearing them together keeps every status surface consistent without
+    waiting for expiry.  Tests also use it to observe their own mocks.
+    """
+
+    global _HISTORY_STATUS_CACHE, _SOURCE_LIST_CACHE
     with _RUNTIME_CACHE_LOCK:
         _RUN_STATUS_CACHE.clear()
+        _HISTORY_STATUS_CACHE = None
+        _NEWEST_LOG_CACHE.clear()
+        _SOURCE_LIST_CACHE = None
+
+
+def _invalidate_run_status_cache() -> None:
+    """Drop the short-lived status results so a write shows up at once."""
+
+    _clear_runtime_caches()
 
 
 def _invalidate_runtime_caches(*, clear_config: bool = True, clear_store: bool = True) -> None:
@@ -679,9 +712,14 @@ def _is_container_webui() -> bool:
 
     The compatibility panel uses the same distinction: a source checkout can
     remove an abandoned local trigger, while a container must leave that
-    request on the shared volume for the worker/watcher to inspect.
+    request on the shared volume for the worker/watcher to inspect.  The
+    answer is fixed for the process lifetime, so resolve it once instead of
+    stat-ing the project root on every status poll.
     """
-    return not (PROJECT_ROOT / "main.py").is_file()
+    global _CONTAINER_WEBUI_CACHE
+    if _CONTAINER_WEBUI_CACHE is None:
+        _CONTAINER_WEBUI_CACHE = not (PROJECT_ROOT / "main.py").is_file()
+    return _CONTAINER_WEBUI_CACHE
 
 
 def trigger_queue_state(
@@ -818,15 +856,23 @@ def _newest_log_with_prefixes(prefixes: tuple[str, ...]) -> Path | None:
     """Return the newest matching local run log without exposing a path."""
     if not LOGS_DIR.is_dir():
         return None
+    now = time.monotonic()
+    with _RUNTIME_CACHE_LOCK:
+        cached = _NEWEST_LOG_CACHE.get(prefixes)
+    if cached is not None and now - cached[0] < _NEWEST_LOG_CACHE_TTL_SECONDS:
+        return cached[1]
     try:
         matches = [
             path
             for path in LOGS_DIR.rglob("*.log")
             if path.is_file() and path.name.lower().startswith(prefixes)
         ]
-        return max(matches, key=lambda path: path.stat().st_mtime) if matches else None
+        selected = max(matches, key=lambda path: path.stat().st_mtime) if matches else None
     except OSError:
-        return None
+        selected = None
+    with _RUNTIME_CACHE_LOCK:
+        _NEWEST_LOG_CACHE[prefixes] = (time.monotonic(), selected)
+    return selected
 
 
 def _read_log_tail_lines(
@@ -1349,6 +1395,12 @@ def history_status() -> dict[str, Any]:
     matching SQLite heartbeat supplies meaningful phase progress for the one
     task currently being processed.
     """
+    global _HISTORY_STATUS_CACHE
+    now = time.monotonic()
+    with _RUNTIME_CACHE_LOCK:
+        cached = _HISTORY_STATUS_CACHE
+    if cached is not None and now - cached[0] < _HISTORY_STATUS_CACHE_TTL_SECONDS:
+        return deepcopy(cached[1])
     flat = flat_config()
     schedule = _history_maintenance_schedule(flat)
     store = open_store(flat)
@@ -1379,7 +1431,7 @@ def history_status() -> dict[str, Any]:
         if row["state"] != "succeeded"
         and str(row.get("request_id") or "") not in retried_request_ids
     ]
-    return {
+    payload = {
         "status": run_status(
             "history", records=all_records, locks=active_locks(flat), flat=flat
         ),
@@ -1391,6 +1443,9 @@ def history_status() -> dict[str, Any]:
         "last_import": summary,
         "tasks": records,
     }
+    with _RUNTIME_CACHE_LOCK:
+        _HISTORY_STATUS_CACHE = (time.monotonic(), payload)
+    return deepcopy(payload)
 
 
 def _history_maintenance_schedule(flat: Mapping[str, Any]) -> tuple[str, str, str]:
@@ -1477,14 +1532,23 @@ def retry_history_task(request_id: str) -> dict[str, Any]:
 
 
 def _source_list(store: DailyResearchStore) -> list[str]:
+    global _SOURCE_LIST_CACHE
+    now = time.monotonic()
+    with _RUNTIME_CACHE_LOCK:
+        cached = _SOURCE_LIST_CACHE
+    if cached is not None and now - cached[0] < _SOURCE_LIST_CACHE_TTL_SECONDS:
+        return list(cached[1])
     try:
         with store._connect() as conn:
             rows = conn.execute(
                 "SELECT DISTINCT source FROM daily_papers WHERE source != '' ORDER BY source"
             ).fetchall()
-        return [str(row["source"]) for row in rows if row["source"]]
+        sources = [str(row["source"]) for row in rows if row["source"]]
     except Exception:
         return []
+    with _RUNTIME_CACHE_LOCK:
+        _SOURCE_LIST_CACHE = (time.monotonic(), list(sources))
+    return sources
 
 
 def paper_search(filters: Mapping[str, Any]) -> dict[str, Any]:
@@ -2534,7 +2598,10 @@ def _reports_directory_snapshot(root: Path) -> tuple[tuple[str, int, int], ...]:
     ``os.walk`` so a rebuilt listing is only needed when a file is added,
     removed, renamed, or rewritten.  Rewriting a report in place does not move
     its parent directory's mtime, so this must keep stat-ing the files
-    themselves rather than relying on directory timestamps.
+    themselves rather than relying on directory timestamps.  The report page
+    is operator-loaded rather than timer-polled, and its freshness contract
+    (a just-written report appears on the next load) takes precedence over
+    shaving this walk; the listing itself stays cached against the signature.
     """
 
     signature: list[tuple[str, int, int]] = []

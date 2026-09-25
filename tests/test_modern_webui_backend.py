@@ -19,9 +19,9 @@ from utils.webui_trigger import enqueue_trigger, trigger_status_directory
 
 class ModernBackendTests(unittest.TestCase):
     def setUp(self) -> None:
-        # ``run_status`` keeps a very short in-process result cache; clear it so
-        # every case observes the mocks it installed instead of a prior poll.
-        backend._RUN_STATUS_CACHE.clear()
+        # Status polls keep very short in-process caches; clear them so every
+        # case observes the mocks it installed instead of a prior poll.
+        backend._clear_runtime_caches()
         backend._VERSION_STATUS_CACHE = None
         super().setUp()
 
@@ -1448,6 +1448,36 @@ class ModernBackendTests(unittest.TestCase):
         self.assertEqual(first["task"]["state"], "idle")
         self.assertEqual(second["task"]["state"], "idle")
         self.assertFalse(first["is_active"])
+
+    def test_history_status_reuses_its_payload_within_the_short_ttl(self) -> None:
+        """A history poll burst must not repeat its queue and lock snapshot."""
+        with patch.object(backend, "flat_config", return_value={}), patch.object(
+            backend, "open_store", return_value=None
+        ), patch.object(backend, "task_records", return_value=[]) as records, patch.object(
+            backend, "active_locks", return_value=[]
+        ), patch.object(backend, "run_status", return_value={"is_active": False}):
+            backend.history_status()
+            backend.history_status()
+            self.assertEqual(records.call_count, 1)
+            # A task write drops the payload so the next poll is fresh.
+            backend._invalidate_run_status_cache()
+            backend.history_status()
+            self.assertEqual(records.call_count, 2)
+
+    def test_source_list_is_reused_within_its_ttl(self) -> None:
+        """The search filter's distinct-source scan hits the database once."""
+        store = MagicMock()
+        connection = store._connect.return_value.__enter__.return_value
+        connection.execute.return_value.fetchall.return_value = [{"source": "arxiv"}]
+        first = backend._source_list(store)
+        second = backend._source_list(store)
+        self.assertEqual(first, ["arxiv"])
+        self.assertEqual(second, ["arxiv"])
+        self.assertEqual(connection.execute.call_count, 1)
+        backend._clear_runtime_caches()
+        third = backend._source_list(store)
+        self.assertEqual(third, ["arxiv"])
+        self.assertEqual(connection.execute.call_count, 2)
 
     def test_enqueuing_a_task_invalidates_the_status_cache(self) -> None:
         with patch.object(backend, "flat_config", return_value={}), patch.object(

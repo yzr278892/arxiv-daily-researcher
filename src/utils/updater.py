@@ -27,14 +27,25 @@ def _log(logger, message: str, level: str = "info") -> None:
         print(message)
 
 
+_LOCAL_VERSION_CACHE: tuple[tuple[int, int], str] | None = None
+
+
 def _get_local_version() -> str:
     """读取本地 VERSION 文件，不存在返回 'unknown'。"""
+    global _LOCAL_VERSION_CACHE
     try:
-        if VERSION_FILE.exists():
-            return VERSION_FILE.read_text(encoding="utf-8").strip()
+        stat = VERSION_FILE.stat()
+    except OSError:
+        return "unknown"
+    signature = (stat.st_mtime_ns, stat.st_size)
+    if _LOCAL_VERSION_CACHE is not None and _LOCAL_VERSION_CACHE[0] == signature:
+        return _LOCAL_VERSION_CACHE[1]
+    try:
+        version = VERSION_FILE.read_text(encoding="utf-8").strip()
     except Exception:
-        pass
-    return "unknown"
+        return "unknown"
+    _LOCAL_VERSION_CACHE = (signature, version)
+    return version
 
 
 def _parse_version(version: str):
