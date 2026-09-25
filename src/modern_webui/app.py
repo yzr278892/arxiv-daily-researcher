@@ -184,7 +184,7 @@ async def _blocking_call(function: Any, /, *args: Any, **kwargs: Any) -> Any:
 
 
 _AUTH_CACHE_LOCK = threading.Lock()
-_AUTH_CACHE_SIGNATURE: tuple[int, int, int] | None = None
+_AUTH_CACHE_ENV: dict[str, str] | None = None
 _AUTH_CACHE_CONFIG: Any | None = None
 
 
@@ -193,29 +193,22 @@ def _auth_config():
 
     Every authenticated endpoint decodes the base64 registry and rebuilds its
     account objects on each request, including five-second status polls.  The
-    parsed result only depends on ``.env``, whose signature already keys the
-    environment cache; a replaced ``read_env`` (tests or embedding layers)
+    Key the parsed result to the exact environment snapshot. Re-statting the
+    file after reading could associate old accounts with a newly saved file
+    and keep a changed password or removed account active indefinitely.
+    A replaced ``read_env`` (tests or embedding layers)
     bypasses this cache so a patched value is honoured immediately.
     """
-    global _AUTH_CACHE_SIGNATURE, _AUTH_CACHE_CONFIG
+    global _AUTH_CACHE_ENV, _AUTH_CACHE_CONFIG
     if read_env is not _ORIGINAL_READ_ENV:
         return read_auth_config(read_env())
     values = _cached_env()
-    try:
-        stat = DEFAULT_ENV_PATH.stat()
-        signature: tuple[int, int, int] | None = (
-            stat.st_mtime_ns,
-            stat.st_size,
-            stat.st_ino,
-        )
-    except OSError:
-        signature = None
     with _AUTH_CACHE_LOCK:
-        if _AUTH_CACHE_CONFIG is not None and _AUTH_CACHE_SIGNATURE == signature:
+        if _AUTH_CACHE_CONFIG is not None and _AUTH_CACHE_ENV is values:
             return _AUTH_CACHE_CONFIG
     config = read_auth_config(values)
     with _AUTH_CACHE_LOCK:
-        _AUTH_CACHE_SIGNATURE = signature
+        _AUTH_CACHE_ENV = values
         _AUTH_CACHE_CONFIG = config
     return config
 

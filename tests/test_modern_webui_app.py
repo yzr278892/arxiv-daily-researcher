@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from functools import partial
 from pathlib import Path
 from unittest.mock import patch
 
@@ -18,6 +19,46 @@ from starlette.testclient import TestClient
 from modern_webui import app as modern_app
 from modern_webui import auth as modern_auth
 from utils.daily_research_store import DailyResearchStore
+from utils.config_io import read_env
+
+
+class AuthenticationCacheTests(unittest.TestCase):
+    def test_account_change_during_cache_read_is_visible_on_the_next_request(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            env_path = Path(directory) / ".env"
+            old_hash = modern_auth.hash_password("before-change")
+            new_hash = modern_auth.hash_password("after-change")
+            old_values = (
+                "WEBUI_AUTH_ENABLED=true\nWEBUI_ADMIN_USERNAME=owner\n"
+                f"WEBUI_ADMIN_PASSWORD_HASH={old_hash}\n"
+            )
+            new_values = old_values.replace(old_hash, new_hash)
+            env_path.write_text(old_values, encoding="utf-8")
+            reader = partial(read_env, env_path)
+            original_cached_env = modern_app._cached_env
+
+            def change_password_after_read():
+                values = original_cached_env()
+                # An atomic replacement gives the next revision a distinct
+                # inode even on filesystems with coarse modification times.
+                updated = env_path.with_suffix(".next")
+                updated.write_text(new_values, encoding="utf-8")
+                updated.replace(env_path)
+                return values
+
+            with (
+                patch.object(modern_app, "DEFAULT_ENV_PATH", env_path),
+                patch.object(modern_app, "read_env", reader),
+                patch.object(modern_app, "_ORIGINAL_READ_ENV", reader),
+                patch.object(modern_app, "_ENV_CACHE_VALUES", None),
+                patch.object(modern_app, "_AUTH_CACHE_ENV", None),
+                patch.object(modern_app, "_AUTH_CACHE_CONFIG", None),
+            ):
+                with patch.object(modern_app, "_cached_env", side_effect=change_password_after_read):
+                    self.assertEqual(modern_app._auth_config().password_hash, old_hash)
+                current = modern_app._auth_config()
+                self.assertEqual(current.password_hash, new_hash)
+                self.assertIs(modern_app._auth_config(), current)
 
 
 class ModernWebUIAppTests(unittest.TestCase):
