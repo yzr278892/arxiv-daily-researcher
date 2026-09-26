@@ -242,6 +242,23 @@ class LegacyRangeScanTests(unittest.TestCase):
             [BACKLOG_WRITE_BATCH_SIZE, BACKLOG_WRITE_BATCH_SIZE, 1],
         )
 
+    def test_repeated_identity_across_lookup_batches_is_only_queued_once(self):
+        self._record_delivered("2603.00001v1", datetime(2026, 3, 3, tzinfo=timezone.utc))
+        repeated = _paper("2603.00999v1")
+        fetched = [repeated] + [
+            _paper(f"2603.{10000 + index:05d}v1")
+            for index in range(BACKLOG_WRITE_BATCH_SIZE - 1)
+        ] + [repeated]
+
+        summary = scan_legacy_range(
+            self.store,
+            fetch_between=lambda _start, _end: fetched,
+        )
+
+        self.assertEqual(summary["missed_found"], BACKLOG_WRITE_BATCH_SIZE)
+        self.assertEqual(summary["backlog_queued"], BACKLOG_WRITE_BATCH_SIZE)
+        self.assertEqual(self.store.supplement_backlog_summary()["pending"], BACKLOG_WRITE_BATCH_SIZE)
+
     def test_failed_chunk_is_recorded_while_later_chunks_continue(self):
         self._record_delivered("2601.00001v1", datetime(2026, 1, 1, tzinfo=timezone.utc))
         self._record_delivered("2602.00001v1", datetime(2026, 2, 15, tzinfo=timezone.utc))

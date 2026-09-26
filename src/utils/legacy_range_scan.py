@@ -22,6 +22,29 @@ SCAN_CHUNK_DAYS = 31
 BACKLOG_WRITE_BATCH_SIZE = 250
 
 
+def _known_source_identities_for_batch(
+    store: Any, source: str, identities: List[Tuple[str, int]]
+) -> Set[Tuple[str, int]]:
+    """Use indexed ledger lookups without loading the entire archive into RAM."""
+    if not identities:
+        return set()
+    unique = list(dict.fromkeys(identities))
+    placeholders = ", ".join("(?, ?)" for _ in unique)
+    values: list[Any] = [source]
+    for canonical_id, version in unique:
+        values.extend((canonical_id, version))
+    known: Set[Tuple[str, int]] = set()
+    with store._connect() as conn:
+        for table in ("daily_papers", "paper_deliveries", "supplement_backlog"):
+            rows = conn.execute(
+                f"SELECT canonical_id, version FROM {table} "
+                f"WHERE source = ? AND (canonical_id, version) IN ({placeholders})",
+                values,
+            )
+            known.update((row["canonical_id"], int(row["version"] or 0)) for row in rows)
+    return known
+
+
 def _known_source_identities(store: Any, source: str) -> Set[Tuple[str, int]]:
     """SQLite 中已知的某一来源身份（论文行、交付账本、补充积压）。"""
     known: Set[Tuple[str, int]] = set()
@@ -113,15 +136,13 @@ def scan_source_range(
     summary["range_start"] = start.isoformat()
     summary["range_end"] = end.isoformat()
 
-    known = _known_source_identities(store, normalized_source)
     chunks = _month_chunks(start, end)
     log.info(
-        "[LegacyScan][%s] 扫描 %s 至 %s（共 %s 个分块，SQLite 已知身份 %s 个）",
+        "[LegacyScan][%s] 扫描 %s 至 %s（共 %s 个分块，按批核对 SQLite 已知身份）",
         normalized_source,
         start,
         end,
         len(chunks),
-        len(known),
     )
     emit(
         f"扫描 {start} 至 {end}（共 {len(chunks)} 个分块）",
@@ -130,6 +151,7 @@ def scan_source_range(
     )
 
     pending_backlog: List[Dict[str, Any]] = []
+    pending_identities: Set[Tuple[str, int]] = set()
 
     def flush_backlog() -> None:
         """Persist discoveries incrementally so a large scan stays bounded."""
@@ -139,6 +161,7 @@ def scan_source_range(
         pending_backlog.clear()
         try:
             summary["backlog_queued"] += store.record_supplement_backlog(entries)
+            pending_identities.clear()
         except Exception as exc:
             # Some earlier batches may already be durable. Stop rather than
             # silently continuing with an incomplete set of omissions.
@@ -178,32 +201,43 @@ def scan_source_range(
         summary["chunks_scanned"] += 1
         summary["papers_scanned"] += len(papers)
         chunk_missed = 0
-        for paper in papers:
-            paper_source = str(getattr(paper, "source", "") or "").strip().lower()
-            if paper_source != normalized_source:
-                raise ValueError(
-                    f"来源历史扫描返回错误来源：请求 {normalized_source}，得到 {paper_source or '空'}"
+        for offset in range(0, len(papers), BACKLOG_WRITE_BATCH_SIZE):
+            batch = papers[offset:offset + BACKLOG_WRITE_BATCH_SIZE]
+            batch_identities: List[Tuple[str, int]] = []
+            for paper in batch:
+                paper_source = str(getattr(paper, "source", "") or "").strip().lower()
+                if paper_source != normalized_source:
+                    raise ValueError(
+                        f"来源历史扫描返回错误来源：请求 {normalized_source}，得到 {paper_source or '空'}"
+                    )
+                batch_identities.append(
+                    ((getattr(paper, "canonical_id", None) or paper.paper_id).strip(),
+                     int(getattr(paper, "version", None) or 0))
                 )
-            canonical = (getattr(paper, "canonical_id", None) or paper.paper_id).strip()
-            version = int(getattr(paper, "version", None) or 0)
-            if (canonical, version) in known:
-                continue
-            known.add((canonical, version))
-            chunk_missed += 1
-            summary["missed_found"] += 1
-            pending_backlog.append(
-                {
-                    "source": normalized_source,
-                    "canonical_id": canonical,
-                    "version": version,
-                    "paper_id": paper.paper_id,
-                    "reason": "missed_scan",
-                    "detail": f"时间段扫描发现（{chunk_start}~{chunk_end} 提交）",
-                    "paper_json": paper.to_dict(),
-                }
+            known = _known_source_identities_for_batch(
+                store, normalized_source, batch_identities
             )
-            if len(pending_backlog) >= BACKLOG_WRITE_BATCH_SIZE:
-                flush_backlog()
+            batch_seen: Set[Tuple[str, int]] = set()
+            for paper, identity in zip(batch, batch_identities):
+                if identity in known or identity in pending_identities or identity in batch_seen:
+                    continue
+                batch_seen.add(identity)
+                pending_identities.add(identity)
+                chunk_missed += 1
+                summary["missed_found"] += 1
+                pending_backlog.append(
+                    {
+                        "source": normalized_source,
+                        "canonical_id": identity[0],
+                        "version": identity[1],
+                        "paper_id": paper.paper_id,
+                        "reason": "missed_scan",
+                        "detail": f"时间段扫描发现（{chunk_start}~{chunk_end} 提交）",
+                        "paper_json": paper.to_dict(),
+                    }
+                )
+                if len(pending_backlog) >= BACKLOG_WRITE_BATCH_SIZE:
+                    flush_backlog()
         log.info(
             "[LegacyScan][%s] 分块 %s/%s（%s~%s）: %s 篇，本块遗漏 %s 篇",
             normalized_source,

@@ -260,6 +260,12 @@ class SearchPapersTests(unittest.TestCase):
             {"arXiv TLDR", "Journal TLDR"},
         )
         self.assertEqual(self.store.search_papers(source="prl")["total"], 1)
+        prl_item = self.store.search_papers(source="prl")["items"][0]
+        self.assertEqual(prl_item["source"], "prl")
+        self.assertEqual(prl_item["total_score"], 12.0)
+        high_score_item = self.store.search_papers(min_score=11.5)["items"][0]
+        self.assertEqual(high_score_item["source"], "prl")
+        self.assertEqual(high_score_item["total_score"], 12.0)
         entity = self.store.get_paper_entity("prl", records[1]["paper_id"])
         self.assertIsNotNone(entity)
         self.assertEqual(entity["entity_id"], item["entity_id"])

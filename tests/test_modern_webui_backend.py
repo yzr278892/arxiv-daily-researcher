@@ -25,6 +25,19 @@ class ModernBackendTests(unittest.TestCase):
         backend._VERSION_STATUS_CACHE = None
         super().setUp()
 
+    def test_paper_search_keeps_zero_and_negative_score_filters(self) -> None:
+        store = MagicMock()
+        store.search_papers.return_value = {"total": 0, "items": []}
+        with patch.object(backend, "open_store", return_value=store), patch.object(
+            backend, "_source_list", return_value=[]
+        ):
+            backend.paper_search({"min_score": "0"})
+            self.assertEqual(store.search_papers.call_args.kwargs["min_score"], 0.0)
+            backend.paper_search({"min_score": "-2"})
+            self.assertEqual(store.search_papers.call_args.kwargs["min_score"], -2.0)
+            with self.assertRaises(backend.ModernWebUIError):
+                backend.paper_search({"min_score": "nan"})
+
     def test_version_status_caches_new_release_and_respects_proxy_scope(self) -> None:
         release_url = "https://github.com/yzr278892/arxiv-daily-researcher/releases/tag/v4.7"
         config = {

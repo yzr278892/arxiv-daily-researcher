@@ -14,6 +14,7 @@ from html import unescape
 import inspect
 import json
 import logging
+import math
 import mimetypes
 import os
 import re
@@ -1562,7 +1563,9 @@ def paper_search(filters: Mapping[str, Any]) -> dict[str, Any]:
     completed_to = str(filters.get("completed_to") or "").strip() or None
     try:
         min_score_raw = filters.get("min_score")
-        min_score = float(min_score_raw) if min_score_raw not in (None, "", 0, "0") else None
+        min_score = float(min_score_raw) if min_score_raw not in (None, "") else None
+        if min_score is not None and not math.isfinite(min_score):
+            raise ValueError
     except (TypeError, ValueError):
         raise ModernWebUIError("最低分数必须是数字。")
     try:

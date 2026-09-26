@@ -313,7 +313,9 @@ class ModernWebUIAppTests(unittest.TestCase):
         self.assertIn("REPORT_HTML_CACHE.set(reportId, { html, fetchedAt: now });", loader)
         # A page change or an explicit refresh must not serve a cached body.
         self.assertIn("function clearReportHtmlCache()", script)
-        self.assertIn("clearReportHtmlCache();\n  releasePrettySelectObservers", script)
+        render_page = script[script.index("async function renderPage"):script.index("function showApp", script.index("async function renderPage"))]
+        self.assertIn("clearReportHtmlCache();", render_page)
+        self.assertIn('releasePrettySelectObservers($("#page-root"));', render_page)
         self.assertIn("clearReportHtmlCache();\n    runLocalRefresh(refreshReportsDirectory(root, token));", script)
 
     def test_live_log_keeps_its_collapsed_state_across_refreshes(self) -> None:

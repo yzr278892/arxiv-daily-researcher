@@ -1,6 +1,7 @@
 """Authoritative SQLite history and resumable state for daily research."""
 
 import json
+import math
 import re
 import sqlite3
 import threading
@@ -2659,6 +2660,8 @@ class DailyResearchStore:
         normalized_source = str(source or "").strip().lower()
         if not normalized_source:
             raise ValueError("source must be non-empty")
+        first_day: Optional[date] = None
+        last_day: Optional[date] = None
         with self._connect() as conn:
             rows = conn.execute(
                 """
@@ -2674,14 +2677,16 @@ class DailyResearchStore:
                   AND NULLIF(TRIM(papers.legacy_report_at), '') IS NOT NULL
                 """,
                 (normalized_source,),
-            ).fetchall()
-        days = [
-            report_day
-            for row in rows
-            for report_day in [self._report_date_from_value(row["report_at"])]
-            if report_day is not None
-        ]
-        return (min(days), max(days)) if days else None
+            )
+            for row in rows:
+                report_day = self._report_date_from_value(row["report_at"])
+                if report_day is None:
+                    continue
+                if first_day is None or report_day < first_day:
+                    first_day = report_day
+                if last_day is None or report_day > last_day:
+                    last_day = report_day
+        return (first_day, last_day) if first_day is not None and last_day is not None else None
 
     def history_repair_candidates(
         self,
@@ -2712,7 +2717,7 @@ class DailyResearchStore:
                 LEFT JOIN daily_runs AS runs ON runs.run_id = deliveries.run_id
                 ORDER BY deliveries.delivered_at ASC, deliveries.delivery_id ASC
                 """
-            ).fetchall()
+            )
 
         candidates: list[Dict[str, Any]] = []
         for row in rows:
@@ -4619,10 +4624,14 @@ class DailyResearchStore:
         return self._entity_search_item(row, variants)
 
     def _entity_search_item(
-        self, row: sqlite3.Row, variants: list[Dict[str, Any]]
+        self,
+        row: sqlite3.Row,
+        variants: list[Dict[str, Any]],
+        *,
+        preferred_variant: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Shape one entity and all of its source variants for archive consumers."""
-        representative = variants[0] if variants else {}
+        representative = preferred_variant or (variants[0] if variants else {})
         sources = list(dict.fromkeys(item["source"] for item in variants))
         preferences = {item.get("preference") for item in variants}
         preference = "like" if "like" in preferences else (
@@ -4661,6 +4670,33 @@ class DailyResearchStore:
             "preference": preference,
             "variants": variants,
         }
+
+    @staticmethod
+    def _variant_matches_search_filters(
+        variant: Dict[str, Any],
+        *,
+        source: str,
+        min_score: Optional[float],
+        completed_from: Optional[str],
+        completed_to: Optional[str],
+    ) -> bool:
+        """Pick the same source-level record that made the entity pass filters."""
+        completed_at = str(variant.get("completed_at") or "")
+        if not completed_at or (source and variant.get("source") != source):
+            return False
+        completed_day = completed_at[:10]
+        if completed_from and completed_day < completed_from:
+            return False
+        if completed_to and completed_day > completed_to:
+            return False
+        if min_score is not None:
+            try:
+                score = float(variant.get("total_score"))
+            except (TypeError, ValueError):
+                return False
+            if not math.isfinite(score) or score < min_score:
+                return False
+        return True
 
     def search_papers(
         self,
@@ -4775,12 +4811,23 @@ class DailyResearchStore:
                     """,
                     [*params, bounded_limit, bounded_offset],
                 ).fetchall()
-            items = [
-                self._entity_search_item(
-                    row, self._entity_variants_with_conn(conn, row["entity_id"])
+            items = []
+            for row in rows:
+                variants = self._entity_variants_with_conn(conn, row["entity_id"])
+                preferred = next(
+                    (
+                        variant for variant in variants
+                        if self._variant_matches_search_filters(
+                            variant,
+                            source=normalized_source,
+                            min_score=min_score,
+                            completed_from=completed_from,
+                            completed_to=completed_to,
+                        )
+                    ),
+                    None,
                 )
-                for row in rows
-            ]
+                items.append(self._entity_search_item(row, variants, preferred_variant=preferred))
         return {"total": int(total_row[0]), "items": items}
 
     def _source_health_entries(

@@ -2284,13 +2284,30 @@ function reportGroupKey(type, source) {
   return `${type}:${source}`;
 }
 
+const SCROLL_SELECT_MODELS = new Map();
+
 function scrollSelect({ id, rows, selected, label, placeholder = "—", optionAttribute, valueAttribute }) {
   if (!rows.length) {
     return `<div class="scroll-select is-empty" aria-disabled="true"><span>${escapeHtml(placeholder)}</span></div>`;
   }
+  SCROLL_SELECT_MODELS.set(id, { rows, label, optionAttribute, valueAttribute });
   const active = rows.find((item) => item.id === selected);
   const selectedLabel = active ? label(active) : placeholder;
-  return `<details class="scroll-select" data-scroll-select="${escapeAttribute(id)}"><summary><span>${escapeHtml(selectedLabel)}</span><i class="dropdown-chevron" aria-hidden="true"></i></summary><div class="scroll-select-options" role="listbox">${rows.map((item) => `<button type="button" role="option" aria-selected="${item.id === selected ? "true" : "false"}" class="${item.id === selected ? "is-selected" : ""}" ${escapeAttribute(optionAttribute)}="${escapeAttribute(id)}" ${escapeAttribute(valueAttribute)}="${escapeAttribute(item.id)}">${escapeHtml(label(item))}</button>`).join("")}</div></details>`;
+  return `<details class="scroll-select" data-scroll-select="${escapeAttribute(id)}" data-selected-id="${escapeAttribute(selected || "")}"><summary><span>${escapeHtml(selectedLabel)}</span><i class="dropdown-chevron" aria-hidden="true"></i></summary><div class="scroll-select-options" role="listbox"></div></details>`;
+}
+
+function bindScrollSelects(root) {
+  $$('[data-scroll-select]', root).forEach((selector) => selector.addEventListener("toggle", () => {
+    if (!selector.open || selector.dataset.optionsLoaded) return;
+    const model = SCROLL_SELECT_MODELS.get(selector.dataset.scrollSelect);
+    if (!model) return;
+    const selected = selector.dataset.selectedId;
+    $(".scroll-select-options", selector).innerHTML = model.rows.map((item) => (
+      `<button type="button" role="option" aria-selected="${item.id === selected ? "true" : "false"}" class="${item.id === selected ? "is-selected" : ""}" ${escapeAttribute(model.optionAttribute)}="${escapeAttribute(selector.dataset.scrollSelect)}" ${escapeAttribute(model.valueAttribute)}="${escapeAttribute(item.id)}">${escapeHtml(model.label(item))}</button>`
+    )).join("");
+    selector.dataset.optionsLoaded = "1";
+    applyLocale(selector);
+  }));
 }
 
 function reportPicker(title, icon, category, rows, selected) {
@@ -2444,7 +2461,9 @@ function updateReportPickerSelection(root, report) {
   const selector = $$('[data-scroll-select]', root).find((item) => item.dataset.scrollSelect === groupKey);
   if (selector) {
     const label = $("summary > span", selector);
-    if (label) label.textContent = report.label;
+    const model = SCROLL_SELECT_MODELS.get(groupKey);
+    if (label) label.textContent = model?.label(report) || report.label;
+    selector.dataset.selectedId = report.id;
     selector.open = false;
   }
 }
@@ -2480,13 +2499,15 @@ function bindReportDirectory(root, reports, token) {
     clearReportHtmlCache();
     runLocalRefresh(refreshReportsDirectory(root, token));
   });
-  $$('[data-report-select-option]', root).forEach((button) => button.addEventListener("click", () => chooseReport(button.dataset.reportId)));
+  const directory = $("#reports-directory", root);
+  bindScrollSelects(directory);
+  directory.addEventListener("click", (event) => {
+    const button = event.target.closest?.('[data-report-select-option]');
+    if (button && directory.contains(button)) chooseReport(button.dataset.reportId);
+  });
   $$('[data-preview-group]', root).forEach((button) => button.addEventListener("click", () => {
-    const selectedOption = $$('[data-report-select-option]', root).find((item) => (
-      item.dataset.reportSelectOption === button.dataset.previewGroup
-      && item.getAttribute("aria-selected") === "true"
-    ));
-    if (selectedOption) chooseReport(selectedOption.dataset.reportId);
+    const selector = $$('[data-scroll-select]', directory).find((item) => item.dataset.scrollSelect === button.dataset.previewGroup);
+    if (selector?.dataset.selectedId) chooseReport(selector.dataset.selectedId);
   }));
   return chooseReport;
 }
@@ -2507,6 +2528,7 @@ async function refreshReportsDirectory(root = $("#page-root"), token = state.ren
     if (!selected || !all.some((item) => item.id === selected)) selected = all[0]?.id || "";
     state.pageData.selectedReport = selected;
     if (!state.pageData.reportSelections) state.pageData.reportSelections = {};
+    SCROLL_SELECT_MODELS.clear();
     host.innerHTML = reportDirectoryMarkup(reports, selected, showNonArxiv);
     bindCommon(host);
     const chooseReport = bindReportDirectory(root, reports, token);
@@ -2706,7 +2728,7 @@ function sourceVariantCard(variant) {
 }
 
 function paperCard(item) {
-  const score = Number.isFinite(Number(item.total_score)) ? Number(item.total_score).toFixed(1) : "—";
+  const score = item.total_score !== null && item.total_score !== undefined && item.total_score !== "" && Number.isFinite(Number(item.total_score)) ? Number(item.total_score).toFixed(1) : "—";
   const badge = item.is_qualified === true ? "🟢" : item.is_qualified === false ? "⚪" : "·";
   const sources = (item.sources || [item.source]).filter(Boolean).join(", ");
   const preference = item.preference === "like" ? " 👍" : item.preference === "dislike" ? " 👎" : "";
@@ -2725,7 +2747,7 @@ function paperCard(item) {
 async function renderPaperSearch(token) {
   const root = $("#page-root");
   const values = state.pageData.search || { query: "", source: "", completed_from: "", completed_to: "", min_score: "", liked_only: false, page: 0, size: 20 };
-  root.innerHTML = `${pageHeader()}${section("检索条件", `<div class="form-grid two"><label class="form-field"><span>关键词</span><input id="search-query" value="${escapeAttribute(values.query)}" placeholder="标题、摘要、TL;DR 或关键词" /></label><label class="form-field"><span>来源</span><select id="search-source"><option value="">全部来源</option></select></label><label class="form-field"><span>完成日期开始</span><input id="search-from" type="date" value="${escapeAttribute(values.completed_from)}" /></label><label class="form-field"><span>完成日期结束</span><input id="search-to" type="date" value="${escapeAttribute(values.completed_to)}" /></label><label class="form-field"><span>最低分数</span><input id="search-score" type="number" step="0.5" min="0" value="${escapeAttribute(values.min_score)}" /></label><label class="toggle-field"><span>仅收藏论文</span><input id="search-liked" type="checkbox" ${values.liked_only ? "checked" : ""}/><i></i></label></div><div class="action-row"><button id="search-run" class="primary-button">搜索</button></div>`, { icon: "🔍" })}<div id="search-results"></div>`;
+  root.innerHTML = `${pageHeader()}${section("检索条件", `<div class="form-grid two"><label class="form-field"><span>关键词</span><input id="search-query" value="${escapeAttribute(values.query)}" placeholder="标题、摘要、TL;DR 或关键词" /></label><label class="form-field"><span>来源</span><select id="search-source"><option value="">全部来源</option></select></label><label class="form-field"><span>完成日期开始</span><input id="search-from" type="date" value="${escapeAttribute(values.completed_from)}" /></label><label class="form-field"><span>完成日期结束</span><input id="search-to" type="date" value="${escapeAttribute(values.completed_to)}" /></label><label class="form-field"><span>最低分数</span><input id="search-score" type="number" step="0.5" value="${escapeAttribute(values.min_score)}" /></label><label class="toggle-field"><span>仅收藏论文</span><input id="search-liked" type="checkbox" ${values.liked_only ? "checked" : ""}/><i></i></label></div><div class="action-row"><button id="search-run" class="primary-button">搜索</button></div>`, { icon: "🔍" })}<div id="search-results"></div>`;
   const sourceSelect = $("#search-source");
   decorateNativeSelects(root);
   try {
@@ -4514,11 +4536,15 @@ function updateLogSelectorSelection(root, selected) {
     option.setAttribute("aria-selected", String(active));
     option.classList.toggle("is-selected", active);
   });
-  const selectedOption = $$('[data-log-select-option]', root).find((item) => item.dataset.logId === selected);
-  const selector = selectedOption?.closest(".scroll-select");
+  const selector = $$('[data-scroll-select]', root).find((item) => (
+    SCROLL_SELECT_MODELS.get(item.dataset.scrollSelect)?.rows.some((row) => row.id === selected)
+  ));
   if (selector) {
     const label = $("summary > span", selector);
-    if (label) label.textContent = selectedOption.textContent || "—";
+    const model = SCROLL_SELECT_MODELS.get(selector.dataset.scrollSelect);
+    const row = model.rows.find((item) => item.id === selected);
+    if (label) label.textContent = model.label(row);
+    selector.dataset.selectedId = selected;
     selector.open = false;
   }
 }
@@ -4552,14 +4578,18 @@ async function loadSelectedLog(root, items, selected, token) {
 }
 
 function bindLogWorkspace(root, items, token) {
-  $$('[data-log-select-option]', root).forEach((button) => button.addEventListener("click", () => {
+  const workspace = $("#logs-workspace", root);
+  bindScrollSelects(workspace);
+  workspace.addEventListener("click", (event) => {
+    const button = event.target.closest?.('[data-log-select-option]');
+    if (!button || !workspace.contains(button)) return;
     const selected = button.dataset.logId;
     if (!selected) return;
     state.pageData.selectedLog = selected;
     state.pageData.logClosed = false;
     updateLogSelectorSelection(root, selected);
     loadSelectedLog(root, items, selected, token);
-  }));
+  });
 }
 
 async function refreshLogsWorkspace(root = $("#page-root"), token = state.renderToken, options = {}) {
@@ -4576,6 +4606,7 @@ async function refreshLogsWorkspace(root = $("#page-root"), token = state.render
   if (!selected || !items.some((item) => item.id === selected)) selected = nonSystemLogs[0]?.id || "";
   state.pageData.selectedLog = selected;
   if (options.latest) state.pageData.logClosed = false;
+  SCROLL_SELECT_MODELS.clear();
   host.innerHTML = logWorkspaceMarkup(items, selected);
   bindLogWorkspace(root, items, token);
   applyLocale(host);
@@ -4901,6 +4932,7 @@ async function renderPage(options = {}) {
   state.pageRequestController = new AbortController();
   clearTimers();
   clearReportHtmlCache();
+  SCROLL_SELECT_MODELS.clear();
   releasePrettySelectObservers($("#page-root"));
   state.pagedRenderers.clear();
   if (state.page !== "reports") {
