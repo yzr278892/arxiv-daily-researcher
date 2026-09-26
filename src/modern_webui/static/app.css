@@ -152,14 +152,6 @@ h3 { margin: 0 0 14px; font-size: .92rem; font-weight: 700; line-height: 1.45; }
 .sidebar-actions { display: grid; gap: 8px; margin-top: 30px; }
 /* 次要操作按用途分组：配置操作、外观与语言，组间以细分隔线区隔。 */
 .sidebar-actions-group { display: grid; gap: 8px; margin-top: 3px; padding-top: 11px; border-top: 1px solid var(--line); }
-.sidebar-actions button::before { margin-right: 8px; }
-#save-button::before { content: "💾"; }
-#reload-button::before { content: "↺"; }
-#restart-worker-button::before { content: "⟳"; }
-#theme-button::before { content: "🌓"; }
-#palette-button::before { content: "🎨"; }
-#language-button::before { content: "🌐"; }
-#logout-button::before { content: "⏻"; }
 .sidebar-meta { margin-top: auto; padding: 19px 9px 0; border-top: 1px solid var(--line); color: var(--muted); font-size: .72rem; }
 .sidebar-meta p { margin: 0; line-height: 1.5; }
 .sidebar-meta #current-version { margin-top: 8px; font-variant-numeric: tabular-nums; }
@@ -309,14 +301,13 @@ h3 { margin: 0 0 14px; font-size: .92rem; font-weight: 700; line-height: 1.45; }
 .secondary-button:active:not(:disabled) { transform: translateY(0); }
 .danger-button { border: 1px solid #efc4b8; background: var(--card); color: #a04432; }
 .danger-button:hover:not(:disabled) { background: var(--danger-soft); }
-/* 按压下沉、键盘聚焦环与保存中的旋转指示，让点击有明确反馈。 */
+/* 按压下沉与键盘聚焦环，让点击有明确反馈。 */
 .primary-button:active:not(:disabled), .secondary-button:active:not(:disabled), .danger-button:active:not(:disabled) { transform: translateY(0) scale(.985); }
 .primary-button:focus-visible, .secondary-button:focus-visible, .danger-button:focus-visible { outline: none; }
 .primary-button:focus-visible { box-shadow: 0 0 0 3px var(--brand-ring), 0 1px 2px rgba(47, 89, 67, .18), inset 0 1px 0 rgba(255, 255, 255, .16); }
 .secondary-button:focus-visible { box-shadow: 0 0 0 3px var(--brand-ring), var(--shadow-xs); }
 .danger-button:focus-visible { box-shadow: 0 0 0 3px rgba(192, 79, 58, .2); }
 .primary-button.is-busy { cursor: progress; }
-.primary-button.is-busy::after { width: 13px; height: 13px; margin-left: 8px; border: 2px solid rgba(255, 255, 255, .38); border-top-color: #fff; border-radius: 50%; content: ""; animation: analytics-spin .7s linear infinite; }
 .wide-button { width: 100%; }
 .compact-button { min-height: 35px; padding: 0 12px; border-radius: 9px; font-size: .74rem; }
 .icon-danger { display: inline-grid; width: 34px; height: 34px; place-items: center; padding: 0; border: 0; border-radius: 10px; background: var(--danger-soft); color: var(--danger); font-size: 1.08rem; }

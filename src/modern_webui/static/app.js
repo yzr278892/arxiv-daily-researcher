@@ -1237,6 +1237,15 @@ function hasUnsavedConfiguration() {
 let dirtyIndicatorState = null;
 let dirtyIndicatorLanguage = null;
 
+function updateSaveButtonLabel(button, dirty) {
+  if (!button) return;
+  button.textContent = button.classList.contains("is-busy")
+    ? localeText("保存中…", "Saving…")
+    : dirty
+      ? localeText("保存所有更改 · 有未保存修改", "Save All Changes · Unsaved")
+      : localeText("保存所有更改", "Save All Changes");
+}
+
 function updateConfigurationDirtyIndicator() {
   const dirty = hasUnsavedConfiguration();
   if (dirtyIndicatorState === dirty && dirtyIndicatorLanguage === state.language) return;
@@ -1245,9 +1254,7 @@ function updateConfigurationDirtyIndicator() {
   const saveButton = $("#save-button");
   if (saveButton) {
     saveButton.classList.toggle("has-unsaved", dirty);
-    saveButton.textContent = dirty
-      ? localeText("保存所有更改 · 有未保存修改", "Save All Changes · Unsaved")
-      : localeText("保存所有更改", "Save All Changes");
+    updateSaveButtonLabel(saveButton, dirty);
   }
   const status = $("#file-status");
   if (status) status.textContent = dirty
@@ -4739,6 +4746,7 @@ async function saveAll(showMessage = true) {
     if (!saveButton) return;
     saveButton.disabled = busy;
     saveButton.classList.toggle("is-busy", busy);
+    updateSaveButtonLabel(saveButton, hasUnsavedConfiguration());
   };
   setSaveBusy(true);
   try {
