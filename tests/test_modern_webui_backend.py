@@ -1479,6 +1479,31 @@ class ModernBackendTests(unittest.TestCase):
         self.assertEqual(third, ["arxiv"])
         self.assertEqual(connection.execute.call_count, 2)
 
+    def test_source_list_does_not_cross_database_stores(self) -> None:
+        first_store = MagicMock()
+        first_connection = first_store._connect.return_value.__enter__.return_value
+        first_connection.execute.return_value.fetchall.return_value = [{"source": "arxiv"}]
+        second_store = MagicMock()
+        second_connection = second_store._connect.return_value.__enter__.return_value
+        second_connection.execute.return_value.fetchall.return_value = [{"source": "openalex"}]
+
+        self.assertEqual(backend._source_list(first_store), ["arxiv"])
+        self.assertEqual(backend._source_list(second_store), ["openalex"])
+        self.assertEqual(second_connection.execute.call_count, 1)
+
+    def test_runtime_invalidation_clears_new_status_and_source_caches(self) -> None:
+        backend._RUN_STATUS_CACHE["daily"] = (0.0, {})
+        backend._HISTORY_STATUS_CACHE = (0.0, {})
+        backend._NEWEST_LOG_CACHE[("daily",)] = (0.0, None)
+        backend._SOURCE_LIST_CACHE = (MagicMock(), 0.0, ["arxiv"])
+
+        backend._invalidate_runtime_caches(clear_config=False, clear_store=False)
+
+        self.assertEqual(backend._RUN_STATUS_CACHE, {})
+        self.assertIsNone(backend._HISTORY_STATUS_CACHE)
+        self.assertEqual(backend._NEWEST_LOG_CACHE, {})
+        self.assertIsNone(backend._SOURCE_LIST_CACHE)
+
     def test_enqueuing_a_task_invalidates_the_status_cache(self) -> None:
         with patch.object(backend, "flat_config", return_value={}), patch.object(
             backend, "active_locks", return_value=[]

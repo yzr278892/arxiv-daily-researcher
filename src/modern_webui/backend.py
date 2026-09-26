@@ -316,7 +316,7 @@ _NEWEST_LOG_CACHE: dict[tuple[str, ...], tuple[float, Path | None]] = {}
 _NEWEST_LOG_CACHE_TTL_SECONDS = 1.5
 # Distinct paper sources shown by the search filter.  The list only changes
 # when a run writes papers, so a half-minute window is invisible in practice.
-_SOURCE_LIST_CACHE: tuple[float, list[str]] | None = None
+_SOURCE_LIST_CACHE: tuple[DailyResearchStore, float, list[str]] | None = None
 _SOURCE_LIST_CACHE_TTL_SECONDS = 30.0
 _CONTAINER_WEBUI_CACHE: bool | None = None
 _VERSION_STATUS_LOCK = RLock()
@@ -400,8 +400,8 @@ def _invalidate_run_status_cache() -> None:
 def _invalidate_runtime_caches(*, clear_config: bool = True, clear_store: bool = True) -> None:
     """Drop process-local read caches after an operation changes their source."""
     global _FLAT_CONFIG_CACHE, _FLAT_CONFIG_CACHE_SIGNATURE
+    _clear_runtime_caches()
     with _RUNTIME_CACHE_LOCK:
-        _RUN_STATUS_CACHE.clear()
         if clear_config:
             _FLAT_CONFIG_CACHE = None
             _FLAT_CONFIG_CACHE_SIGNATURE = None
@@ -1537,8 +1537,8 @@ def _source_list(store: DailyResearchStore) -> list[str]:
     now = time.monotonic()
     with _RUNTIME_CACHE_LOCK:
         cached = _SOURCE_LIST_CACHE
-    if cached is not None and now - cached[0] < _SOURCE_LIST_CACHE_TTL_SECONDS:
-        return list(cached[1])
+    if cached is not None and cached[0] is store and now - cached[1] < _SOURCE_LIST_CACHE_TTL_SECONDS:
+        return list(cached[2])
     try:
         with store._connect() as conn:
             rows = conn.execute(
@@ -1548,7 +1548,7 @@ def _source_list(store: DailyResearchStore) -> list[str]:
     except Exception:
         return []
     with _RUNTIME_CACHE_LOCK:
-        _SOURCE_LIST_CACHE = (time.monotonic(), list(sources))
+        _SOURCE_LIST_CACHE = (store, time.monotonic(), list(sources))
     return sources
 
 
