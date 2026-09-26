@@ -17,7 +17,6 @@ from typing import Any
 
 from starlette import status
 from starlette.applications import Starlette
-from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException
 from starlette.middleware.gzip import GZipMiddleware
@@ -182,6 +181,16 @@ async def _blocking_call(function: Any, /, *args: Any, **kwargs: Any) -> Any:
         function = partial(function, *args, **kwargs)
         return await run_in_threadpool(function)
     return await run_in_threadpool(function, *args)
+
+
+class _TemporaryBackupFileResponse(FileResponse):
+    """Remove a generated export even when delivery stops before completion."""
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            Path(self.path).unlink(missing_ok=True)
 
 
 _AUTH_CACHE_LOCK = threading.Lock()
@@ -744,11 +753,10 @@ async def backup_export(request: Request) -> Response:
         raise _safe_error(exc) from exc
     # Stream the zip from its temporary file and unlink it after the response;
     # buffering multi-hundred-MB databases in memory would peak at two copies.
-    return FileResponse(
+    return _TemporaryBackupFileResponse(
         path,
         media_type="application/zip",
         filename=filename,
-        background=BackgroundTask(path.unlink, missing_ok=True),
     )
 
 

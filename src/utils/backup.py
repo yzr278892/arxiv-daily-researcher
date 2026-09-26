@@ -512,10 +512,11 @@ def export_backup_zip_to_file(
     zip_fd, zip_name = tempfile.mkstemp(suffix=".zip")
     os.close(zip_fd)
     zip_path = Path(zip_name)
-    snapshot_fd, snapshot_name = tempfile.mkstemp(suffix=".sqlite")
-    os.close(snapshot_fd)
-    snapshot_path = Path(snapshot_name)
+    snapshot_path: Path | None = None
     try:
+        snapshot_fd, snapshot_name = tempfile.mkstemp(suffix=".sqlite")
+        os.close(snapshot_fd)
+        snapshot_path = Path(snapshot_name)
         _create_consistent_snapshot(selected_database, snapshot_path)
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as archive:
             archive.write(snapshot_path, arcname="daily_research.db")
@@ -525,7 +526,8 @@ def export_backup_zip_to_file(
         zip_path.unlink(missing_ok=True)
         raise
     finally:
-        snapshot_path.unlink(missing_ok=True)
+        if snapshot_path is not None:
+            snapshot_path.unlink(missing_ok=True)
 
 
 def export_backup_zip(

@@ -10,6 +10,7 @@ import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -519,6 +520,24 @@ class BackupImportExportTests(unittest.TestCase):
                     self.assertIn("daily_research.db", archive.namelist())
             finally:
                 zip_path.unlink(missing_ok=True)
+
+    def test_export_removes_zip_if_snapshot_tempfile_cannot_be_created(self):
+        from utils import backup
+
+        with TemporaryDirectory() as temp_dir:
+            data_dir = Path(temp_dir)
+            _seed_database(data_dir)
+            original_mkstemp = backup.tempfile.mkstemp
+
+            def create_or_fail(*, suffix):
+                if suffix == ".sqlite":
+                    raise OSError("snapshot storage unavailable")
+                return original_mkstemp(dir=temp_dir, suffix=suffix)
+
+            with patch.object(backup.tempfile, "mkstemp", side_effect=create_or_fail):
+                with self.assertRaisesRegex(OSError, "snapshot storage unavailable"):
+                    backup.export_backup_zip_to_file(data_dir)
+            self.assertEqual(list(data_dir.glob("*.zip")), [])
 
     def test_restore_accepts_a_staged_upload_path(self):
         from utils.backup import export_backup_zip, restore_backup_archive

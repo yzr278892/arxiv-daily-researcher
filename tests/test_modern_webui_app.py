@@ -7,6 +7,7 @@ developer's real ``.env`` file.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import tempfile
 import unittest
@@ -153,6 +154,31 @@ class ModernWebUIAppTests(unittest.TestCase):
         self.assertEqual(response.headers.get("content-encoding"), "gzip")
         # httpx transparently decodes the body for TestClient callers.
         self.assertIn("const NAVIGATION", response.text)
+
+    def test_interrupted_backup_export_removes_its_temporary_file(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            archive = Path(directory) / "export.zip"
+            archive.write_bytes(b"PK\x03\x04" + b"test" * 128)
+            response = modern_app._TemporaryBackupFileResponse(
+                archive, media_type="application/zip", filename="export.zip"
+            )
+            scope = {
+                "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1",
+                "method": "GET", "scheme": "http", "path": "/api/backups/export",
+                "raw_path": b"/api/backups/export", "query_string": b"",
+                "root_path": "", "headers": [],
+            }
+
+            async def receive():
+                return {"type": "http.request", "body": b"", "more_body": False}
+
+            async def interrupted_send(message):
+                if message["type"] == "http.response.body":
+                    raise ConnectionError("client disconnected")
+
+            with self.assertRaises(ConnectionError):
+                asyncio.run(response(scope, receive, interrupted_send))
+            self.assertFalse(archive.exists())
 
     def test_brand_icon_is_present_in_shell_and_served_assets(self) -> None:
         shell = self.client.get("/")
