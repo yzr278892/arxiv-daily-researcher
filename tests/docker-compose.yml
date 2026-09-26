@@ -60,7 +60,7 @@ services:
     restart: unless-stopped
 
     ports:
-      - "${ADR_TEST_WEBUI_PORT:-8501}:8501"
+      - "${ADR_WEBUI_BIND_ADDRESS:-0.0.0.0}:${ADR_TEST_WEBUI_PORT:-8501}:8501"
     extra_hosts:
       - host.docker.internal:host-gateway
     command:
@@ -75,6 +75,7 @@ services:
       - TZ=Asia/Shanghai
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
+      - WEBUI_COOKIE_SECURE=${WEBUI_COOKIE_SECURE:-false}
 
     volumes:
       - ../configs:/app/configs

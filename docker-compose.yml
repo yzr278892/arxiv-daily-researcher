@@ -2,7 +2,7 @@ name: arxiv-daily-researcher
 
 services:
   arxiv-daily-researcher:
-    image: ghcr.io/yzr278892/arxiv-daily-researcher:4.6
+    image: ghcr.io/yzr278892/arxiv-daily-researcher:4.7
     container_name: arxiv-daily-researcher
     restart: unless-stopped
 
@@ -54,12 +54,12 @@ services:
         max-file: "3"
 
   config-panel:
-    image: ghcr.io/yzr278892/arxiv-daily-researcher-config-panel:4.6
+    image: ghcr.io/yzr278892/arxiv-daily-researcher-config-panel:4.7
     container_name: arxiv-daily-researcher-config-panel
     restart: unless-stopped
 
     ports:
-      - "8501:8501"
+      - "${ADR_WEBUI_BIND_ADDRESS:-0.0.0.0}:8501:8501"
     # The WebUI uses a bridge network for its explicit browser port. Use this
     # alias when testing a host-local service from the panel.
     extra_hosts:
@@ -76,6 +76,7 @@ services:
       - TZ=Asia/Shanghai
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
+      - WEBUI_COOKIE_SECURE=${WEBUI_COOKIE_SECURE:-false}
 
     volumes:
       - ./configs:/app/configs

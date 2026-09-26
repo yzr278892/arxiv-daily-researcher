@@ -7,6 +7,7 @@ the Worker-owned trigger queue.  The browser service stays presentation-only.
 from __future__ import annotations
 
 import json
+import os
 import sys
 import tempfile
 import threading
@@ -1101,5 +1102,8 @@ app.add_middleware(
     session_cookie="adr_modern_session",
     max_age=7 * 24 * 60 * 60,
     same_site="strict",
-    https_only=False,
+    # Direct LAN/Tailscale HTTP remains supported. Reverse-proxy deployments
+    # can require Secure cookies with WEBUI_COOKIE_SECURE=true.
+    https_only=os.environ.get("WEBUI_COOKIE_SECURE", "false").strip().lower()
+    in {"1", "true", "yes", "on"},
 )
