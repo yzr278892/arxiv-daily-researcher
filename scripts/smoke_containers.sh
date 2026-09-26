@@ -10,6 +10,8 @@ fi
 worker_name="adr-smoke-worker-$$"
 webui_name="adr-smoke-webui-$$"
 smoke_root="$(mktemp -d /tmp/adr-image-smoke-XXXXXX)"
+smoke_uid="$(id -u)"
+smoke_gid="$(id -g)"
 mkdir -p "$smoke_root/data" "$smoke_root/logs" "$smoke_root/configs" "$smoke_root/runtime"
 cleanup() {
   docker rm -f "$worker_name" "$webui_name" >/dev/null 2>&1 || true
@@ -23,8 +25,8 @@ mounts=(
   --mount "type=bind,src=$smoke_root/configs,dst=/app/configs"
   --mount "type=bind,src=$smoke_root/runtime,dst=/app/runtime"
 )
-docker run -d --name "$worker_name" -e MODE=manual -e RUN_ON_STARTUP=false -e SETUP_WIZARD=false "${mounts[@]}" "$1" >/dev/null
-docker run -d --name "$webui_name" "${mounts[@]}" "$2" uvicorn src.modern_webui.app:app --host 0.0.0.0 --port 8501 >/dev/null
+docker run -d --name "$worker_name" -e PUID="$smoke_uid" -e PGID="$smoke_gid" -e MODE=manual -e RUN_ON_STARTUP=false -e SETUP_WIZARD=false "${mounts[@]}" "$1" >/dev/null
+docker run -d --name "$webui_name" -e PUID="$smoke_uid" -e PGID="$smoke_gid" "${mounts[@]}" "$2" uvicorn src.modern_webui.app:app --host 0.0.0.0 --port 8501 >/dev/null
 
 for _attempt in $(seq 1 30); do
   if docker exec "$worker_name" python /app/src/utils/container_health.py worker >/dev/null 2>&1 \
