@@ -117,7 +117,7 @@ docker compose up -d
 docker compose ps
 ~~~
 
-打开 `http://HOST:8501`，将 `HOST` 换成主机地址，创建管理员账户。面板包含配置和账户管理，请通过可信局域网、Tailscale 或受保护的反向代理访问。
+打开 `http://HOST:8501`，将 `HOST` 换成主机地址，创建管理员账户。面板包含配置和账户管理，仅在可信局域网或 Tailscale 中直接使用 HTTP；公网访问请配置 HTTPS 反向代理。
 
 ### 3. 配置并运行
 
@@ -181,10 +181,12 @@ docker compose exec arxiv-daily-researcher python src/utils/setup_wizard.py
 
 | 服务 | 镜像 | 职责 |
 | :--- | :--- | :--- |
-| Worker | `ghcr.io/yzr278892/arxiv-daily-researcher:4.6` | 定时运行、论文处理与通知 |
-| WebUI | `ghcr.io/yzr278892/arxiv-daily-researcher-config-panel:4.6` | 管理界面，映射 `8501:8501` |
+| Worker | `ghcr.io/yzr278892/arxiv-daily-researcher:4.7` | 定时运行、论文处理与通知 |
+| WebUI | `ghcr.io/yzr278892/arxiv-daily-researcher-config-panel:4.7` | 管理界面，映射 `8501:8501` |
 
 Worker 使用宿主机网络。WebUI 使用桥接网络；配置宿主机上的模型或代理时，请使用两个容器都可访问的主机地址，避免将 `localhost` 当作同一个位置。
+
+WebUI 默认监听宿主机所有网卡。通过同机反向代理提供 HTTPS 时，可在 `.env` 设置 `ADR_WEBUI_BIND_ADDRESS=127.0.0.1` 和 `WEBUI_COOKIE_SECURE=true`，再重建 WebUI。后者要求浏览器始终通过 HTTPS 访问；不要在纯 HTTP 下启用。未经 TLS 保护的公网 HTTP 会暴露登录信息和面板数据。
 
 升级前备份 `.env`、`runtime/`、`data/` 和自定义的 `configs/templates/`，按需保留 `logs/`，然后阅读 [发行说明](https://github.com/yzr278892/arxiv-daily-researcher/releases)。一般升级步骤：
 
@@ -199,7 +201,7 @@ docker compose ps
 
 ### 源码开发
 
-`tests/docker-compose.yml` 从源码构建 Worker 和 WebUI，Worker 仅执行手动提交的任务。它默认挂载当前工作区的配置和数据；开发测试应使用独立工作副本。
+`tests/docker-compose.yml` 从源码构建 Worker 和 WebUI，Worker 仅执行手动提交的任务。它默认挂载当前工作区的配置和数据；使用中的容器不可当作临时测试环境。开发验证请使用隔离工作副本和数据。
 
 ~~~bash
 docker compose -f tests/docker-compose.yml up -d --build

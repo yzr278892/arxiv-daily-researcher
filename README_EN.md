@@ -117,7 +117,7 @@ docker compose up -d
 docker compose ps
 ~~~
 
-Open `http://HOST:8501`, replacing `HOST` with your server address, and create an administrator account. The panel manages configuration and accounts; access it through a trusted LAN, Tailscale, or a protected reverse proxy.
+Open `http://HOST:8501`, replacing `HOST` with your server address, and create an administrator account. Use HTTP directly only on a trusted LAN or Tailscale; use an HTTPS reverse proxy for public access.
 
 ### 3. Configure and run
 
@@ -181,10 +181,12 @@ The root `docker-compose.yml` starts two services. Both images support `linux/am
 
 | Service | Image | Purpose |
 | :--- | :--- | :--- |
-| Worker | `ghcr.io/yzr278892/arxiv-daily-researcher:4.6` | Scheduled runs, paper processing, and notifications |
-| WebUI | `ghcr.io/yzr278892/arxiv-daily-researcher-config-panel:4.6` | Management interface, mapped to `8501:8501` |
+| Worker | `ghcr.io/yzr278892/arxiv-daily-researcher:4.7` | Scheduled runs, paper processing, and notifications |
+| WebUI | `ghcr.io/yzr278892/arxiv-daily-researcher-config-panel:4.7` | Management interface, mapped to `8501:8501` |
 
 The worker uses host networking; the WebUI uses a bridge network. For a model or proxy running on the host, use a host address reachable from both containers. `localhost` refers to a different location in each network.
+
+The WebUI binds to all host interfaces by default. For an HTTPS reverse proxy on the same host, set `ADR_WEBUI_BIND_ADDRESS=127.0.0.1` and `WEBUI_COOKIE_SECURE=true` in `.env`, then recreate the WebUI. Secure cookies require the browser to use HTTPS; do not enable them over plain HTTP. Public HTTP without TLS exposes sign-in details and panel data.
 
 Before upgrading, back up `.env`, `runtime/`, `data/`, and customized `configs/templates/`; keep `logs/` if needed. Read the [release notes](https://github.com/yzr278892/arxiv-daily-researcher/releases). A routine upgrade uses:
 
@@ -199,7 +201,7 @@ Mounted directories preserve your data. A legacy `configs/config.json` is migrat
 
 ### Source development
 
-`tests/docker-compose.yml` builds the worker and WebUI from source, with the worker handling only manually submitted tasks. It mounts the current workspace's settings and data by default; use a separate working copy for development tests.
+`tests/docker-compose.yml` builds the worker and WebUI from source, with the worker handling only manually submitted tasks. It mounts the current workspace's settings and data by default; running services are not disposable test fixtures. Use a separate working copy and data for development checks.
 
 ~~~bash
 docker compose -f tests/docker-compose.yml up -d --build
