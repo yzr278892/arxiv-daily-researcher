@@ -1,6 +1,7 @@
 # Python
 __pycache__/
 /.pytest_cache/
+/node_modules/
 *.py[cod]
 *.so
 

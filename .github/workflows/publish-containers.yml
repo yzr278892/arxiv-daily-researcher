@@ -17,7 +17,7 @@ jobs:
   verify:
     name: Verify release source
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
 
     steps:
       - name: Checkout release tag
@@ -46,6 +46,19 @@ jobs:
 
       - name: Run regression suite
         run: python -m pytest -q
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Check browser assets and interactions
+        run: |
+          node --check src/modern_webui/static/app.js
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+          npm run test:browser
 
   publish:
     name: Build and publish multi-architecture images

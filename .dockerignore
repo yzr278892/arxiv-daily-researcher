@@ -54,6 +54,7 @@ README_EN.md
 CHANGELOG.md
 requirements.txt
 .pytest_cache/
+/node_modules/
 .zcode/
 .claude/
 .codex/

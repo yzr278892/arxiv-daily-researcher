@@ -18,7 +18,7 @@ jobs:
   test:
     name: Python 3.12 regression suite
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
 
     steps:
       - name: Checkout repository
@@ -40,3 +40,41 @@ jobs:
 
       - name: Run regression suite
         run: python -m pytest -q
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Check JavaScript syntax and Compose definitions
+        run: |
+          node --check src/modern_webui/static/app.js
+          cp tests/fixtures/webui_screenshot.env .env
+          docker compose -f docker-compose.yml config --quiet
+          docker compose -f tests/docker-compose.yml config --quiet
+
+      - name: Set up browser smoke dependencies
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+
+      - name: Check WebUI in Chromium with synthetic API data
+        run: npm run test:browser
+
+  image-smoke:
+    name: Build and start both images
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Worker and WebUI
+        run: |
+          docker build -f docker/Dockerfile --target worker --build-arg PIP_INDEX_URL=https://pypi.org/simple --build-arg PIP_TRUSTED_HOST=pypi.org -t adr-smoke-worker:ci .
+          docker build -f docker/Dockerfile --target webui --build-arg PIP_INDEX_URL=https://pypi.org/simple --build-arg PIP_TRUSTED_HOST=pypi.org -t adr-smoke-webui:ci .
+
+      - name: Start images and check their real entrypoints
+        run: bash scripts/smoke_containers.sh adr-smoke-worker:ci adr-smoke-webui:ci
