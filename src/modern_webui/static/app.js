@@ -848,8 +848,8 @@ const FALLBACK_ARXIV_CATEGORIES = [
   "quant-ph", "hep-th", "hep-ex", "hep-lat", "gr-qc", "astro-ph", "cond-mat", "physics", "math-ph", "cs.AI", "cs.LG", "stat.ML",
 ];
 const BUILTIN_SOURCES = [
-  ["prl", "PRL"], ["pra", "PRA"], ["prb", "PRB"], ["prc", "PRC"], ["prd", "PRD"], ["pre", "PRE"], ["prx", "PRX"], ["prxq", "PRX Quantum"], ["rmp", "RMP"],
-  ["nature", "Nature"], ["nature_physics", "Nature Physics"], ["nature_communications", "Nature Communications"], ["science", "Science"], ["science_advances", "Science Advances"], ["npj_quantum_information", "npj Quantum Information"], ["quantum", "Quantum"], ["new_journal_of_physics", "New Journal of Physics"], ["huggingface_papers", "Hugging Face Papers"],
+  ["prl", "PRL"], ["pra", "PRA"], ["prb", "PRB"], ["prc", "PRC"], ["prd", "PRD"], ["pre", "PRE"], ["prx", "PRX"], ["prxq", "PRX Quantum"], ["rmp", "RMP"], ["jcap", "JCAP"],
+  ["nature", "Nature"], ["nature_physics", "Nature Physics"], ["nature_communications", "Nature Communications"], ["nature_astronomy", "Nature Astronomy"], ["science", "Science"], ["science_advances", "Science Advances"], ["science_bulletin", "Science Bulletin"], ["npj_quantum_information", "npj Quantum Information"], ["quantum", "Quantum"], ["new_journal_of_physics", "New Journal of Physics"], ["huggingface_papers", "Hugging Face Papers"],
 ];
 
 // 外观取值为 色系（绿 / 浅蓝）× 明暗（浅色 / 深色）四种组合；

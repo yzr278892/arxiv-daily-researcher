@@ -39,6 +39,7 @@ from utils.text_language import has_chinese_text
 from utils.source_registry import source_display_names
 from .modules.base_module import FormatHelper
 from .modules.renderers import ModuleRendererFactory
+from .manifest import build_source_manifest, write_manifest
 
 logger = logging.getLogger(__name__)
 
@@ -59,11 +60,14 @@ SOURCE_DISPLAY_NAMES = {
     "prx": "Physical Review X",
     "prxq": "PRX Quantum",
     "rmp": "Reviews of Modern Physics",
+    "jcap": "Journal of Cosmology and Astroparticle Physics",
     "nature": "Nature",
     "nature_physics": "Nature Physics",
     "nature_communications": "Nature Communications",
+    "nature_astronomy": "Nature Astronomy",
     "science": "Science",
     "science_advances": "Science Advances",
+    "science_bulletin": "Science Bulletin",
     "npj_quantum_information": "npj Quantum Information",
     "quantum": "Quantum",
     "new_journal_of_physics": "New Journal of Physics",
@@ -283,6 +287,38 @@ class Reporter:
                     raise ReportGenerationError(
                         f"[{source}] HTML 报告生成失败 ({html_filepath}): {exc}"
                     ) from exc
+
+            # 生成机器可读 manifest（跨项目契约，schema v1.0）
+            # 失败不影响报告与通知。
+            try:
+                manifest = build_source_manifest(
+                    mode="daily_research",
+                    run_id=timestamp,
+                    timestamp=generated_at.strftime("%Y-%m-%d %H:%M:%S"),
+                    source=source,
+                    display_name=display_name,
+                    date=generated_at.strftime("%Y-%m-%d"),
+                    scan_days=getattr(settings, "SEARCH_DAYS", None),
+                    passing_score=settings.calculate_passing_score(
+                        sum(keywords_dict.values())
+                    ),
+                    keywords_dict=keywords_dict,
+                    papers=papers,
+                    analyses=analyses,
+                    token_usage=token_usage,
+                    md_path=report_paths.get(source),
+                    html_path=report_paths.get(f"{source}_html"),
+                    project_root=settings.PROJECT_ROOT,
+                )
+                manifest_dir = self._report_directory(report_kind, "manifest", source)
+                manifest_path = manifest_dir / self._report_filename(
+                    source, timestamp, ".json", report_kind
+                )
+                write_manifest(manifest_path, manifest)
+                report_paths[f"{source}_manifest"] = manifest_path
+                logger.info(f"[{source}] manifest 已生成: {manifest_path}")
+            except Exception as exc:
+                logger.warning(f"[{source}] manifest 生成失败（不影响报告）: {exc}")
 
         return report_paths
 

@@ -72,6 +72,11 @@ OPENALEX_JOURNAL_CATALOG: Dict[str, Dict[str, Any]] = {
         "issn": ["0034-6861", "1539-0756"],
         "display_name": "RMP",
     },
+    "jcap": {
+        "full_name": "Journal of Cosmology and Astroparticle Physics",
+        "issn": ["1475-7508", "1475-7516"],
+        "display_name": "JCAP",
+    },
     "nature": {
         "full_name": "Nature",
         "issn": ["0028-0836", "1476-4687"],
@@ -87,6 +92,11 @@ OPENALEX_JOURNAL_CATALOG: Dict[str, Dict[str, Any]] = {
         "issn": ["2041-1723"],
         "display_name": "Nat. Commun.",
     },
+    "nature_astronomy": {
+        "full_name": "Nature Astronomy",
+        "issn": ["2397-3366"],
+        "display_name": "Nat. Astron.",
+    },
     "science": {
         "full_name": "Science",
         "issn": ["0036-8075", "1095-9203"],
@@ -96,6 +106,11 @@ OPENALEX_JOURNAL_CATALOG: Dict[str, Dict[str, Any]] = {
         "full_name": "Science Advances",
         "issn": ["2375-2548"],
         "display_name": "Sci. Adv.",
+    },
+    "science_bulletin": {
+        "full_name": "Science Bulletin",
+        "issn": ["2095-9273", "2095-9281"],
+        "display_name": "Sci. Bull.",
     },
     "npj_quantum_information": {
         "full_name": "npj Quantum Information",
