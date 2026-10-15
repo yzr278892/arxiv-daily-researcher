@@ -448,7 +448,8 @@ class SIWCClient:
                 raise SubscriptionError(f"ChatGPT authorization/inference rejected (HTTP {status}).") from exc
             if status == 429:
                 raise SubscriptionLimitError("ChatGPT subscription quota is unavailable; see Settings > Usage.") from exc
-            if status == 503 or isinstance(exc, (TimeoutError, ConnectionError)):
+            from openai import APIConnectionError, APITimeoutError
+            if status >= 500 or isinstance(exc, (TimeoutError, ConnectionError, APIConnectionError, APITimeoutError)):
                 raise SubscriptionTransientError("ChatGPT inference temporarily unavailable.") from exc
             raise SubscriptionError("ChatGPT subscription inference failed; check provider status.") from exc
         if not completed:

@@ -77,6 +77,8 @@ def _ensure_root() -> None:
 
 def _read_json(name: str, fallback: dict) -> dict:
     path = _file(name)
+    if _root().is_symlink():
+        raise SubscriptionError("Subscription directory must not be a symlink.")
     if not path.exists():
         return fallback
     if path.is_symlink() or not path.is_file():
@@ -189,6 +191,7 @@ def public_status() -> dict:
         if not isinstance(account, dict):
             continue
         result["accounts"].append({
+            "client_id": client_id,
             "label": str(account.get("email") or "ChatGPT account")[:120],
             "connected": bool(account.get("refresh_token")),
             "authorized": "chatgpt.tokens.use.direct" in account.get("scopes", []),
