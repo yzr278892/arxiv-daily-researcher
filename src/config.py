@@ -5,7 +5,7 @@ import re
 
 import json5  # 用于加载带注释的配置文件
 from pathlib import Path
-from typing import List, Optional, Dict, Any, Tuple
+from typing import List, Optional, Dict, Any, Tuple, Literal
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from utils.source_registry import (
@@ -142,6 +142,8 @@ class LLMConfig(BaseModel):
     base_url: str = Field("https://api.openai.com/v1", description="LLM API的基础URL地址")
     model_name: str = Field("gpt-4o", description="要使用的模型名称标识")
     temperature: float = 0.3
+    parameter_mode: Literal['auto', 'reasoning', 'temperature'] = 'auto'
+    reasoning_effort: Literal['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] = 'medium'
 
 
 class Settings(BaseSettings):

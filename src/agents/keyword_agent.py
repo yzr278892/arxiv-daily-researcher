@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Dict, Set, List, Optional
 from config import settings
 from utils.llm_request_pool import call_chat_completion
+from utils.llm_parameters import chat_generation_parameters
 from utils.llm_resilience import build_llm_client
 from utils.llm_health import LLMHealthRecorder
 from utils.llm_usage import record_token_usage as record_llm_token_usage
@@ -338,7 +339,11 @@ class KeywordAgent:
                         {"role": "system", "content": system_prompt.strip()},
                         {"role": "user", "content": prompt},
                     ],
-                    temperature=0.3,
+                    **chat_generation_parameters(
+                        settings.CHEAP_LLM.model_name, 0.3,
+                        parameter_mode=settings.CHEAP_LLM.parameter_mode,
+                        reasoning_effort=settings.CHEAP_LLM.reasoning_effort,
+                    ),
                     response_format={"type": "json_object"},
                 )
                 usage = getattr(response, "usage", None)

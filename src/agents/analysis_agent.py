@@ -15,6 +15,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential, before_sleep_l
 from config import settings
 from parsers.mineru_parser import MineruParser
 from utils.llm_request_pool import call_chat_completion, call_responses
+from utils.llm_parameters import chat_generation_parameters, responses_generation_parameters
 from utils.llm_resilience import (
     LLMEndpointCapabilityError,
     build_llm_client,
@@ -448,8 +449,14 @@ class AnalysisAgent:
             "model": model,
             "messages": messages,
         }
-        if temperature is not None:
-            chat_kwargs["temperature"] = temperature
+        model_config = (settings.CHEAP_LLM if client is getattr(self, "cheap_client", None)
+                        else settings.SMART_LLM if client is getattr(self, "smart_client", None)
+                        else None)
+        generation_options = {
+            "parameter_mode": getattr(model_config, "parameter_mode", "auto"),
+            "reasoning_effort": getattr(model_config, "reasoning_effort", "medium"),
+        }
+        chat_kwargs.update(chat_generation_parameters(model, temperature, **generation_options))
         if response_format is not None:
             chat_kwargs["response_format"] = response_format
 
@@ -514,8 +521,7 @@ class AnalysisAgent:
             response_kwargs = {"model": model, "input": prompt}
             if isinstance(system_prompt, str) and system_prompt.strip():
                 response_kwargs["instructions"] = system_prompt.strip()
-            if temperature is not None:
-                response_kwargs["temperature"] = temperature
+            response_kwargs.update(responses_generation_parameters(model, temperature, **generation_options))
             if response_format is not None:
                 # Responses API names the equivalent of chat.com's
                 # ``response_format`` as ``text.format``.
@@ -536,7 +542,7 @@ class AnalysisAgent:
                 minimal_response_kwargs = {
                     key: value
                     for key, value in response_kwargs.items()
-                    if key not in {"temperature", "text", "instructions"}
+                    if key not in {"temperature", "reasoning", "text", "instructions"}
                 }
                 if isinstance(system_prompt, str) and system_prompt.strip():
                     # A Responses-compatible gateway that rejects

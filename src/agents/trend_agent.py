@@ -18,6 +18,7 @@ from utils.llm_request_pool import call_chat_completion
 from utils.llm_resilience import build_llm_client, llm_retry
 from utils.llm_health import LLMHealthRecorder
 from utils.llm_usage import record_token_usage as record_llm_token_usage
+from utils.llm_parameters import chat_generation_parameters
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,7 @@ def _llm_call_once(
     prompt: str,
     *,
     system_prompt: Optional[str] = None,
+    role: str = "smart",
 ) -> str:
     """带自动重试的 LLM 调用（模块级，避免每次调用重建 retry 装饰器）。"""
     estimated_prompt_tokens = len((system_prompt or "") + prompt) // 4
@@ -37,12 +39,17 @@ def _llm_call_once(
     if isinstance(system_prompt, str) and system_prompt.strip():
         messages.append({"role": "system", "content": system_prompt.strip()})
     messages.append({"role": "user", "content": prompt})
+    model_config = settings.CHEAP_LLM if role == "cheap" else settings.SMART_LLM
     try:
         resp = call_chat_completion(
             client,
             model=model_name,
             messages=messages,
-            temperature=temperature,
+            **chat_generation_parameters(
+                model_name, temperature,
+                parameter_mode=model_config.parameter_mode,
+                reasoning_effort=model_config.reasoning_effort,
+            ),
         )
     except Exception:
         # 请求已发出但未收到响应（超时/网络错误），API 已消耗输入 token
@@ -75,6 +82,7 @@ def _llm_call_with_retry(
             temperature,
             prompt,
             system_prompt=system_prompt,
+            role=role,
         )
     except Exception as exc:
         if health_recorder is not None:
