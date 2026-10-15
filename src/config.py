@@ -457,9 +457,9 @@ class Settings(BaseSettings):
 
     # ==================== LLM配置 ====================
     # 低成本LLM：用于快速初步筛选和关键词生成
-    CHEAP_LLM: LLMConfig = Field(default_factory=lambda: LLMConfig(api_key="sk-dummy"))
+    CHEAP_LLM: LLMConfig = Field(default=LLMConfig(api_key="sk-dummy"))
     # 高性能LLM：用于深层论文分析和内容理解
-    SMART_LLM: LLMConfig = Field(default_factory=lambda: LLMConfig(api_key="sk-dummy"))
+    SMART_LLM: LLMConfig = Field(default=LLMConfig(api_key="sk-dummy"))
 
     # ==================== 研究趋势模式配置 ====================
     RESEARCH_REPORTS_DIR: Path = DATA_DIR / "reports" / "trend_research"  # 研究趋势报告存储路径
@@ -483,6 +483,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         env_nested_delimiter="__",  # 嵌套配置使用__分隔符，如CHEAP_LLM__API_KEY
+        nested_model_default_partial_update=True,  # Allow subscription-only .env config without an API key
         extra="ignore",  # 忽略.env中未定义的额外参数
     )
 

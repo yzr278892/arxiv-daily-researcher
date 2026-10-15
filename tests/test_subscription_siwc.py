@@ -89,6 +89,20 @@ class SubscriptionTests(unittest.TestCase):
         )
         self.assertIsInstance(client, siwc.SIWCClient)
 
+    def test_subscription_env_mode_without_api_key_uses_existing_default(self):
+        """Nested partial env values should not demand unused API credentials."""
+        from config import Settings
+        with patch.dict(os.environ, {
+            "CHEAP_LLM__AUTH_MODE": "subscription",
+            "CHEAP_LLM__SUBSCRIPTION_PROVIDER": "openai_siwc",
+            "SMART_LLM__AUTH_MODE": "subscription",
+        }, clear=True):
+            instance = Settings(_env_file=None)
+        self.assertEqual(instance.CHEAP_LLM.auth_mode, "subscription")
+        self.assertEqual(instance.SMART_LLM.auth_mode, "subscription")
+        self.assertEqual(instance.CHEAP_LLM.api_key, "sk-dummy")
+        # The caller continues to ignore the placeholder in subscription mode.
+
     def test_host_id_persists_without_exposing_credentials(self):
         self.assertEqual(state.host_id(), state.host_id())
         self.assertTrue(state.host_id().startswith("urn:uuid:"))
