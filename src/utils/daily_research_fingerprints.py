@@ -45,9 +45,8 @@ def _model_settings(model: Any, temperature: Any) -> Dict[str, Any]:
     return {
         "model_name": str(getattr(model, "model_name", "")),
         "temperature": temperature,
-        "auth_mode": getattr(model, "auth_mode", "api_key"),
-        "subscription_provider": getattr(model, "subscription_provider", "openai_siwc")
-        if getattr(model, "auth_mode", "api_key") == "subscription" else None,
+        **({"subscription_provider": getattr(model, "subscription_provider", "openai_siwc")}
+           if getattr(model, "auth_mode", "api_key") == "subscription" else {}),
     }
 
 
