@@ -149,8 +149,8 @@ Treat such integrations as unsupported until semantics are clear.
 **Phase 1 — implemented in this PR (experimental):** official OpenAI SIWC
 local authorization, dynamic client ID, ID-token validation, isolated credential
 storage, refresh/revocation, account model discovery and streaming generation
-through existing agents. Mocked tests are included; **real sign-in and inference
-remain a manual acceptance gate**.
+through existing agents. Mocked tests and an opt-in `smoke --model <visible-slug>` CLI command are
+included; **real sign-in and inference remain a manual acceptance gate**.
 
 **Phase 2 — later:** direct user-friendly account-aware WebUI sign-in,
 per-account live model selection, explicit subscription-vs-API usage accounting,

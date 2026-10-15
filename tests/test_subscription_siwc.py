@@ -254,6 +254,22 @@ class SubscriptionTests(unittest.TestCase):
                     model="gpt-6", messages=[{"role": "user", "content": "hello"}],
                 )
 
+    def test_live_smoke_cli_requires_model_and_does_not_fallback_to_api(self):
+        """Smoke path should fail before sending inference on unknown models."""
+        with patch("sys.argv", ["siwc", "smoke", "--model", "not-in-catalog"]), patch.object(
+            siwc, "list_models", return_value=[{"slug": "gpt-6.1-sol"}]
+        ), patch.object(siwc.SIWCClient, "generate_chat") as generate:
+            self.assertEqual(siwc.main(), 1)
+        generate.assert_not_called()
+
+        with patch("sys.argv", ["siwc", "smoke", "--model", "gpt-6.1-sol"]), patch.object(
+            siwc, "list_models", return_value=[{"slug": "gpt-6.1-sol"}]
+        ), patch.object(siwc.SIWCClient, "generate_chat", return_value=SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content="SIWC OK"))]
+        )) as generate:
+            self.assertEqual(siwc.main(), 0)
+        generate.assert_called_once()
+
     def test_global_request_pool_dispatches_to_subscription_adapter(self):
         from utils.llm_request_pool import LLMRequestPool
         from config import settings

@@ -524,6 +524,8 @@ def main() -> int:
     auth.add_argument("--no-browser", action="store_true")
     sub.add_parser("status")
     sub.add_parser("models")
+    smoke = sub.add_parser("smoke", help="Run one consented live subscription Responses request")
+    smoke.add_argument("--model", required=True, help="Visible model slug from the models command")
     sub.add_parser("disconnect")
     choose = sub.add_parser("select")
     choose.add_argument("client_id")
@@ -536,6 +538,16 @@ def main() -> int:
             print(json.dumps(public_status(), indent=2))
         elif args.command == "models":
             print(json.dumps(list_models(), indent=2))
+        elif args.command == "smoke":
+            models = [item["slug"] for item in list_models()]
+            if args.model not in models:
+                raise SubscriptionError("Model is not visible to the selected ChatGPT account.")
+            print("Sending one stream request using your ChatGPT subscription allowance.")
+            response = SIWCClient().generate_chat(
+                model=args.model,
+                messages=[{"role": "user", "content": "Reply with exactly: SIWC OK"}],
+            )
+            print("Completed subscription response: " + response.choices[0].message.content)
         elif args.command == "select":
             print(json.dumps(select_account(args.client_id), indent=2))
         elif args.command == "disconnect":

@@ -826,6 +826,10 @@ async def webdav_post(request: Request) -> JSONResponse:
 
 async def subscription_status(request: Request) -> JSONResponse:
     _require_session(request)
+    # Account email and issued OAuth registration identifiers are personal
+    # account metadata. Do not expose them to delegated WebUI administrators.
+    if _auth_config().enabled:
+        _require_owner(request)
     return JSONResponse(await _blocking_call(backend.subscription_status))
 
 

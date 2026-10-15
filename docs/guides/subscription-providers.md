@@ -43,6 +43,12 @@ On the **same computer where your browser runs**, using the source checkout:
    \`\`\`sh
    PYTHONPATH=src python -m utils.subscription_siwc models
    \`\`\`
+   Optionally run a **real** one-request smoke test with your own consented
+   ChatGPT subscription allowance:
+   ```sh
+   PYTHONPATH=src python -m utils.subscription_siwc smoke --model <visible-slug>
+   ```
+   This is deliberately a live, quota-consuming request, not a mocked CI test.
    Use a listed **slug**, not a display name; each ChatGPT account may have
    different available models. Do not assume the default \`gpt-4o\` is eligible.
 4. In WebUI **配置 → API** choose \`认证 / 计费模式 = 订阅授权\`
