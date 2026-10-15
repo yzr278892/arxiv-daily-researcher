@@ -42,10 +42,13 @@ def stage_input_fingerprint(value: Any) -> str:
 
 def _model_settings(model: Any, temperature: Any) -> Dict[str, Any]:
     """Keep only non-secret model settings that affect generated output."""
-    return {
-        "model_name": str(getattr(model, "model_name", "")),
-        "temperature": temperature,
-    }
+    from utils.llm_parameters import effective_model_parameters
+
+    return effective_model_parameters(
+        str(getattr(model, "model_name", "")), temperature,
+        parameter_mode=getattr(model, "parameter_mode", "auto"),
+        reasoning_effort=getattr(model, "reasoning_effort", "medium"),
+    )
 
 
 def _primary_keyword_entries() -> list[list[Any]]:
