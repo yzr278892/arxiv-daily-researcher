@@ -3302,12 +3302,14 @@ function llmSection(role, title, icon) {
   const hint = role === "cheap"
     ? "用于快速评分和关键词生成，选择速度快、成本低的模型。"
     : "用于深度分析和内容理解，选择能力强的模型。";
+  // Subscription authorization is performed on the owner-controlled machine.
+
   const presets = [
     ["openai", "OpenAI", "https://api.openai.com/v1"], ["deepseek", "DeepSeek", "https://api.deepseek.com/v1"], ["ollama", "Ollama（本地）", "http://127.0.0.1:11434/v1"], ["zhipu", "智谱 AI", "https://open.bigmodel.cn/api/paas/v4"], ["custom", "自定义", ""],
   ];
   const base = envValue(`${prefix}__BASE_URL`, "https://api.openai.com/v1");
   const detected = presets.find(([id, _label, url]) => url && base.includes(url))?.[0] || "custom";
-  return section(title, `<p class="hint-text">${hint}</p><div class="form-grid two"><label class="form-field"><span>服务商预设</span><select id="${keyPrefix}-provider">${presets.map(([id, label]) => `<option value="${id}" ${id === detected ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}</select></label>${field({ label: "Base URL", key: `${prefix}__BASE_URL`, scope: "env", fallback: base, placeholder: "https://api.example.com/v1" })}${field({ label: "API Key", key: `${prefix}__API_KEY`, scope: "env", type: "secret" })}${field({ label: "模型名称", key: `${prefix}__MODEL_NAME`, scope: "env", fallback: role === "cheap" ? "gpt-4o-mini" : "gpt-4o" })}${field({ label: "Temperature", key: `${prefix}__TEMPERATURE`, scope: "env", type: "range", min: 0, max: 2, step: 0.1, fallback: 0.3 })}</div><div class="action-row"><button class="secondary-button" data-test-llm="${role}">测试连接</button><span id="${keyPrefix}-test-result" class="inline-result"></span></div>`, { icon });
+  return section(title, `<p class="hint-text">${hint}</p><div class="form-grid two"><label class="form-field"><span>服务商预设</span><select id="${keyPrefix}-provider">${presets.map(([id, label]) => `<option value="${id}" ${id === detected ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}</select></label>${field({ label: "Base URL", key: `${prefix}__BASE_URL`, scope: "env", fallback: base, placeholder: "https://api.example.com/v1" })}${field({ label: "API Key", key: `${prefix}__API_KEY`, scope: "env", type: "secret" })}${field({ label: "模型名称", key: `${prefix}__MODEL_NAME`, scope: "env", fallback: role === "cheap" ? "gpt-4o-mini" : "gpt-4o" })}${field({ label: "认证 / 计费模式", key: `${prefix}__AUTH_MODE`, scope: "env", type: "select", fallback: "api_key", choices: [{value: "api_key", label: "API Key（默认）"}, {value: "subscription", label: "订阅授权（需提前本地登录）"}] })}${field({ label: "订阅供应商", key: `${prefix}__SUBSCRIPTION_PROVIDER`, scope: "env", type: "select", fallback: "openai_siwc", choices: [{value: "openai_siwc", label: "ChatGPT — 官方 SIWC"}, {value: "github_copilot", label: "GitHub Copilot（尚未实现）"}, {value: "google_gemini", label: "Google Gemini（未获授权）"}, {value: "anthropic_claude", label: "Anthropic Claude（未获授权）"}] })}${field({ label: "Temperature", key: `${prefix}__TEMPERATURE`, scope: "env", type: "range", min: 0, max: 2, step: 0.1, fallback: 0.3 })}</div><div class="action-row"><button class="secondary-button" data-test-llm="${role}">测试连接</button><span id="${keyPrefix}-test-result" class="inline-result"></span></div>`, { icon });
 }
 
 function mineruSection() {
@@ -3336,9 +3338,19 @@ function thirdPartySection() {
 
 async function renderApi(_token) {
   const root = $("#page-root");
-  root.innerHTML = `${pageHeader()}${llmSection("cheap", "低成本 LLM", "💸")}${divider()}${llmSection("smart", "高性能 LLM", "🧠")}${mineruSection()}<div id="api-third-party">${thirdPartySection()}</div>`;
+  root.innerHTML = `${pageHeader()}${llmSection("cheap", "低成本 LLM", "💸")}${divider()}${llmSection("smart", "高性能 LLM", "🧠")}${mineruSection()}<div id="api-third-party">${thirdPartySection()}</div>${divider()}${section("订阅授权", `<p class="hint-text">订阅模式不会使用 API Key 计费，也不会自动回退到付费 API。请先在浏览器所在的本机源码目录执行：</p><p><code>PYTHONPATH=src python -m utils.subscription_siwc login</code></p><p class="hint-text">之后使用 <code>PYTHONPATH=src python -m utils.subscription_siwc models</code> 查看可用的模型 slug。远程 VPS / Docker 需要按文档使用 SSH 安全传输凭证。其他厂商需等待独立适配。</p><p id="subscription-connection-state" class="hint-text">授权状态加载中…</p>`, { icon: "🔐" })}`;
   bindCommon(root);
-  $$("[data-test-llm]", root).forEach((button) => button.addEventListener("click", () => testLlm(button.dataset.testLlm)));
+  runLocalRefresh(api("/api/subscriptions/status").then((status) => {
+    const target = $("#subscription-connection-state", root);
+    if (!target) return;
+    const account = status.active;
+    target.textContent = account
+      ? (account.connected && account.authorized
+          ? `ChatGPT 订阅账户已授权：${account.label}（本地凭证检查；非在线推理测试）。`
+          : `ChatGPT 账户 ${account.label} 已登记，但订阅授权已失效或被拒绝，请重新登录。`)
+      : "尚未连接 ChatGPT 订阅账户。";
+  }));
+  $("[data-test-llm]", root).forEach((button) => button.addEventListener("click", () => testLlm(button.dataset.testLlm)));
   $("[data-test-mineru]", root)?.addEventListener("click", () => testConnection("mineru", {
     api_key: state.draft.env.MINERU_API_KEY,
   }, "mineru-test-result"));
@@ -3378,6 +3390,7 @@ async function testLlm(role) {
   const keyPrefix = role === "cheap" ? "cheap" : "smart";
   await testConnection(`${role}_llm`, {
     api_key: state.draft.env[`${prefix}__API_KEY`], base_url: envValue(`${prefix}__BASE_URL`), model: envValue(`${prefix}__MODEL_NAME`),
+    auth_mode: envValue(`${prefix}__AUTH_MODE`, "api_key"), subscription_provider: envValue(`${prefix}__SUBSCRIPTION_PROVIDER`, "openai_siwc"),
   }, `${keyPrefix}-test-result`);
 }
 
