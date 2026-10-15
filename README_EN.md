@@ -22,6 +22,8 @@
 
 ArXiv Daily Researcher regularly searches arXiv and optional journal sources, filters papers by keywords and personal preferences, and produces Chinese summaries, PDF analyses, and Markdown / HTML reports. Configure, run, and read in a browser, with results also available through email and messaging services.
 
+**Experimental subscription sign-in:** self-hosted users can opt into the official ChatGPT SIWC flow; API keys remain the default. See [setup and security](docs/guides/subscription-providers.md) and the [multi-provider RFC](docs/rfcs/subscription-llm-providers.md).
+
 ## ✨ Features
 
 <table>

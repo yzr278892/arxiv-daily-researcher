@@ -104,8 +104,9 @@ the OAuth callback on a public IP or create a reverse-proxy route for it.
 1. On the remote machine, create/preserve its own host ID via the container
    worker after upgrading:
    \`\`\`sh
-   docker exec arxiv-daily-researcher python -c 'from utils.subscription_state import host_id; print(host_id())'
+   docker exec -u 1000:1000 -e PYTHONPATH=/app/src arxiv-daily-researcher python -c 'from utils.subscription_state import host_id; print(host_id())'
    \`\`\`
+   Replace `1000:1000` with the actual configured Docker `PUID:PGID`.
 2. Authorize the **same application and ChatGPT identity** locally, then
    transfer only \`runtime/subscriptions/openai.json\` over a secure
    authenticated channel such as SSH/SCP, to the VM's corresponding

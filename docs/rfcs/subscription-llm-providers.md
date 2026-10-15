@@ -1,6 +1,6 @@
 # RFC: subscription-backed LLM provider authentication
 
-**Status:** research and design only — no implementation or implied provider support
+**Status:** Phase 1 OpenAI SIWC adapter implemented experimentally; other providers remain research-only
 **Scope:** self-hosted ArXiv Daily Researcher (ADR), worker and management WebUI
 **Origin:** community feedback under [Issue #1](https://github.com/yzr278892/arxiv-daily-researcher/issues/1)
 **Last reviewed:** October 2026
@@ -14,9 +14,12 @@ officially delegated consumer subscription usage *when explicitly
 permitted by the provider*. Do not treat OAuth login, a CLI session,
 an API key, and subscription-billed inference as interchangeable.
 
-This PR intentionally adds no login button, token handler, reverse proxy,
-undocumented endpoint, or production credential storage. A later implementation
-PR must satisfy the gate below and deliver a tested vertical slice.
+This PR now contains the **first staged implementation**: official SIWC OAuth
+with a localhost callback, protected local credential persistence and refresh,
+restricted streaming Responses inference, an opt-in configuration mode and
+mocked regression tests. See [the operator guide](../guides/subscription-providers.md).
+No live account sign-in was possible in CI and other vendors are deliberately
+disabled. The CLI helper is used instead of a public WebUI OAuth callback.
 
 ## Core distinction
 
@@ -141,22 +144,24 @@ Treat such integrations as unsupported until semantics are clear.
 
 ## Rollout
 
-**Phase 0 — this PR:** research and design, no runtime changes.
+**Phase 0 — completed:** provider eligibility research and design.
 
-**Phase 1 — proof of concept:** one officially documented provider (likely
-OpenAI SIWC), locally controlled machine only; authorization, one generation,
-token refresh and revoke. Record provider documentation/version and supported
-model names. Test via mocks and live opt-in manual credentials.
+**Phase 1 — implemented in this PR (experimental):** official OpenAI SIWC
+local authorization, dynamic client ID, ID-token validation, isolated credential
+storage, refresh/revocation, account model discovery and streaming generation
+through existing agents. Mocked tests are included; **real sign-in and inference
+remain a manual acceptance gate**.
 
-**Phase 2 — integration:** isolate adapter and persist secrets securely;
-wire through scoring, translation, keyword and trend agents; surface state in
-WebUI; handle structured outputs, quotas, retries, observability and batch jobs.
+**Phase 2 — later:** direct user-friendly account-aware WebUI sign-in,
+per-account live model selection, explicit subscription-vs-API usage accounting,
+headless-job validation and multi-operator access controls. Existing agents
+already use the Phase 1 adapter.
 
 **Phase 3 — additional providers:** admit each provider only after the same
 compliance and integration gate. Do not claim cross-provider subscription
 support until validated end to end.
 
-## Acceptance criteria for a future implementation PR
+## Acceptance criteria for follow-up phases and production readiness
 
 - Current API-key deployment, WebUI settings and GitHub Actions remain fully
   backward compatible; no new required environment variables.
@@ -183,6 +188,7 @@ support until validated end to end.
    subscription identities, and how will quota exhaustion be reported?
 5. What is the supported migration if a provider withdraws a preview feature?
 
-**Decision requested:** accept the opt-in adapter architecture and provider
-eligibility gate; do not authorize an implementation or market generalized
-subscription support merely by merging this RFC.
+**Decision requested:** review the experimental SIWC adapter and require a
+consented real-account smoke test before production rollout. Do not market
+Copilot, Google, or Anthropic subscription support until a separate official
+adapter and its provider-specific acceptance tests are complete.
