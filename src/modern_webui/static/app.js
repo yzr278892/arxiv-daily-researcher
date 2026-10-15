@@ -3309,7 +3309,8 @@ function llmSection(role, title, icon) {
   ];
   const base = envValue(`${prefix}__BASE_URL`, "https://api.openai.com/v1");
   const detected = presets.find(([id, _label, url]) => url && base.includes(url))?.[0] || "custom";
-  return section(title, `<p class="hint-text">${hint}</p><div class="form-grid two"><label class="form-field"><span>服务商预设</span><select id="${keyPrefix}-provider">${presets.map(([id, label]) => `<option value="${id}" ${id === detected ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}</select></label>${field({ label: "Base URL", key: `${prefix}__BASE_URL`, scope: "env", fallback: base, placeholder: "https://api.example.com/v1" })}${field({ label: "API Key", key: `${prefix}__API_KEY`, scope: "env", type: "secret" })}${field({ label: "模型名称", key: `${prefix}__MODEL_NAME`, scope: "env", fallback: role === "cheap" ? "gpt-4o-mini" : "gpt-4o" })}${field({ label: "认证 / 计费模式", key: `${prefix}__AUTH_MODE`, scope: "env", type: "select", fallback: "api_key", choices: [{value: "api_key", label: "API Key（默认）"}, {value: "subscription", label: "订阅授权（需提前本地登录）"}] })}${field({ label: "订阅供应商", key: `${prefix}__SUBSCRIPTION_PROVIDER`, scope: "env", type: "select", fallback: "openai_siwc", choices: [{value: "openai_siwc", label: "ChatGPT — 官方 SIWC"}, {value: "github_copilot", label: "GitHub Copilot（尚未实现）"}, {value: "google_gemini", label: "Google Gemini（未获授权）"}, {value: "anthropic_claude", label: "Anthropic Claude（未获授权）"}] })}${field({ label: "Temperature", key: `${prefix}__TEMPERATURE`, scope: "env", type: "range", min: 0, max: 2, step: 0.1, fallback: 0.3 })}</div><div class="action-row"><button class="secondary-button" data-test-llm="${role}">测试连接</button><span id="${keyPrefix}-test-result" class="inline-result"></span></div>`, { icon });
+  const subscription = envValue(`${prefix}__AUTH_MODE`, "api_key") === "subscription";
+  return section(title, `<p class="hint-text">${hint}</p><div class="form-grid two">${field({ label: "认证 / 计费模式", key: `${prefix}__AUTH_MODE`, scope: "env", type: "select", fallback: "api_key", choices: [{value: "api_key", label: "API Key（默认）"}, {value: "subscription", label: "订阅授权（需提前本地登录）"}] })}${field({ label: "模型名称", key: `${prefix}__MODEL_NAME`, scope: "env", fallback: role === "cheap" ? "gpt-4o-mini" : "gpt-4o" })}</div><div id="${keyPrefix}-api-fields" ${subscription ? "hidden" : ""}><div class="form-grid two"><label class="form-field"><span>服务商预设</span><select id="${keyPrefix}-provider">${presets.map(([id, label]) => `<option value="${id}" ${id === detected ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}</select></label>${field({ label: "Base URL", key: `${prefix}__BASE_URL`, scope: "env", fallback: base, placeholder: "https://api.example.com/v1" })}${field({ label: "API Key", key: `${prefix}__API_KEY`, scope: "env", type: "secret" })}${field({ label: "Temperature", key: `${prefix}__TEMPERATURE`, scope: "env", type: "range", min: 0, max: 2, step: 0.1, fallback: 0.3 })}</div></div><div id="${keyPrefix}-subscription-fields" ${subscription ? "" : "hidden"}><p class="hint-text">当前仅支持官方 ChatGPT SIWC 授权；其他厂商暂未开放可用的订阅适配器。订阅模式下不会读取 API Key 或自定义 Base URL。</p><div class="form-grid two">${field({ label: "订阅供应商", key: `${prefix}__SUBSCRIPTION_PROVIDER`, scope: "env", type: "select", fallback: "openai_siwc", choices: [{value: "openai_siwc", label: "ChatGPT — 官方 SIWC"}] })}</div></div><div class="action-row"><button class="secondary-button" data-test-llm="${role}">测试连接</button><span id="${keyPrefix}-test-result" class="inline-result"></span></div>`, { icon });
 }
 
 function mineruSection() {
@@ -3340,6 +3341,17 @@ async function renderApi(_token) {
   const root = $("#page-root");
   root.innerHTML = `${pageHeader()}${llmSection("cheap", "低成本 LLM", "💸")}${divider()}${llmSection("smart", "高性能 LLM", "🧠")}${mineruSection()}<div id="api-third-party">${thirdPartySection()}</div>${divider()}${section("订阅授权", `<p class="hint-text">订阅模式不会使用 API Key 计费，也不会自动回退到付费 API。请先在浏览器所在的本机源码目录执行：</p><p><code>PYTHONPATH=src python -m utils.subscription_siwc login</code></p><p class="hint-text">之后使用 <code>PYTHONPATH=src python -m utils.subscription_siwc models</code> 查看可用的模型 slug。远程 VPS / Docker 需要按文档使用 SSH 安全传输凭证。其他厂商需等待独立适配。</p><p id="subscription-connection-state" class="hint-text">授权状态加载中…</p>`, { icon: "🔐" })}`;
   bindCommon(root);
+  ["cheap", "smart"].forEach((role) => {
+    const prefix = role === "cheap" ? "CHEAP_LLM" : "SMART_LLM";
+    const selector = $("[data-field=\"" + prefix + "__AUTH_MODE\"]", root);
+    selector?.addEventListener("change", () => {
+      const subscription = selector.value === "subscription";
+      const apiFields = $("#" + role + "-api-fields", root);
+      const subscriptionFields = $("#" + role + "-subscription-fields", root);
+      if (apiFields) apiFields.hidden = subscription;
+      if (subscriptionFields) subscriptionFields.hidden = !subscription;
+    });
+  });
   runLocalRefresh(api("/api/subscriptions/status").then((status) => {
     const target = $("#subscription-connection-state", root);
     if (!target) return;
