@@ -24,11 +24,16 @@ def safe_http_url(value: object) -> str:
 
     try:
         parsed = urlsplit(url)
+        hostname = parsed.hostname
     except ValueError:
         return ""
 
     if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
         return ""
+    if parsed.scheme.lower() == "http" and hostname:
+        normalized_host = hostname.rstrip(".").casefold()
+        if normalized_host == "arxiv.org" or normalized_host.endswith(".arxiv.org"):
+            return parsed._replace(scheme="https").geturl()
     return url
 
 

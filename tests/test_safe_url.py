@@ -13,7 +13,19 @@ class SafeUrlTests(unittest.TestCase):
             safe_http_url(" https://arxiv.org/abs/2501.12345v1 "),
             "https://arxiv.org/abs/2501.12345v1",
         )
+        self.assertEqual(
+            safe_http_url("http://arxiv.org/abs/2501.12345v1"),
+            "https://arxiv.org/abs/2501.12345v1",
+        )
+        self.assertEqual(
+            safe_http_url("http://EXPORT.ARXIV.ORG/pdf/2501.12345v1.pdf"),
+            "https://EXPORT.ARXIV.ORG/pdf/2501.12345v1.pdf",
+        )
         self.assertEqual(safe_http_url("HTTP://example.test/paper"), "HTTP://example.test/paper")
+        self.assertEqual(
+            safe_http_url("http://notarxiv.org/abs/2501.12345v1"),
+            "http://notarxiv.org/abs/2501.12345v1",
+        )
         for unsafe in (
             "javascript:alert(1)",
             "data:text/html,<script>alert(1)</script>",
