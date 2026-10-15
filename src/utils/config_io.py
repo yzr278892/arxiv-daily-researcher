@@ -263,11 +263,15 @@ ENV_FIELDS = [
     ("CHEAP_LLM__BASE_URL", "Low-cost LLM Base URL", False, "https://api.openai.com/v1"),
     ("CHEAP_LLM__MODEL_NAME", "Low-cost LLM Model", False, "gpt-4o-mini"),
     ("CHEAP_LLM__TEMPERATURE", "Low-cost LLM Temperature", False, "0.3"),
+    ("CHEAP_LLM__AUTH_MODE", "Low-cost LLM Billing Mode", False, "api_key"),
+    ("CHEAP_LLM__SUBSCRIPTION_PROVIDER", "Low-cost Subscription Provider", False, "openai_siwc"),
     # LLM - Smart
     ("SMART_LLM__API_KEY", "High-perf LLM API Key", True, ""),
     ("SMART_LLM__BASE_URL", "High-perf LLM Base URL", False, "https://api.openai.com/v1"),
     ("SMART_LLM__MODEL_NAME", "High-perf LLM Model", False, "gpt-4o"),
     ("SMART_LLM__TEMPERATURE", "High-perf LLM Temperature", False, "0.3"),
+    ("SMART_LLM__AUTH_MODE", "High-perf LLM Billing Mode", False, "api_key"),
+    ("SMART_LLM__SUBSCRIPTION_PROVIDER", "High-perf Subscription Provider", False, "openai_siwc"),
     # Third-party APIs
     ("ENABLE_OPENALEX", "Enable OpenAlex", False, "true"),
     ("OPENALEX_API_KEY", "OpenAlex API Key", True, ""),

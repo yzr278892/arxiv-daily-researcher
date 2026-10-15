@@ -824,6 +824,11 @@ async def webdav_post(request: Request) -> JSONResponse:
         raise _safe_error(exc) from exc
 
 
+async def subscription_status(request: Request) -> JSONResponse:
+    _require_session(request)
+    return JSONResponse(await _blocking_call(backend.subscription_status))
+
+
 async def connection_test(request: Request) -> JSONResponse:
     _require_session(request)
     payload = await _payload(request)
@@ -1069,6 +1074,7 @@ app = Starlette(
         Route("/api/webdav", webdav_post, methods=["POST"]),
         Route("/api/notifications/{channel:str}/test", notification_test, methods=["POST"]),
         Route("/api/connections/{kind:str}", connection_test, methods=["POST"]),
+        Route("/api/subscriptions/status", subscription_status, methods=["GET"]),
         Route("/api/logs", logs_get, methods=["GET"]),
         Route("/api/logs/{token:str}", log_get, methods=["GET"]),
         Route("/api/accounts", accounts_get, methods=["GET"]),

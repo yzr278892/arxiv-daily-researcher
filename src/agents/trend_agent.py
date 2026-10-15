@@ -97,10 +97,12 @@ class TrendAgent:
         self.cheap_client = build_llm_client(
             settings.CHEAP_LLM.api_key,
             settings.CHEAP_LLM.base_url,
+            model_config=settings.CHEAP_LLM,
         )
         self.smart_client = build_llm_client(
             settings.SMART_LLM.api_key,
             settings.SMART_LLM.base_url,
+            model_config=settings.SMART_LLM,
         )
         self.skills = self._load_skills()
         self._health_recorder = health_recorder

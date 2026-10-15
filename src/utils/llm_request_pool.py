@@ -54,11 +54,15 @@ class LLMRequestPool:
     def call_chat_completion(self, client: Any, **kwargs):
         """Call ``client.chat.completions.create`` after acquiring a rate slot."""
         self._wait_for_slot()
+        if getattr(client, "subscription_provider", None):
+            return client.generate_chat(**kwargs)
         return client.chat.completions.create(**kwargs)
 
     def call_responses(self, client: Any, **kwargs):
         """Call an optional Responses API through the same global limiter."""
         self._wait_for_slot()
+        if getattr(client, "subscription_provider", None):
+            return client.generate_responses(**kwargs)
         return client.responses.create(**kwargs)
 
 

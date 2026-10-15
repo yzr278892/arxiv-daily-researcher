@@ -9,6 +9,7 @@ exponential backoff with jitter, and no retry on fatal provider errors
 """
 
 import logging
+from typing import Any
 
 from openai import OpenAI
 
@@ -58,6 +59,9 @@ def is_retryable_llm_error(exc: BaseException) -> bool:
         seen.add(id(current))
         if isinstance(current, LLMEndpointCapabilityError):
             return False
+        from utils.subscription_state import SubscriptionError
+        if isinstance(current, SubscriptionError):
+            return current.retryable
         if isinstance(current, _FATAL_OPENAI_ERRORS):
             return False
         current = current.__cause__ or current.__context__
@@ -73,8 +77,15 @@ def is_retryable_llm_error(exc: BaseException) -> bool:
     return True
 
 
-def build_llm_client(api_key: str, base_url: str) -> OpenAI:
-    """Build an OpenAI client with the shared timeout/retry bounds."""
+def build_llm_client(api_key: str, base_url: str, *, model_config: Any = None) -> OpenAI:
+    """Select an explicit, authorized subscription adapter or legacy API key."""
+    if getattr(model_config, "auth_mode", "api_key") == "subscription":
+        provider = getattr(model_config, "subscription_provider", "")
+        if provider != "openai_siwc":
+            from utils.subscription_state import SubscriptionError
+            raise SubscriptionError(f"Subscription provider {provider} is not implemented or authorized.")
+        from utils.subscription_siwc import SIWCClient
+        return SIWCClient(timeout=float(settings.LLM_TIMEOUT_SECONDS))
     return OpenAI(
         api_key=api_key,
         base_url=base_url,

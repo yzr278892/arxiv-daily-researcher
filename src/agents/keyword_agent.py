@@ -31,7 +31,8 @@ class KeywordAgent:
     def __init__(self, health_recorder: Optional[LLMHealthRecorder] = None):
         # 初始化低成本LLM客户端
         self.client = build_llm_client(
-            settings.CHEAP_LLM.api_key, settings.CHEAP_LLM.base_url
+            settings.CHEAP_LLM.api_key, settings.CHEAP_LLM.base_url,
+            model_config=settings.CHEAP_LLM,
         )
 
         # 缓存文件路径

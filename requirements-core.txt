@@ -20,6 +20,8 @@ pydantic-settings==2.12.0
 pydantic_core==2.41.5
 PyMuPDF==1.26.7
 python-dotenv==1.2.1
+# Verified OpenID Connect ID tokens for official ChatGPT SIWC OAuth.
+PyJWT[crypto]>=2.10.1,<3
 requests==2.32.5
 sgmllib3k==1.0.0
 sniffio==1.3.1

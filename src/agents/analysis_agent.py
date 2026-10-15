@@ -290,10 +290,12 @@ class AnalysisAgent:
     def __init__(self, health_recorder: Optional[LLMHealthRecorder] = None):
         # 初始化两个不同性能LLM客户端
         self.cheap_client = build_llm_client(
-            settings.CHEAP_LLM.api_key, settings.CHEAP_LLM.base_url
+            settings.CHEAP_LLM.api_key, settings.CHEAP_LLM.base_url,
+            model_config=settings.CHEAP_LLM,
         )
         self.smart_client = build_llm_client(
-            settings.SMART_LLM.api_key, settings.SMART_LLM.base_url
+            settings.SMART_LLM.api_key, settings.SMART_LLM.base_url,
+            model_config=settings.SMART_LLM,
         )
 
         # 初始化 MinerU PDF 解析器
@@ -452,6 +454,16 @@ class AnalysisAgent:
             chat_kwargs["temperature"] = temperature
         if response_format is not None:
             chat_kwargs["response_format"] = response_format
+
+        # Subscription adapters use a dedicated, restricted Responses endpoint
+        # even though they present a chat-shaped interface to legacy agents.
+        # Never consult or mutate generic provider endpoint-capability caches.
+        if getattr(client, "subscription_provider", None):
+            response = call_chat_completion(client, **chat_kwargs)
+            text = self._extract_chat_text(response)
+            if not text:
+                raise LLMResponseError("Subscription provider returned empty content.")
+            return text, self._response_usage(response)
 
         # ``client.base_url`` is an httpx URL in newer SDKs; preserve the
         # configured string as the stable compatibility key.
