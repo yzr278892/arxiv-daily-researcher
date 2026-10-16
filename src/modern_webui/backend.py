@@ -3189,6 +3189,28 @@ def subscription_status() -> dict[str, Any]:
     return subscription_public_status()
 
 
+def subscription_models() -> dict[str, Any]:
+    """Show only visible model metadata for the currently selected account."""
+    from utils.subscription_siwc import list_models
+
+    return {"models": list_models()}
+
+
+def subscription_select(client_id: str) -> dict[str, Any]:
+    """Switch a registered ChatGPT account without sharing any credentials."""
+    from utils.subscription_siwc import select_account
+
+    return select_account(client_id)
+
+
+def subscription_disconnect() -> dict[str, Any]:
+    """Revoke the selected session when possible; always clear its local tokens."""
+    from utils.subscription_siwc import disconnect
+
+    confirmed = disconnect()
+    return {"remote_revoked": confirmed, "status": subscription_public_status()}
+
+
 def connection_test(kind: str, payload: Mapping[str, Any]) -> dict[str, Any]:
     """Run a one-off external connection test using the submitted secret.
 
@@ -3204,7 +3226,19 @@ def connection_test(kind: str, payload: Mapping[str, Any]) -> dict[str, Any]:
             snapshot = subscription_public_status()
             active = snapshot.get("active") or {}
             ok = provider == "openai_siwc" and bool(active.get("connected")) and bool(active.get("authorized"))
-            message = "ChatGPT SIWC credentials available (not a live inference test)." if ok else "Subscription provider unavailable or not authorized; run local SIWC login."
+            if ok:
+                from utils.subscription_siwc import list_models
+                role = "CHEAP_LLM" if kind == "cheap_llm" else "SMART_LLM"
+                requested = str(values.get("model") or settings.get(role + "__MODEL_NAME") or "")
+                slugs = {item["slug"] for item in list_models()}
+                ok = requested in slugs
+                message = (
+                    "ChatGPT account authorized; selected model is available (no inference sent)."
+                    if ok else
+                    "Selected model is not available on this ChatGPT account. Choose a listed model."
+                )
+            else:
+                message = "ChatGPT consent is unavailable or expired. Authorize locally first."
         elif kind == "cheap_llm":
             ok, message = validate_llm_connection(
                 str(values.get("api_key") or settings.get("CHEAP_LLM__API_KEY") or ""),

@@ -254,6 +254,35 @@ class SubscriptionTests(unittest.TestCase):
                     model="gpt-6", messages=[{"role": "user", "content": "hello"}],
                 )
 
+    def test_account_specific_model_catalog(self):
+        self._persist()
+        class FakeResponse:
+            status_code = 200
+            def json(self):
+                return {"models": [
+                    {"visibility": "list", "slug": "gpt-6.1-sol", "display_name": "GPT-6.1 Sol"},
+                    {"visibility": "hidden", "slug": "internal-model"},
+                ]}
+        with patch.object(siwc, "get_access_token", return_value="token") as access, patch.object(
+            siwc.requests, "get", return_value=FakeResponse()
+        ) as get:
+            items = siwc.list_models("oaiapp_test")
+        self.assertEqual(items, [{"slug": "gpt-6.1-sol", "display_name": "GPT-6.1 Sol"}])
+        access.assert_called_once_with("oaiapp_test")
+        self.assertEqual(get.call_args.args[0], siwc.RESOURCE + "/models")
+
+    def test_webui_model_api_does_not_return_token_fields(self):
+        from modern_webui import backend
+        with patch.object(siwc, "list_models", return_value=[
+            {"slug": "gpt-6.1-sol", "display_name": "GPT-6.1 Sol"}
+        ]):
+            data = backend.subscription_models()
+        self.assertEqual(data["models"][0]["slug"], "gpt-6.1-sol")
+        self.assertNotIn("access_token", json.dumps(data))
+        with patch.object(siwc, "select_account", return_value={"active": "stub"}) as select:
+            self.assertEqual(backend.subscription_select("oaiapp_test"), {"active": "stub"})
+            select.assert_called_once_with("oaiapp_test")
+
     def test_live_smoke_cli_requires_model_and_does_not_fallback_to_api(self):
         """Smoke path should fail before sending inference on unknown models."""
         with patch("sys.argv", ["siwc", "smoke", "--model", "not-in-catalog"]), patch.object(

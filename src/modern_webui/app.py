@@ -824,13 +824,51 @@ async def webdav_post(request: Request) -> JSONResponse:
         raise _safe_error(exc) from exc
 
 
-async def subscription_status(request: Request) -> JSONResponse:
+def _require_subscription_owner(request: Request) -> None:
+    """Subscription identity/settings are owner-only and require WebUI auth.
+
+    An intentionally unauthenticated LAN panel must never become a remote
+    interface for managing personal OAuth credentials.
+    """
     _require_session(request)
-    # Account email and issued OAuth registration identifiers are personal
-    # account metadata. Do not expose them to delegated WebUI administrators.
-    if _auth_config().enabled:
-        _require_owner(request)
+    if not _auth_config().enabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="启用 WebUI 身份验证后才能管理 ChatGPT 订阅账户。",
+        )
+    _require_owner(request)
+
+
+async def subscription_status(request: Request) -> JSONResponse:
+    _require_subscription_owner(request)
     return JSONResponse(await _blocking_call(backend.subscription_status))
+
+
+async def subscription_models(request: Request) -> JSONResponse:
+    _require_subscription_owner(request)
+    try:
+        return JSONResponse(await _blocking_call(backend.subscription_models))
+    except Exception as exc:
+        raise _safe_error(exc) from exc
+
+
+async def subscription_select(request: Request) -> JSONResponse:
+    _require_subscription_owner(request)
+    payload = await _payload(request)
+    try:
+        return JSONResponse(await _blocking_call(
+            backend.subscription_select, str(payload.get("client_id") or "")
+        ))
+    except Exception as exc:
+        raise _safe_error(exc) from exc
+
+
+async def subscription_disconnect(request: Request) -> JSONResponse:
+    _require_subscription_owner(request)
+    try:
+        return JSONResponse(await _blocking_call(backend.subscription_disconnect))
+    except Exception as exc:
+        raise _safe_error(exc) from exc
 
 
 async def connection_test(request: Request) -> JSONResponse:
@@ -1079,6 +1117,9 @@ app = Starlette(
         Route("/api/notifications/{channel:str}/test", notification_test, methods=["POST"]),
         Route("/api/connections/{kind:str}", connection_test, methods=["POST"]),
         Route("/api/subscriptions/status", subscription_status, methods=["GET"]),
+        Route("/api/subscriptions/models", subscription_models, methods=["GET"]),
+        Route("/api/subscriptions/select", subscription_select, methods=["POST"]),
+        Route("/api/subscriptions/disconnect", subscription_disconnect, methods=["POST"]),
         Route("/api/logs", logs_get, methods=["GET"]),
         Route("/api/logs/{token:str}", log_get, methods=["GET"]),
         Route("/api/accounts", accounts_get, methods=["GET"]),
