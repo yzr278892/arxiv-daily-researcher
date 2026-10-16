@@ -3359,6 +3359,15 @@ async function refreshChatGPTSubscriptionControls(root) {
       : [new Option("尚未连接账户", "")]
   ));
   refreshPrettySelect(accountSelect);
+  for (const id of ["subscription-login-local", "subscription-add-local"]) {
+    const button = $("#" + id, root);
+    if (button) {
+      button.disabled = !status.local_browser_login_available;
+      button.title = status.local_browser_login_available
+        ? "浏览器与 WebUI 在同一台计算机时可直接授权。"
+        : "仅本机源码运行并显式启用后可用；远程 Docker 请使用本地 CLI。";
+    }
+  }
   const active = status.active;
   const valid = Boolean(active && active.connected && active.authorized);
   target.textContent = valid
@@ -3410,7 +3419,7 @@ async function refreshChatGPTSubscriptionControls(root) {
 
 async function renderApi(_token) {
   const root = $("#page-root");
-  root.innerHTML = `${pageHeader()}${llmSection("cheap", "低成本 LLM", "💸")}${divider()}${llmSection("smart", "高性能 LLM", "🧠")}${mineruSection()}<div id="api-third-party">${thirdPartySection()}</div>${divider()}${section("ChatGPT 订阅授权", `<p class="hint-text">当前仅支持官方 Sign in with ChatGPT（SIWC），默认仍采用 API Key。请先在浏览器所在电脑的源码目录运行：<code>PYTHONPATH=src python -m utils.subscription_siwc login</code>。首次授权后可以在此管理账户并选择当前账户可用的模型。远程 Docker 按部署文档通过 SSH 安全传输凭证；面板不会存储或展示令牌。</p><div class="form-grid two"><label class="form-field"><span>ChatGPT 账户</span><select id="subscription-account-picker"><option value="">尚未连接账户</option></select></label></div><div class="action-row"><button class="secondary-button" id="subscription-refresh" type="button">刷新账户及模型列表</button><button class="secondary-button" id="subscription-disconnect" type="button">断开当前账户授权</button></div><p id="subscription-connection-state" class="hint-text">正在读取授权状态…</p><p class="hint-text"><a href="https://chatgpt.com/#settings" target="_blank" rel="noreferrer">ChatGPT 设置与额度 ↗</a></p>`, { icon: "🔐" })}`;
+  root.innerHTML = `${pageHeader()}${llmSection("cheap", "低成本 LLM", "💸")}${divider()}${llmSection("smart", "高性能 LLM", "🧠")}${mineruSection()}<div id="api-third-party">${thirdPartySection()}</div>${divider()}${section("ChatGPT 订阅授权", `<p class="hint-text">当前仅支持官方 Sign in with ChatGPT（SIWC），默认仍采用 API Key。请先在浏览器所在电脑的源码目录运行：<code>PYTHONPATH=src python -m utils.subscription_siwc login</code>。首次授权后可以在此管理账户并选择当前账户可用的模型。远程 Docker 按部署文档通过 SSH 安全传输凭证；面板不会存储或展示令牌。</p><div class="form-grid two"><label class="form-field"><span>ChatGPT 账户</span><select id="subscription-account-picker"><option value="">尚未连接账户</option></select></label></div><div class="action-row"><button class="secondary-button" id="subscription-login-local" type="button" disabled>Continue with ChatGPT（本机）</button><button class="secondary-button" id="subscription-add-local" type="button" disabled>添加 ChatGPT 账户</button><button class="secondary-button" id="subscription-refresh" type="button">刷新账户及模型列表</button><button class="secondary-button" id="subscription-disconnect" type="button">断开当前账户授权</button></div><p id="subscription-connection-state" class="hint-text">正在读取授权状态…</p><p class="hint-text"><a href="https://chatgpt.com/#settings" target="_blank" rel="noreferrer">ChatGPT 设置与额度 ↗</a></p>`, { icon: "🔐" })}`;
   bindCommon(root);
   ["cheap", "smart"].forEach((role) => {
     const prefix = role === "cheap" ? "CHEAP_LLM" : "SMART_LLM";
@@ -3424,6 +3433,24 @@ async function renderApi(_token) {
     });
   });
   runLocalRefresh(refreshChatGPTSubscriptionControls(root));
+  async function beginLocalChatGPTSignIn(newAccount) {
+    try {
+      const result = await api("/api/subscriptions/authorize/start", {
+        method: "POST", body: { new_account: newAccount === true },
+      });
+      const url = String(result.authorization_url || "");
+      if (!url.startsWith("https://auth.openai.com/api/accounts/authorize?")) {
+        throw new Error("授权入口来源不正确，已停止跳转。");
+      }
+      window.location.assign(url);
+    } catch (error) { toast(localizedError(error), "error"); }
+  }
+  $("#subscription-login-local", root)?.addEventListener("click", () => {
+    runLocalRefresh(beginLocalChatGPTSignIn(false));
+  });
+  $("#subscription-add-local", root)?.addEventListener("click", () => {
+    runLocalRefresh(beginLocalChatGPTSignIn(true));
+  });
   $("#subscription-refresh", root)?.addEventListener("click", () => {
     runLocalRefresh(refreshChatGPTSubscriptionControls(root));
   });
