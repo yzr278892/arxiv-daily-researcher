@@ -96,7 +96,8 @@ def _b64url(data: bytes) -> str:
 
 def build_authorize_url(*, client_id: str, host: str, callback: str,
                         state: str, nonce: str, challenge: str,
-                        login_hint: str | None = None) -> str:
+                        login_hint: str | None = None,
+                        prompt_consent: bool = False) -> str:
     params = {
         "client_id": client_id,
         "redirect_uri": callback,
@@ -109,6 +110,9 @@ def build_authorize_url(*, client_id: str, host: str, callback: str,
         "code_challenge_method": "S256",
         "code_challenge": challenge,
     }
+    if prompt_consent:
+        # Ask again only after the user explicitly retries a denied plan grant.
+        params["prompt"] = "consent"
     if client_id == "dynamic_agent_client":
         params["agent_name_hint"] = AGENT_NAME
     elif login_hint:
@@ -308,6 +312,9 @@ def begin_authorization(
         client_id=client_id, host=host_id(), callback=callback,
         state=state, nonce=nonce, challenge=challenge,
         login_hint=(str(previous.get("email") or "") if previous else None),
+        prompt_consent=bool(
+            previous and "chatgpt.tokens.use.direct" not in previous.get("scopes", [])
+        ),
     )
     return attempt, url
 
@@ -547,6 +554,8 @@ class SIWCClient:
             # Preserve failure metadata without echoing response bodies or
             # bearer credentials into logs or user-visible diagnostics.
             status = getattr(exc, "status_code", 0)
+            if not isinstance(status, int):
+                status = 0
             code = getattr(exc, "code", None)
             if not code:
                 body = getattr(exc, "body", None)

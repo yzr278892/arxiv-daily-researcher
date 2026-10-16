@@ -179,6 +179,24 @@ class SubscriptionTests(unittest.TestCase):
         with self.assertRaisesRegex(state.SubscriptionError, "consent"):
             siwc.get_access_token()
 
+    def test_declined_plan_permission_prompts_explicit_reconsent(self):
+        from urllib.parse import parse_qs, urlparse
+
+        self._persist(_record(scopes=["openid", "offline_access"]))
+        with patch.object(siwc, "host_id", return_value="urn:uuid:host"):
+            _attempt, url = siwc.begin_authorization(
+                "http://127.0.0.1:8812/auth/callback"
+            )
+        params = parse_qs(urlparse(url).query)
+        self.assertEqual(params.get("prompt"), ["consent"])
+        self.assertNotIn("force_reconsent", params)
+        self._persist()
+        with patch.object(siwc, "host_id", return_value="urn:uuid:host"):
+            _attempt, url = siwc.begin_authorization(
+                "http://127.0.0.1:8812/auth/callback"
+            )
+        self.assertNotIn("prompt", parse_qs(urlparse(url).query))
+
     def test_host_id_persists_without_exposing_credentials(self):
         self.assertEqual(state.host_id(), state.host_id())
         self.assertTrue(state.host_id().startswith("urn:uuid:"))

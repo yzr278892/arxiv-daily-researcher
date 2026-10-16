@@ -3192,8 +3192,13 @@ def subscription_status() -> dict[str, Any]:
 def subscription_models() -> dict[str, Any]:
     """Show only visible model metadata for the currently selected account."""
     from utils.subscription_siwc import list_models
+    from utils.subscription_state import SubscriptionError
 
-    return {"models": list_models()}
+    try:
+        return {"models": list_models()}
+    except SubscriptionError as exc:
+        # Errors from this adapter are scrubbed of OAuth secrets.
+        raise ModernWebUIError(str(exc)) from exc
 
 
 def subscription_select(client_id: str) -> dict[str, Any]:

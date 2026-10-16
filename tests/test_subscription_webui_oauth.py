@@ -82,6 +82,34 @@ class LocalWebUIAuthorizationTests(unittest.TestCase):
             })
             require.assert_called_once_with(fake_request)
 
+    def test_llm_connection_check_reuses_subscription_owner_guard(self):
+        self._setup_owner()
+        with patch.object(webui.backend, "connection_test", return_value={
+            "ok": True, "message": "mock"
+        }) as connection, patch.object(
+            webui, "_require_subscriber_owner_if_needed"
+        ) as guard:
+            response = self.client.post(
+                "/api/connections/cheap_llm",
+                json={"auth_mode": "subscription", "model": "gpt-6.1-sol"},
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            guard.call_args.args[1],
+            {"CHEAP_LLM__AUTH_MODE": "subscription"},
+        )
+        connection.assert_called_once()
+        with patch.object(webui, "_cached_env", return_value={
+            "CHEAP_LLM__AUTH_MODE": "subscription",
+        }), patch.object(
+            webui, "_require_subscription_owner",
+            side_effect=Exception("non-owner subscription access denied"),
+        ):
+            with self.assertRaisesRegex(Exception, "non-owner"):
+                webui._require_subscriber_owner_if_needed(object(), {
+                    "CHEAP_LLM__AUTH_MODE": "api_key"
+                })
+
     def test_local_mode_rejects_remote_clients_and_proxies(self):
         target = SimpleNamespace(
             url=SimpleNamespace(scheme="http", hostname="127.0.0.1"),

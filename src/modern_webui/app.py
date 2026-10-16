@@ -1007,6 +1007,12 @@ async def subscription_disconnect(request: Request) -> JSONResponse:
 async def connection_test(request: Request) -> JSONResponse:
     _require_session(request)
     payload = await _payload(request)
+    kind = request.path_params.get("kind", "")
+    if kind in {"cheap_llm", "smart_llm"}:
+        role = "CHEAP_LLM" if kind == "cheap_llm" else "SMART_LLM"
+        _require_subscriber_owner_if_needed(
+            request, {role + "__AUTH_MODE": payload.get("auth_mode", "api_key")}
+        )
     try:
         return JSONResponse(
             await _blocking_call(backend.connection_test, request.path_params.get("kind", ""), payload)
