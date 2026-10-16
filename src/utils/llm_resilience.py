@@ -83,7 +83,7 @@ def build_llm_client(api_key: str, base_url: str, *, model_config: Any = None) -
         provider = getattr(model_config, "subscription_provider", "")
         if provider != "openai_siwc":
             from utils.subscription_state import SubscriptionError
-            raise SubscriptionError(f"Subscription provider {provider} is not implemented or authorized.")
+            raise SubscriptionError("Only official ChatGPT SIWC subscription mode is supported.")
         from utils.subscription_siwc import SIWCClient
         return SIWCClient(timeout=float(settings.LLM_TIMEOUT_SECONDS))
     return OpenAI(

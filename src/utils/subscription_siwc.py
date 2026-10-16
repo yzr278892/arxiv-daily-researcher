@@ -55,7 +55,8 @@ def _b64url(data: bytes) -> str:
 
 
 def build_authorize_url(*, client_id: str, host: str, callback: str,
-                        state: str, nonce: str, challenge: str) -> str:
+                        state: str, nonce: str, challenge: str,
+                        login_hint: str | None = None) -> str:
     params = {
         "client_id": client_id,
         "redirect_uri": callback,
@@ -70,6 +71,8 @@ def build_authorize_url(*, client_id: str, host: str, callback: str,
     }
     if client_id == "dynamic_agent_client":
         params["agent_name_hint"] = AGENT_NAME
+    elif login_hint:
+        params["login_hint"] = login_hint
     return AUTHORIZE_URL + "?" + urlencode(params)
 
 
@@ -111,7 +114,7 @@ def _post_form(url: str, payload: dict) -> dict:
         except (ValueError, AttributeError):
             pass
         if url == TOKEN_URL and error_code in {
-            "invalid_grant", "invalid_refresh_token", "refresh_token_expired",
+            "invalid_grant", "invalid_refresh_token", "refresh_token_expired", "token_expired",
             "refresh_token_invalidated", "refresh_token_reused",
         }:
             raise SubscriptionError("ChatGPT authorization expired; sign in again.")
@@ -234,6 +237,7 @@ def login(*, new_account: bool = False, no_browser: bool = False) -> dict:
         url = build_authorize_url(
             client_id=client_id, host=host_id(), callback=callback,
             state=state, nonce=nonce, challenge=challenge,
+            login_hint=(str(previous.get("email") or "") if previous else None),
         )
         # Never print an id_token_hint or any OAuth tokens.
         print("Open the following official authorization URL in this machine's browser:")
@@ -256,7 +260,7 @@ def login(*, new_account: bool = False, no_browser: bool = False) -> dict:
     if not isinstance(raw_id, str):
         raise SubscriptionError("OpenAI did not return an ID token.")
     claims = _validate_id_token(raw_id, client_id=issued_id, nonce=nonce)
-    if previous is not None and claims["sub"] != previous["subject"]:
+    if previous is not None and (claims["sub"] != previous["subject"] or issued_id != previous["client_id"]):
         raise SubscriptionError("Reauthorization changed the selected ChatGPT identity.")
     with locked_store():
         data = read_accounts()
@@ -271,11 +275,14 @@ def login(*, new_account: bool = False, no_browser: bool = False) -> dict:
     return public_status()
 
 
-def get_access_token() -> str:
-    """Refresh atomically across processes when near expiry, fail closed."""
+def get_access_token(client_id: str | None = None) -> str:
+    """Refresh one pinned registration atomically, without crossing accounts."""
     with locked_store():
         data = read_accounts()
-        account = selected_account(data)
+        selected = client_id or data.get("active")
+        account = data["accounts"].get(selected)
+        if not isinstance(account, dict) or not account.get("client_id") or account.get("client_id") != selected:
+            raise SubscriptionError("Selected ChatGPT account registration is unavailable.")
         if "chatgpt.tokens.use.direct" not in account.get("scopes", []):
             raise SubscriptionError("ChatGPT plan usage consent was not granted; reauthorize.")
         if not account.get("refresh_token"):
@@ -312,16 +319,16 @@ def get_access_token() -> str:
         else:
             claims = {"sub": account["subject"], "email": account.get("email", "")}
         updated = _make_record(body, account["client_id"], claims, previous=account)
-        data["accounts"][data["active"]] = updated
+        data["accounts"][selected] = updated
         write_accounts(data)
         if "chatgpt.tokens.use.direct" not in updated["scopes"]:
             raise SubscriptionError("ChatGPT plan permission was removed.")
         return updated["access_token"]
 
 
-def list_models() -> list[dict]:
-    """Discover models for the currently authenticated ChatGPT identity."""
-    token = get_access_token()
+def list_models(client_id: str | None = None) -> list[dict]:
+    """Discover models for one registered ChatGPT identity."""
+    token = get_access_token(client_id)
     try:
         response = requests.get(
             RESOURCE + "/models",
@@ -331,6 +338,8 @@ def list_models() -> list[dict]:
     except requests.RequestException as exc:
         raise SubscriptionTransientError("OpenAI model catalog is unavailable.") from exc
     if response.status_code != 200:
+        if response.status_code >= 500 or response.status_code == 429:
+            raise SubscriptionTransientError("ChatGPT model catalog is temporarily unavailable.")
         raise SubscriptionError(f"OpenAI model list request failed (HTTP {response.status_code}).")
     try:
         body = response.json()
@@ -369,6 +378,14 @@ class SIWCClient:
 
     def __init__(self, *, timeout: float = 300.0):
         self.timeout = timeout
+        # Freeze account identity at first generation; WebUI account switching
+        # must not redirect requests in a running research task.
+        self._account_id: str | None = None
+
+    def _token_for_run(self) -> str:
+        if self._account_id is None:
+            self._account_id = selected_account()["client_id"]
+        return get_access_token(self._account_id)
 
     def generate_chat(self, **kwargs):
         from openai import OpenAI
@@ -400,7 +417,7 @@ class SIWCClient:
             payload["reasoning"] = {"effort": kwargs["reasoning_effort"]}
         # Never send temperature, top_p, background, user or other unsupported
         # Chat parameters in the subscription route.
-        token = get_access_token()
+        token = self._token_for_run()
         client = OpenAI(
             api_key=token, base_url=RESOURCE,
             max_retries=0, timeout=self.timeout,
@@ -509,7 +526,7 @@ def disconnect() -> bool:
 def select_account(client_id: str) -> dict:
     with locked_store():
         data = read_accounts()
-        if client_id not in data["accounts"]:
+        if not isinstance(client_id, str) or client_id not in data["accounts"]:
             raise SubscriptionError("Unknown ChatGPT account registration.")
         data["active"] = client_id
         write_accounts(data)

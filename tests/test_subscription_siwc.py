@@ -270,6 +270,22 @@ class SubscriptionTests(unittest.TestCase):
             self.assertEqual(siwc.main(), 0)
         generate.assert_called_once()
 
+    def test_client_identity_is_pinned_across_account_switch(self):
+        """A long-running agent may not silently change ChatGPT identities."""
+        self._persist()
+        client = siwc.SIWCClient()
+        with patch.object(siwc, "get_access_token", return_value="token") as access:
+            self.assertEqual(client._token_for_run(), "token")
+            self.assertEqual(client._account_id, "oaiapp_test")
+            with state.locked_store():
+                data = state.read_accounts()
+                other = _record(client_id="oaiapp_other", subject="other-subject")
+                data["accounts"]["oaiapp_other"] = other
+                data["active"] = "oaiapp_other"
+                state.write_accounts(data)
+            self.assertEqual(client._token_for_run(), "token")
+            self.assertEqual(access.call_args.args, ("oaiapp_test",))
+
     def test_global_request_pool_dispatches_to_subscription_adapter(self):
         from utils.llm_request_pool import LLMRequestPool
         from config import settings

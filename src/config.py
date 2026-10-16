@@ -144,7 +144,7 @@ class LLMConfig(BaseModel):
     temperature: float = 0.3
     # Existing API-key integrations remain the default after upgrade.
     auth_mode: Literal["api_key", "subscription"] = "api_key"
-    subscription_provider: Literal["openai_siwc", "github_copilot", "google_gemini", "anthropic_claude"] = "openai_siwc"
+    subscription_provider: Literal["openai_siwc"] = "openai_siwc"
 
 
 class Settings(BaseSettings):

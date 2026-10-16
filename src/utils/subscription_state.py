@@ -20,21 +20,6 @@ SUPPORTED_PROVIDERS = {
         "implemented": True,
         "note": "Official open-source app authorization; local/self-hosted only.",
     },
-    "github_copilot": {
-        "label": "GitHub Copilot SDK",
-        "implemented": False,
-        "note": "Official SDK candidate; integration and deployment tests pending.",
-    },
-    "google_gemini": {
-        "label": "Google Gemini subscription",
-        "implemented": False,
-        "note": "No approved third-party CLI-token reuse; use API key mode.",
-    },
-    "anthropic_claude": {
-        "label": "Anthropic Claude subscription",
-        "implemented": False,
-        "note": "No approved third-party Claude Code-token reuse; use API key mode.",
-    },
 }
 
 
@@ -77,6 +62,8 @@ def _ensure_root() -> None:
 
 def _read_json(name: str, fallback: dict) -> dict:
     path = _file(name)
+    if _root().is_symlink():
+        raise SubscriptionError("Subscription directory must not be a symlink.")
     if _root().is_symlink():
         raise SubscriptionError("Subscription directory must not be a symlink.")
     if not path.exists():
@@ -193,6 +180,7 @@ def public_status() -> dict:
         result["accounts"].append({
             "client_id": client_id,
             "label": str(account.get("email") or "ChatGPT account")[:120],
+            "registration_label": f"…{client_id[-8:]}",
             "connected": bool(account.get("refresh_token")),
             "authorized": "chatgpt.tokens.use.direct" in account.get("scopes", []),
             "active": client_id == state.get("active"),
