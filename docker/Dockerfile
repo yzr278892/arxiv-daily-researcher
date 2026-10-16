@@ -109,6 +109,8 @@ FROM webui-deps AS webui
 LABEL description="ArXiv Daily Researcher - modern management WebUI"
 
 COPY src/utils/config_io.py ./src/utils/
+COPY src/utils/subscription_state.py ./src/utils/
+COPY src/utils/subscription_siwc.py ./src/utils/
 COPY src/utils/history_maintenance.py ./src/utils/
 COPY src/utils/backup.py ./src/utils/
 COPY src/utils/daily_research_store.py ./src/utils/

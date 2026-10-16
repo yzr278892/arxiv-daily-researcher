@@ -12,6 +12,7 @@ import sys
 import tempfile
 import threading
 import time
+from urllib.parse import parse_qs
 from functools import partial
 from pathlib import Path
 from typing import Any
@@ -23,7 +24,7 @@ from starlette.exceptions import HTTPException
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.requests import Request
-from starlette.responses import FileResponse, JSONResponse, Response
+from starlette.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
@@ -463,9 +464,31 @@ async def version_get(request: Request) -> JSONResponse:
     return JSONResponse(await _blocking_call(backend.version_status))
 
 
+def _require_subscriber_owner_if_needed(
+    request: Request, proposed_env: Any = None
+) -> None:
+    """Do not let another panel administrator spend the owner's plan.
+
+    Existing API-key-only installations keep their current role permissions.
+    Protect an existing subscription setting even when an update is trying to
+    switch it back; otherwise non-owners could temporarily downgrade access.
+    """
+    current = _cached_env()
+    proposed = proposed_env if isinstance(proposed_env, dict) else {}
+    keys = ("CHEAP_LLM__AUTH_MODE", "SMART_LLM__AUTH_MODE")
+    subscription = any(
+        str(current.get(key, "api_key")).strip().lower() == "subscription"
+        or str(proposed.get(key, "api_key")).strip().lower() == "subscription"
+        for key in keys
+    )
+    if subscription:
+        _require_subscription_owner(request)
+
+
 async def settings_put(request: Request) -> JSONResponse:
     _require_session(request)
     payload = await _payload(request)
+    _require_subscriber_owner_if_needed(request, payload.get("env"))
     try:
         result = await _blocking_call(
             backend.save_settings,
@@ -480,6 +503,7 @@ async def settings_put(request: Request) -> JSONResponse:
 
 async def restart_worker(request: Request) -> JSONResponse:
     _require_session(request)
+    _require_subscriber_owner_if_needed(request)
     try:
         await _blocking_call(backend.request_worker_restart)
     except Exception as exc:
@@ -516,6 +540,7 @@ async def clear_stale_triggers(request: Request) -> JSONResponse:
 
 async def start_task(request: Request) -> JSONResponse:
     _require_session(request)
+    _require_subscriber_owner_if_needed(request)
     mode = request.path_params.get("mode", "")
     payload = await _payload(request)
     try:
@@ -526,6 +551,7 @@ async def start_task(request: Request) -> JSONResponse:
 
 async def daily_start(request: Request) -> JSONResponse:
     _require_session(request)
+    _require_subscriber_owner_if_needed(request)
     try:
         return JSONResponse(await _blocking_call(backend.enqueue_task, "daily_research"))
     except Exception as exc:
@@ -558,6 +584,7 @@ async def history_get(request: Request) -> JSONResponse:
 
 async def history_retry(request: Request) -> JSONResponse:
     _require_session(request)
+    _require_subscriber_owner_if_needed(request)
     try:
         return JSONResponse(
             await _blocking_call(backend.retry_history_task, request.path_params.get("request_id", ""))
@@ -824,9 +851,168 @@ async def webdav_post(request: Request) -> JSONResponse:
         raise _safe_error(exc) from exc
 
 
+def _require_subscription_owner(request: Request) -> None:
+    """Subscription identity/settings are owner-only and require WebUI auth.
+
+    An intentionally unauthenticated LAN panel must never become a remote
+    interface for managing personal OAuth credentials.
+    """
+    _require_session(request)
+    if not _auth_config().enabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="启用 WebUI 身份验证后才能管理 ChatGPT 订阅账户。",
+        )
+    _require_owner(request)
+
+
+# Only an explicitly enabled, direct local WebUI is allowed to launch browser
+# OAuth. A Docker bridge, reverse proxy, LAN or remotely hosted browser must
+# use the standalone local CLI's 127.0.0.1 callback instead.
+_SIWC_AUTH_ATTEMPTS: dict[str, Any] = {}
+_SIWC_AUTH_ATTEMPTS_LOCK = threading.Lock()
+
+
+def _is_local_siwc_webui(request: Request) -> bool:
+    if os.environ.get("ADR_SIWC_LOCAL_WEBUI_ENABLED", "").strip().lower() not in {
+        "1", "true", "yes", "on"
+    }:
+        return False
+    if request.url.scheme != "http" or request.url.hostname != "127.0.0.1":
+        return False
+    if request.client is None or request.client.host != "127.0.0.1":
+        return False
+    if any(name in request.headers for name in (
+        "x-forwarded-for", "x-forwarded-host", "forwarded",
+    )):
+        return False
+    return True
+
+
+async def subscription_authorize_start(request: Request) -> JSONResponse:
+    _require_subscription_owner(request)
+    if not _is_local_siwc_webui(request):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="仅支持明确启用且浏览器与 WebUI 位于同一台机器的本地授权。",
+        )
+    payload = await _payload(request)
+    from utils.subscription_siwc import begin_authorization
+
+    callback = "http://127.0.0.1:" + str(request.url.port or 80) + "/auth/callback"
+    try:
+        attempt, url = await _blocking_call(
+            begin_authorization, callback,
+            new_account=(payload.get("new_account") is True),
+        )
+    except Exception as exc:
+        raise _safe_error(exc) from exc
+    with _SIWC_AUTH_ATTEMPTS_LOCK:
+        now = time.time()
+        expired = [
+            state for state, item in _SIWC_AUTH_ATTEMPTS.items()
+            if now - item.issued_at > 300
+        ]
+        for state in expired:
+            del _SIWC_AUTH_ATTEMPTS[state]
+        # Limit unconsumed attempts; never persist PKCE secrets in the browser.
+        if len(_SIWC_AUTH_ATTEMPTS) >= 4:
+            raise HTTPException(status_code=429, detail="登录尝试过多，请稍后再试。")
+        _SIWC_AUTH_ATTEMPTS[attempt.state] = attempt
+    return JSONResponse({"authorization_url": url}, headers={"Cache-Control": "no-store"})
+
+
+async def subscription_oauth_callback(request: Request) -> Response:
+    # The cross-site OpenAI redirect does not carry SameSite=Strict session
+    # cookies; a valid, single-use, owner-initiated pending state is required
+    # instead. Never grant a new session from this route.
+    if not _is_local_siwc_webui(request):
+        raise HTTPException(status_code=403, detail="本机 OAuth 回调不可用。")
+    # Uvicorn may log the ASGI query string after the response; the outer
+    # middleware removes it from scope before any logging. Parse the original
+    # value kept exclusively in request-local server memory.
+    raw = request.scope.get("state", {}).pop("siwc_query_string", b"")
+    try:
+        pairs = parse_qs(raw.decode("ascii"), keep_blank_values=True, max_num_fields=12)
+    except (UnicodeDecodeError, ValueError):
+        raise HTTPException(status_code=400, detail="OAuth 回调编码无效。") from None
+    state = pairs.get("state", [""])[0] if len(pairs.get("state", [])) == 1 else ""
+    if not isinstance(state, str) or len(state) > 256:
+        raise HTTPException(status_code=400, detail="OAuth 回调无效。")
+    with _SIWC_AUTH_ATTEMPTS_LOCK:
+        attempt = _SIWC_AUTH_ATTEMPTS.pop(state, None)
+    if attempt is None:
+        raise HTTPException(status_code=400, detail="OAuth 登录已过期或回调重复。")
+    from utils.subscription_siwc import finish_authorization
+
+    if any(len(values) != 1 for values in pairs.values()):
+        raise HTTPException(status_code=400, detail="OAuth 回调重复参数无效。")
+    query = {
+        key: pairs[key][0]
+        for key in ("state", "code", "client_id", "scope", "error")
+        if key in pairs
+    }
+    if any(not isinstance(value, str) or len(value) > 8192 for value in query.values()):
+        raise HTTPException(status_code=400, detail="OAuth 回调长度无效。")
+    try:
+        await _blocking_call(finish_authorization, query, attempt)
+    except Exception:
+        return Response(
+            "ChatGPT authorization failed. Return to the WebUI and retry sign-in.",
+            status_code=400,
+            media_type="text/plain",
+            headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
+        )
+    return RedirectResponse(
+        url="/?subscription=connected#configuration/api",
+        status_code=303,
+        headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
+    )
+
+
+async def subscription_status(request: Request) -> JSONResponse:
+    _require_subscription_owner(request)
+    snapshot = await _blocking_call(backend.subscription_status)
+    snapshot["local_browser_login_available"] = _is_local_siwc_webui(request)
+    return JSONResponse(snapshot)
+
+
+async def subscription_models(request: Request) -> JSONResponse:
+    _require_subscription_owner(request)
+    try:
+        return JSONResponse(await _blocking_call(backend.subscription_models))
+    except Exception as exc:
+        raise _safe_error(exc) from exc
+
+
+async def subscription_select(request: Request) -> JSONResponse:
+    _require_subscription_owner(request)
+    payload = await _payload(request)
+    try:
+        return JSONResponse(await _blocking_call(
+            backend.subscription_select, str(payload.get("client_id") or "")
+        ))
+    except Exception as exc:
+        raise _safe_error(exc) from exc
+
+
+async def subscription_disconnect(request: Request) -> JSONResponse:
+    _require_subscription_owner(request)
+    try:
+        return JSONResponse(await _blocking_call(backend.subscription_disconnect))
+    except Exception as exc:
+        raise _safe_error(exc) from exc
+
+
 async def connection_test(request: Request) -> JSONResponse:
     _require_session(request)
     payload = await _payload(request)
+    kind = request.path_params.get("kind", "")
+    if kind in {"cheap_llm", "smart_llm"}:
+        role = "CHEAP_LLM" if kind == "cheap_llm" else "SMART_LLM"
+        _require_subscriber_owner_if_needed(
+            request, {role + "__AUTH_MODE": payload.get("auth_mode", "api_key")}
+        )
     try:
         return JSONResponse(
             await _blocking_call(backend.connection_test, request.path_params.get("kind", ""), payload)
@@ -1024,6 +1210,27 @@ async def http_exception_handler(_request: Request, exc: HTTPException) -> JSONR
     return JSONResponse({"detail": str(exc.detail)}, status_code=exc.status_code)
 
 
+class _RedactSIWCCallbackQuery:
+    """Keep OAuth codes out of ASGI/Uvicorn request URL access logs.
+
+    The original query exists only in ephemeral ASGI state for the single
+    callback handler. Uvicorn logs scope["query_string"] after response start,
+    which is deliberately empty by then.
+    """
+
+    def __init__(self, app: Any):
+        self.app = app
+
+    async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
+        if scope.get("type") == "http" and scope.get("path") == "/auth/callback":
+            original = scope.get("query_string", b"")
+            if len(original) > 16384:
+                original = b""
+            scope.setdefault("state", {})["siwc_query_string"] = original
+            scope["query_string"] = b""
+        await self.app(scope, receive, send)
+
+
 app = Starlette(
     routes=[
         Route("/api/health", health, methods=["GET"]),
@@ -1069,6 +1276,12 @@ app = Starlette(
         Route("/api/webdav", webdav_post, methods=["POST"]),
         Route("/api/notifications/{channel:str}/test", notification_test, methods=["POST"]),
         Route("/api/connections/{kind:str}", connection_test, methods=["POST"]),
+        Route("/api/subscriptions/status", subscription_status, methods=["GET"]),
+        Route("/api/subscriptions/authorize/start", subscription_authorize_start, methods=["POST"]),
+        Route("/auth/callback", subscription_oauth_callback, methods=["GET"]),
+        Route("/api/subscriptions/models", subscription_models, methods=["GET"]),
+        Route("/api/subscriptions/select", subscription_select, methods=["POST"]),
+        Route("/api/subscriptions/disconnect", subscription_disconnect, methods=["POST"]),
         Route("/api/logs", logs_get, methods=["GET"]),
         Route("/api/logs/{token:str}", log_get, methods=["GET"]),
         Route("/api/accounts", accounts_get, methods=["GET"]),
@@ -1107,3 +1320,5 @@ app.add_middleware(
     https_only=os.environ.get("WEBUI_COOKIE_SECURE", "false").strip().lower()
     in {"1", "true", "yes", "on"},
 )
+# Must be the outermost ASGI middleware to sanitize callback queries early.
+app.add_middleware(_RedactSIWCCallbackQuery)

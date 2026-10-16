@@ -35,6 +35,7 @@ from utils.backup import (
     list_local_backups,
     restore_backup_archive,
 )
+from utils.subscription_state import public_status as subscription_public_status
 from utils.config_io import (
     DEFAULT_CONFIG_PATH,
     DEFAULT_ENV_PATH,
@@ -224,9 +225,13 @@ PUBLIC_ENV_FIELDS = frozenset(
         "CHEAP_LLM__BASE_URL",
         "CHEAP_LLM__MODEL_NAME",
         "CHEAP_LLM__TEMPERATURE",
+        "CHEAP_LLM__AUTH_MODE",
+        "CHEAP_LLM__SUBSCRIPTION_PROVIDER",
         "SMART_LLM__BASE_URL",
         "SMART_LLM__MODEL_NAME",
         "SMART_LLM__TEMPERATURE",
+        "SMART_LLM__AUTH_MODE",
+        "SMART_LLM__SUBSCRIPTION_PROVIDER",
         "ENABLE_OPENALEX",
         "ENABLE_SEMANTIC_SCHOLAR_TLDR",
         "TRANSLATE_SEMANTIC_SCHOLAR_TLDR",
@@ -3179,6 +3184,38 @@ def webdav_operation(
     raise ModernWebUIError("不支持的 WebDAV 操作。")
 
 
+def subscription_status() -> dict[str, Any]:
+    """Authenticated WebUI read-only status; excludes all OAuth credentials."""
+    return subscription_public_status()
+
+
+def subscription_models() -> dict[str, Any]:
+    """Show only visible model metadata for the currently selected account."""
+    from utils.subscription_siwc import list_models
+    from utils.subscription_state import SubscriptionError
+
+    try:
+        return {"models": list_models()}
+    except SubscriptionError as exc:
+        # Errors from this adapter are scrubbed of OAuth secrets.
+        raise ModernWebUIError(str(exc)) from exc
+
+
+def subscription_select(client_id: str) -> dict[str, Any]:
+    """Switch a registered ChatGPT account without sharing any credentials."""
+    from utils.subscription_siwc import select_account
+
+    return select_account(client_id)
+
+
+def subscription_disconnect() -> dict[str, Any]:
+    """Revoke the selected session when possible; always clear its local tokens."""
+    from utils.subscription_siwc import disconnect
+
+    confirmed = disconnect()
+    return {"remote_revoked": confirmed, "status": subscription_public_status()}
+
+
 def connection_test(kind: str, payload: Mapping[str, Any]) -> dict[str, Any]:
     """Run a one-off external connection test using the submitted secret.
 
@@ -3189,7 +3226,25 @@ def connection_test(kind: str, payload: Mapping[str, Any]) -> dict[str, Any]:
     values = dict(payload)
     kind = str(kind)
     try:
-        if kind == "cheap_llm":
+        if kind in {"cheap_llm", "smart_llm"} and str(values.get("auth_mode") or settings.get(("CHEAP_LLM" if kind == "cheap_llm" else "SMART_LLM") + "__AUTH_MODE") or "api_key") == "subscription":
+            provider = str(values.get("subscription_provider") or "openai_siwc")
+            snapshot = subscription_public_status()
+            active = snapshot.get("active") or {}
+            ok = provider == "openai_siwc" and bool(active.get("connected")) and bool(active.get("authorized"))
+            if ok:
+                from utils.subscription_siwc import list_models
+                role = "CHEAP_LLM" if kind == "cheap_llm" else "SMART_LLM"
+                requested = str(values.get("model") or settings.get(role + "__MODEL_NAME") or "")
+                slugs = {item["slug"] for item in list_models()}
+                ok = requested in slugs
+                message = (
+                    "ChatGPT account authorized; selected model is available (no inference sent)."
+                    if ok else
+                    "Selected model is not available on this ChatGPT account. Choose a listed model."
+                )
+            else:
+                message = "ChatGPT consent is unavailable or expired. Authorize locally first."
+        elif kind == "cheap_llm":
             ok, message = validate_llm_connection(
                 str(values.get("api_key") or settings.get("CHEAP_LLM__API_KEY") or ""),
                 str(values.get("base_url") or settings.get("CHEAP_LLM__BASE_URL") or ""),

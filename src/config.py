@@ -5,7 +5,7 @@ import re
 
 import json5  # 用于加载带注释的配置文件
 from pathlib import Path
-from typing import List, Optional, Dict, Any, Tuple
+from typing import List, Optional, Dict, Any, Tuple, Literal
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from utils.source_registry import (
@@ -142,6 +142,9 @@ class LLMConfig(BaseModel):
     base_url: str = Field("https://api.openai.com/v1", description="LLM API的基础URL地址")
     model_name: str = Field("gpt-4o", description="要使用的模型名称标识")
     temperature: float = 0.3
+    # Existing API-key integrations remain the default after upgrade.
+    auth_mode: Literal["api_key", "subscription"] = "api_key"
+    subscription_provider: Literal["openai_siwc"] = "openai_siwc"
 
 
 class Settings(BaseSettings):
@@ -454,9 +457,9 @@ class Settings(BaseSettings):
 
     # ==================== LLM配置 ====================
     # 低成本LLM：用于快速初步筛选和关键词生成
-    CHEAP_LLM: LLMConfig = Field(default_factory=lambda: LLMConfig(api_key="sk-dummy"))
+    CHEAP_LLM: LLMConfig = Field(default=LLMConfig(api_key="sk-dummy"))
     # 高性能LLM：用于深层论文分析和内容理解
-    SMART_LLM: LLMConfig = Field(default_factory=lambda: LLMConfig(api_key="sk-dummy"))
+    SMART_LLM: LLMConfig = Field(default=LLMConfig(api_key="sk-dummy"))
 
     # ==================== 研究趋势模式配置 ====================
     RESEARCH_REPORTS_DIR: Path = DATA_DIR / "reports" / "trend_research"  # 研究趋势报告存储路径
@@ -480,6 +483,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         env_nested_delimiter="__",  # 嵌套配置使用__分隔符，如CHEAP_LLM__API_KEY
+        nested_model_default_partial_update=True,  # Allow subscription-only .env config without an API key
         extra="ignore",  # 忽略.env中未定义的额外参数
     )
 

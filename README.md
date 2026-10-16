@@ -22,6 +22,8 @@
 
 ArXiv Daily Researcher 定期检索 arXiv 与可选期刊来源，根据关键词和个人偏好筛选论文，生成中文摘要、PDF 分析及 Markdown / HTML 报告。通过浏览器完成配置、运行和阅读，也可将结果发送到邮件或即时通信平台。
 
+**实验性订阅授权：** 自托管实例可选择官方 ChatGPT SIWC 模式（需单独授权，默认仍使用 API Key）。[安装、安全和部署说明](docs/guides/subscription-providers.md) · [ChatGPT 订阅设计方案](docs/rfcs/subscription-llm-providers.md)。
+
 ## ✨ 核心功能
 
 <table>
