@@ -1,171 +1,227 @@
-# Subscription-backed LLM providers (experimental)
+# ChatGPT subscription (official Sign in with ChatGPT, experimental)
 
-This release introduces a **separate, optional** subscription billing mode
-for CHEAP_LLM and SMART_LLM. The first working adapter is **OpenAI Sign in
-with ChatGPT (SIWC)** for eligible open-source, locally controlled use.
-Legacy API-key providers remain the default and are not changed.
+This guide covers **only ChatGPT plan-backed inference** for eligible self-hosted
+ArXiv Daily Researcher (ADR) installations. No other consumer subscription
+login mechanisms are integrated.
 
-**Not a universal OAuth-to-API gateway.** A Gemini/Claude CLI login is not
-authorization to reuse its tokens in another app. The UI lists candidate
-providers but intentionally refuses to run unimplemented adapters. The
-GitHub Copilot SDK is an independently documented candidate for a later
-adapter; its session semantics cannot be represented as a normal API key.
+API keys remain the default. When enabled explicitly per CHEAP_LLM or
+SMART_LLM role, ChatGPT SIWC uses the user's own authorized subscription
+allowance; no OpenAI API key is consumed or billed for those requests.
 
-> Experimental: OAuth request and inference are implemented, with mocked
-> tests. A real ChatGPT account and provider approval are required for a
-> live end-to-end verification. Do not treat a passing CI test as evidence
-> that a particular account/region/model is eligible.
+> Experimental until a user completes a real account authorization and
+> consented inference check. Passing the mocked CI tests does not establish
+> that your plan, workspace, country or requested model is eligible.
 
-## Setup on a computer you control
+## Supported setups and authentication choices
 
-On the **same computer where your browser runs**, using the source checkout:
+| Environment | Sign-in flow | Status |
+| --- | --- | --- |
+| Locally installed Python application | Built-in CLI loopback OAuth | Supported |
+| Local native WebUI on \`127.0.0.1\` | Optional **Continue with ChatGPT** button | Supported with explicit opt-in and owner authentication |
+| Self-hosted remote Docker / VPS | Sign in on the browser's computer, transfer protected credential session over SSH | Supported with provider's known limitations |
+| GitHub-hosted Actions runner or shared SaaS | No persistent owner-controlled credential session | Not supported |
 
-1. Install Python dependencies:
+The OAuth callback address is deliberately always an HTTP
+\`127.0.0.1:<port>/auth/callback\` URL. The browser computer and callback
+listener must be the **same** computer. Do not expose that callback through
+a public IP or remote reverse proxy.
+
+## A. Local CLI sign-in (also used for remote Docker)
+
+From a source checkout on the computer running your browser:
+
+\`\`\`sh
+python -m pip install -r requirements-core.txt
+PYTHONPATH=src python -m utils.subscription_siwc login
+\`\`\`
+
+Windows PowerShell:
+
+\`\`\`powershell
+$env:PYTHONPATH = "src"
+python -m utils.subscription_siwc login
+\`\`\`
+
+The helper opens OpenAI's real consent screen, starts a temporary
+\`127.0.0.1\` listener, validates State/PKCE/nonce and verifies the signed
+ID token. Credentials are saved only after identity validation.
+The authorization URL contains no access or refresh token.
+
+The authorization request asks for \`chatgpt.tokens.use.direct\`; if this
+permission is declined, a successful identity login **does not enable**
+subscription inference. Re-run \`login\` after updating consent.
+
+List the selected account's currently available models (live catalog request,
+not a text-generation call):
+
+\`\`\`sh
+PYTHONPATH=src python -m utils.subscription_siwc status
+PYTHONPATH=src python -m utils.subscription_siwc models
+\`\`\`
+
+To exercise actual entitlement, perform **one** intentionally
+quota-consuming test with an available \`slug\`:
+
+\`\`\`sh
+PYTHONPATH=src python -m utils.subscription_siwc smoke --model <visible-model-slug>
+\`\`\`
+
+The command must receive a completed SSE response, not only a partial stream.
+
+## B. Optional direct sign-in from a native localhost WebUI
+
+For a **local source-code install, not remote Docker**, with WebUI account
+authentication enabled, start the WebUI on the browser computer using:
+
+\`\`\`sh
+ADR_SIWC_LOCAL_WEBUI_ENABLED=true PYTHONPATH=src \
+  uvicorn modern_webui.app:app --host 127.0.0.1 --port 8501
+\`\`\`
+
+Open \`http://127.0.0.1:8501\`, sign in as the **WebUI owner**, go to
+**配置 → API → ChatGPT 订阅授权**, and choose
+**Continue with ChatGPT（本机）**. Use **添加 ChatGPT 账户** to add a separate
+registration. The button is disabled unless all requirements are satisfied:
+explicit environment opt-in, authenticated owner, localhost request and
+direct, non-proxied HTTP connection.
+
+The start endpoint creates a one-time PKCE authorization attempt in server
+memory. The local WebUI accepts the returning \`/auth/callback\` only with a
+matching, unconsumed State. It does not return tokens in browser JSON,
+URL fragments or settings exports. If the WebUI restarts during consent,
+restart the attempt. Cross-site callbacks do not create or grant a WebUI
+login session.
+
+After authorization, the owner can select the active account, refresh the
+available model list and disconnect the active authorization. A connected
+account does not imply that every model is available.
+
+Remote Docker installations **must not** enable the local WebUI login option:
+the browser's \`127.0.0.1\` callback cannot reach the remote container.
+
+## C. Select LLM billing mode and model
+
+In WebUI **配置 → API**, choose the following independently for the low-cost
+(CHEAP_LLM) and high-performance (SMART_LLM) model roles:
+
+- **API Key** — unchanged, the default.
+- **订阅授权** — official ChatGPT SIWC, authorized by the selected account.
+
+Use the account-aware **订阅可用模型** dropdown for each role. It displays
+the user's actual \`display_name\` but saves the provider's \`slug\` as
+\`MODEL_NAME\`. Save configuration and restart the worker after switching
+accounts/models or billing mode.
+
+Equivalent optional environment values:
+
+\`\`\`dotenv
+CHEAP_LLM__AUTH_MODE=subscription
+CHEAP_LLM__SUBSCRIPTION_PROVIDER=openai_siwc
+CHEAP_LLM__MODEL_NAME=<visible-model-slug>
+SMART_LLM__AUTH_MODE=subscription
+SMART_LLM__SUBSCRIPTION_PROVIDER=openai_siwc
+SMART_LLM__MODEL_NAME=<visible-model-slug>
+\`\`\`
+
+Either role may stay on API-key billing. There is **no automatic fallback**
+to paid API requests on subscription expiration, policy failure or quota exhaustion.
+
+The WebUI connection test checks the selected ChatGPT model's availability
+in the authenticated model catalog; it is **not** a paid or quota-consuming
+inference test. The CLI \`smoke\` command is the explicit live test.
+
+## D. Remote Docker / VPS deployment
+
+The browser and its \`127.0.0.1\` callback must remain local. Complete step A
+on a machine you control, then copy only the already protected credential
+record to the VM over an authenticated encrypted channel.
+
+1. On the VM, create **its own** persistent host identifier before importing
+   credentials (example container name from the standard Compose deployment):
+
    \`\`\`sh
-   python -m pip install -r requirements-core.txt
+   docker exec -u 1000:1000 -e PYTHONPATH=/app/src \
+     arxiv-daily-researcher python -c \
+     'from utils.subscription_state import host_id; print(host_id())'
    \`\`\`
-2. Start local authorization:
-   \`\`\`sh
-   PYTHONPATH=src python -m utils.subscription_siwc login
-   \`\`\`
-   Windows PowerShell:
-   \`\`\`powershell
-   $env:PYTHONPATH="src"
-   python -m utils.subscription_siwc login
-   \`\`\`
-   The command opens the official OpenAI sign-in page and listens only on
-   \`127.0.0.1\` with an ephemeral port under \`/auth/callback\`. The user
-   authorizes access to their own eligible ChatGPT plan. The callback is
-   checked against a one-time state, PKCE verifier and signed OIDC ID token
-   before anything is persisted. Stop and review OpenAI's requested consent
-   before accepting.
-3. Query the exact available models, after sign-in:
-   \`\`\`sh
-   PYTHONPATH=src python -m utils.subscription_siwc models
-   \`\`\`
-   Optionally run a **real** one-request smoke test with your own consented
-   ChatGPT subscription allowance:
-   ```sh
-   PYTHONPATH=src python -m utils.subscription_siwc smoke --model <visible-slug>
-   ```
-   This is deliberately a live, quota-consuming request, not a mocked CI test.
-   Use a listed **slug**, not a display name; each ChatGPT account may have
-   different available models. Do not assume the default \`gpt-4o\` is eligible.
-4. In WebUI **配置 → API** choose \`认证 / 计费模式 = 订阅授权\`
-   for the required CHEAP_LLM and/or SMART_LLM role. Select the
-   \`openai_siwc\` provider and set its model name to an available slug.
-   Save the settings and restart the worker. Alternatively set:
-   \`\`\`dotenv
-   CHEAP_LLM__AUTH_MODE=subscription
-   CHEAP_LLM__SUBSCRIPTION_PROVIDER=openai_siwc
-   CHEAP_LLM__MODEL_NAME=<a slug from the models command>
-   SMART_LLM__AUTH_MODE=subscription
-   SMART_LLM__SUBSCRIPTION_PROVIDER=openai_siwc
-   SMART_LLM__MODEL_NAME=<a slug from the models command>
-   \`\`\`
-   Each role is independent: either may stay on \`api_key\`.
-5. Run an ordinary workflow. The worker uses the official public
-   \`POST https://api.openai.com/v1/responses\` route, \`store=false\`,
-   \`stream=true\`, user/developer context, and consumes the full stream
-   through \`response.completed\`. It never sends \`temperature\` on this
-   route. The OpenAI OAuth token is **not** an OpenAI API key and is never
-   forwarded to custom \`BASE_URL\` hosts.
 
-The WebUI subscription status checks **local credential presence and granted
-permissions only**. The ordinary test button does not claim to validate a
-live model request in this mode.
+   Replace \`1000:1000\` with your configured Docker \`PUID:PGID\`.
+2. Transfer your local \`runtime/subscriptions/openai.json\` using SSH/SCP
+   into the VM's **own** \`runtime/subscriptions/openai.json\` (a mounted
+   directory shared by Worker and WebUI in the standard Compose setup).
+3. Retain the VM's own \`host.json\`; **do not** overwrite it with the
+   laptop's host identifier. Require directory mode \`0700\` and file mode
+   \`0600\`, owned by the mapped runtime user. Do not commit these files,
+   attach them to GitHub issues, or put them in your usual backup/export.
+4. In the remote WebUI, use owner authentication to select a model, enable
+   subscription mode, save settings and restart the worker.
 
-## Credentials, accounts, and disconnect
+OpenAI documents that transferred sessions currently have limitations for
+host-specific attribution and revocation. The VM refreshes the imported
+credentials thereafter. Multi-tenant sharing is not supported.
 
-- Credentials are stored at \`runtime/subscriptions/openai.json\`, atomically
-  replaced with mode \`0600\` inside a \`0700\` directory (on Unix).
-  \`runtime/\` is excluded from Git. **Do not put this file in emails, bug
-  reports, issue comments, Docker images, GitHub secrets or normal backups.**
-- The stable host identifier is stored separately in
-  \`runtime/subscriptions/host.json\`; it must not be copied from a laptop to
-  an already-identified VM.
-- On expiry, the worker refreshes tokens via the official OpenAI token
-  endpoint; refresh is serialized across worker/CLI processes to prevent
-  concurrent use of rotating refresh tokens. Confirmed invalid grants
-  invalidate local tokens; temporary provider outages preserve credentials.
-- Available local management commands:
-  \`\`\`sh
-  PYTHONPATH=src python -m utils.subscription_siwc status
-  PYTHONPATH=src python -m utils.subscription_siwc login --new-account
-  PYTHONPATH=src python -m utils.subscription_siwc select <issued-client-id>
-  PYTHONPATH=src python -m utils.subscription_siwc disconnect
-  \`\`\`
-  Reauthorization of the selected registration reuses its issued client ID.
-  A new account gets an independent ID/client mapping.
-- The \`disconnect\` command attempts remote revocation, then clears active
-  local tokens. If revocation cannot be confirmed, disconnect the app in
-  ChatGPT Settings as well. Credentials are never returned by WebUI endpoints.
+## Local credentials and account lifecycle
 
-## Self-hosted VPS / Docker
+ADR stores the current and past issued \`oaiapp_...\` account registrations
+under \`runtime/subscriptions/openai.json\`, with an independent persistent
+host ID in \`runtime/subscriptions/host.json\`. Files are atomically replaced
+with mode \`0600\` under a \`0700\` directory on Unix. The directory is
+excluded by the repository's \`.gitignore\`.
 
-The browser's \`127.0.0.1\` callback goes to **the browser's computer**,
-not a remote server or arbitrary Docker container. Therefore, do not expose
-the OAuth callback on a public IP or create a reverse-proxy route for it.
+Access tokens are short-lived. The worker refreshes using the newest rotating
+refresh token and serializes refreshes across processes; account switching
+does not change the identity pinned by an already-running research task.
+Confirmed terminal grant failures require sign-in again; temporary failures
+retain usable credentials.
 
-1. On the remote machine, create/preserve its own host ID via the container
-   worker after upgrading:
-   \`\`\`sh
-   docker exec -u 1000:1000 -e PYTHONPATH=/app/src arxiv-daily-researcher python -c 'from utils.subscription_state import host_id; print(host_id())'
-   \`\`\`
-   Replace `1000:1000` with the actual configured Docker `PUID:PGID`.
-2. Authorize the **same application and ChatGPT identity** locally, then
-   transfer only \`runtime/subscriptions/openai.json\` over a secure
-   authenticated channel such as SSH/SCP, to the VM's corresponding
-   \`runtime/subscriptions/\` directory.
-3. Preserve the remote VM's existing \`host.json\`. Ensure owner-only
-   permissions and correct Docker PUID/PGID ownership.
-4. Restart the worker after selecting subscription mode in the remote WebUI.
-   Refresh occurs on the self-hosted VM, with the user's consent.
+To manage accounts via CLI:
 
-OpenAI's current documentation notes limitations for host-specific usage
-attribution and revocation after moving credentials between machines.
+\`\`\`sh
+PYTHONPATH=src python -m utils.subscription_siwc login --new-account
+PYTHONPATH=src python -m utils.subscription_siwc select <issued-client-id>
+PYTHONPATH=src python -m utils.subscription_siwc disconnect
+\`\`\`
 
-**Unsupported deployment**: GitHub-hosted Actions runners do not constitute
-the long-lived, owner-controlled storage assumed by this integration. The
-existing API-key CI/Actions configuration remains the recommended path there.
+Disconnect attempts revocation at the endpoint advertised in OpenAI's
+OpenID Connect discovery document, then always clears the selected local
+tokens. If remote revocation cannot be confirmed, also disconnect the app
+in ChatGPT Settings.
 
-## Policy and operational constraints
+## Quota, errors and troubleshooting
 
-- Use only supported, officially documented OAuth scopes and endpoints.
-  Authorization does not transfer ChatGPT conversations to ADR.
-- ChatGPT plan access, regional permission, models and usage limits are
-  determined by OpenAI. The app **never silently falls back to separately
-  billed API usage** on auth or quota failure.
-- When app quota is exhausted, stop requesting new subscription inferences.
-  Use the account's ChatGPT Settings → Usage to check limits. Do not assume a
-  numeric reset time from an error code alone.
-- User-controlled local/self-hosted, **single operator** is the supported
-  operational topology in this phase. Do not share one subscription grant
-  across unrelated WebUI accounts, service tenants, or a hosted SaaS.
-- Avoid logging request bodies or bearer tokens. Refrain from exposing
-  \`runtime/subscriptions/\` via file browser or backup/export features.
-- Token counts shown in existing diagnostics are **not a monetary balance**,
-  and do not indicate subscription quota remaining.
-- OpenAI may change the preview requirements. Recheck official documentation
-  before enabling new endpoint parameters or models.
+- ChatGPT plan availability, eligibility and model catalog are determined by
+  OpenAI, not ADR. App quotas are shared as documented for your subscription.
+- A \`subscription_sharing_usage_limit_exceeded\` response stops further
+  subscription requests for the same registered account in the current worker
+  process. Check **ChatGPT Settings → Usage**; do not guess the reset time.
+- \`subscription_sharing_usage_unavailable\` is a temporary availability
+  failure, not evidence of an exhausted plan. Bounded retries may apply.
+- \`401/403\` may mean invalid auth, insufficient scope, ineligible user,
+  region restriction or unsupported route, and should not silently use the
+  paid API path.
+- Worker token counts are diagnostic and **not** a remaining subscription
+  credit balance.
+- An expired/revoked login needs reauthorization. If the WebUI's
+  unauthenticated mode is active, personal subscription operations are
+  intentionally blocked; use the CLI or enable owner authentication.
 
-## Follow-up implementation steps
+## Manual acceptance before enabling production use
 
-1. **Phase 1 (this PR):** officially supported OpenAI SIWC local OAuth, secure
-   credential persistence/refresh, Responses inference adapter and config UI.
-2. **Phase 2:** account-aware WebUI authorization UX, model picker with live
-   per-account availability, better per-provider usage accounting and
-   single-/multi-operator access control review.
-3. **Phase 3:** GitHub Copilot SDK adapter after independent license,
-   headless-runtime, OAuth and session testing. Keep unsupported Google and
-   Anthropic consumer auth flows unavailable until official approval exists.
+Verify all five on a self-hosted machine and **never share the tokens**:
 
-## Primary documentation
+1. Initial and returning ChatGPT sign-in and scope acceptance.
+2. A nonempty model catalog for the selected ChatGPT account.
+3. A real \`smoke\` request with \`response.completed\`.
+4. Worker restart plus token refresh after access-token expiry.
+5. Safe disconnect and local credential invalidation.
 
-- [OpenAI OSS SIWC overview](https://developers.openai.com/siwc/token-sharing-open-source)
+CI mocks the login and requests; it cannot substitute for these checks.
+
+## Official documentation
+
 - [Registration and sign-in](https://developers.openai.com/siwc/token-sharing-open-source/sign-in)
+- [Accounts, refresh and disconnect](https://developers.openai.com/siwc/token-sharing-open-source/profiles-and-sessions)
 - [Models and inference](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference)
-- [Accounts and refresh](https://developers.openai.com/siwc/token-sharing-open-source/profiles-and-sessions)
-- [Self-hosted VMs](https://developers.openai.com/siwc/token-sharing-open-source/self-hosted-vms)
+- [Self-hosted VM transfer](https://developers.openai.com/siwc/token-sharing-open-source/self-hosted-vms)
+- [Errors and recovery](https://developers.openai.com/siwc/token-sharing-open-source/errors-and-recovery)
 - [Preview limitations](https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations)
-- [GitHub Copilot SDK authentication](https://docs.github.com/en/copilot/how-tos/copilot-sdk/auth/authenticate)
