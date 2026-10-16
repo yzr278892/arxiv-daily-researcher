@@ -225,6 +225,7 @@ class SubscriptionTests(unittest.TestCase):
         self.assertNotIn("messages", calls[0])
 
     def test_usage_limit_stream_error_is_not_retryable(self):
+        self._persist()
         with patch.object(siwc, "get_access_token", return_value="mock-token"):
             class _Client:
                 def __init__(self, **kwargs):
@@ -243,6 +244,7 @@ class SubscriptionTests(unittest.TestCase):
         self.assertTrue(is_retryable_llm_error(state.SubscriptionTransientError("temporary")))
 
     def test_stream_without_completed_is_failure(self):
+        self._persist()
         class _Client:
             def __init__(self, **kwargs):
                 self.responses = SimpleNamespace(create=lambda **kwargs: _Stream([
