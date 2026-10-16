@@ -55,7 +55,7 @@ class LocalWebUIAuthorizationTests(unittest.TestCase):
             ("/api/subscriptions/authorize/start", "post"),
         ):
             with self.subTest(route=route):
-                response = getattr(self.client, method)(route, json={} if method == "post" else None)
+                response = self.client.post(route, json={}) if method == "post" else self.client.get(route)
                 self.assertNotEqual(response.status_code, 200)
         self.env["WEBUI_AUTH_ENABLED"] = "false"
         with patch.object(webui, "_is_local_siwc_webui", return_value=True):
