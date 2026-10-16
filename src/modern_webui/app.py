@@ -23,7 +23,7 @@ from starlette.exceptions import HTTPException
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.requests import Request
-from starlette.responses import FileResponse, JSONResponse, Response
+from starlette.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
@@ -839,9 +839,105 @@ def _require_subscription_owner(request: Request) -> None:
     _require_owner(request)
 
 
+# Only an explicitly enabled, direct local WebUI is allowed to launch browser
+# OAuth. A Docker bridge, reverse proxy, LAN or remotely hosted browser must
+# use the standalone local CLI's 127.0.0.1 callback instead.
+_SIWC_AUTH_ATTEMPTS: dict[str, Any] = {}
+_SIWC_AUTH_ATTEMPTS_LOCK = threading.Lock()
+
+
+def _is_local_siwc_webui(request: Request) -> bool:
+    if os.environ.get("ADR_SIWC_LOCAL_WEBUI_ENABLED", "").strip().lower() not in {
+        "1", "true", "yes", "on"
+    }:
+        return False
+    if request.url.scheme != "http" or request.url.hostname != "127.0.0.1":
+        return False
+    if request.client is None or request.client.host != "127.0.0.1":
+        return False
+    if any(name in request.headers for name in (
+        "x-forwarded-for", "x-forwarded-host", "forwarded",
+    )):
+        return False
+    return True
+
+
+async def subscription_authorize_start(request: Request) -> JSONResponse:
+    _require_subscription_owner(request)
+    if not _is_local_siwc_webui(request):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="仅支持明确启用且浏览器与 WebUI 位于同一台机器的本地授权。",
+        )
+    payload = await _payload(request)
+    from utils.subscription_siwc import begin_authorization
+
+    callback = "http://127.0.0.1:" + str(request.url.port or 80) + "/auth/callback"
+    try:
+        attempt, url = await _blocking_call(
+            begin_authorization, callback,
+            new_account=(payload.get("new_account") is True),
+        )
+    except Exception as exc:
+        raise _safe_error(exc) from exc
+    with _SIWC_AUTH_ATTEMPTS_LOCK:
+        now = time.time()
+        expired = [
+            state for state, item in _SIWC_AUTH_ATTEMPTS.items()
+            if now - item.issued_at > 300
+        ]
+        for state in expired:
+            del _SIWC_AUTH_ATTEMPTS[state]
+        # Limit unconsumed attempts; never persist PKCE secrets in the browser.
+        if len(_SIWC_AUTH_ATTEMPTS) >= 4:
+            raise HTTPException(status_code=429, detail="登录尝试过多，请稍后再试。")
+        _SIWC_AUTH_ATTEMPTS[attempt.state] = attempt
+    return JSONResponse({"authorization_url": url}, headers={"Cache-Control": "no-store"})
+
+
+async def subscription_oauth_callback(request: Request) -> Response:
+    # The cross-site OpenAI redirect does not carry SameSite=Strict session
+    # cookies; a valid, single-use, owner-initiated pending state is required
+    # instead. Never grant a new session from this route.
+    if not _is_local_siwc_webui(request):
+        raise HTTPException(status_code=403, detail="本机 OAuth 回调不可用。")
+    state = request.query_params.get("state", "")
+    if not isinstance(state, str) or len(state) > 256:
+        raise HTTPException(status_code=400, detail="OAuth 回调无效。")
+    with _SIWC_AUTH_ATTEMPTS_LOCK:
+        attempt = _SIWC_AUTH_ATTEMPTS.pop(state, None)
+    if attempt is None:
+        raise HTTPException(status_code=400, detail="OAuth 登录已过期或回调重复。")
+    from utils.subscription_siwc import finish_authorization
+
+    query = {
+        key: request.query_params.get(key)
+        for key in ("state", "code", "client_id", "scope", "error")
+        if key in request.query_params
+    }
+    if any(not isinstance(value, str) or len(value) > 8192 for value in query.values()):
+        raise HTTPException(status_code=400, detail="OAuth 回调长度无效。")
+    try:
+        await _blocking_call(finish_authorization, query, attempt)
+    except Exception:
+        return Response(
+            "ChatGPT authorization failed. Return to the WebUI and retry sign-in.",
+            status_code=400,
+            media_type="text/plain",
+            headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
+        )
+    return RedirectResponse(
+        url="/?subscription=connected#configuration/api",
+        status_code=303,
+        headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
+    )
+
+
 async def subscription_status(request: Request) -> JSONResponse:
     _require_subscription_owner(request)
-    return JSONResponse(await _blocking_call(backend.subscription_status))
+    snapshot = await _blocking_call(backend.subscription_status)
+    snapshot["local_browser_login_available"] = _is_local_siwc_webui(request)
+    return JSONResponse(snapshot)
 
 
 async def subscription_models(request: Request) -> JSONResponse:
@@ -1117,6 +1213,8 @@ app = Starlette(
         Route("/api/notifications/{channel:str}/test", notification_test, methods=["POST"]),
         Route("/api/connections/{kind:str}", connection_test, methods=["POST"]),
         Route("/api/subscriptions/status", subscription_status, methods=["GET"]),
+        Route("/api/subscriptions/authorize/start", subscription_authorize_start, methods=["POST"]),
+        Route("/auth/callback", subscription_oauth_callback, methods=["GET"]),
         Route("/api/subscriptions/models", subscription_models, methods=["GET"]),
         Route("/api/subscriptions/select", subscription_select, methods=["POST"]),
         Route("/api/subscriptions/disconnect", subscription_disconnect, methods=["POST"]),
