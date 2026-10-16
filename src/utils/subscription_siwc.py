@@ -10,6 +10,8 @@ import argparse
 import base64
 import hashlib
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from datetime import datetime, timezone
+from threading import Lock
 import json
 import secrets
 from types import SimpleNamespace
@@ -48,6 +50,44 @@ FATAL_CODES = {
     "chatpass_v2_scope_not_authorized",
     "chatpass_v2_invalid_authorization_context",
 }
+
+# A subscription usage-limit event stops further requests for this account
+# in this worker process. Never guess the server-side reset time.
+_QUOTA_LOCK = Lock()
+_QUOTA_BLOCKED: set[str] = set()
+
+
+def _block_quota(client_id: str | None) -> None:
+    if client_id:
+        with _QUOTA_LOCK:
+            _QUOTA_BLOCKED.add(client_id)
+
+
+def _assert_quota_available(client_id: str | None) -> None:
+    with _QUOTA_LOCK:
+        blocked = client_id in _QUOTA_BLOCKED
+    if blocked:
+        raise SubscriptionLimitError(
+            "ChatGPT plan app limit reached for this worker run. Check ChatGPT Settings > Usage."
+        )
+
+
+def _earliest_refresh_epoch(value: object) -> float:
+    """OpenAI may return an epoch or an RFC 3339 datetime."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    if isinstance(value, str) and value.strip():
+        try:
+            return float(value)
+        except ValueError:
+            try:
+                parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
+                    return 0.0
+                return parsed.astimezone(timezone.utc).timestamp()
+            except ValueError:
+                return 0.0
+    return 0.0
 
 
 def _b64url(data: bytes) -> str:
@@ -289,10 +329,8 @@ def get_access_token(client_id: str | None = None) -> str:
             raise SubscriptionError("ChatGPT login is required.")
         if account.get("expires_at", 0) > time.time() + 120 and account.get("access_token"):
             return account["access_token"]
-        earliest = account.get("earliest_refresh_at")
-        # The field may be an ISO timestamp or a numeric epoch; do not
-        # make speculative early-refresh requests when OpenAI defers them.
-        if isinstance(earliest, (int, float)) and earliest > time.time():
+        earliest = _earliest_refresh_epoch(account.get("earliest_refresh_at"))
+        if earliest > time.time():
             if account.get("expires_at", 0) > time.time():
                 return account["access_token"]
             raise SubscriptionTransientError("OpenAI refresh is not yet available.")
@@ -418,6 +456,7 @@ class SIWCClient:
         # Never send temperature, top_p, background, user or other unsupported
         # Chat parameters in the subscription route.
         token = self._token_for_run()
+        _assert_quota_available(self._account_id)
         client = OpenAI(
             api_key=token, base_url=RESOURCE,
             max_retries=0, timeout=self.timeout,
@@ -447,6 +486,9 @@ class SIWCClient:
                     elif event_type == "response.completed":
                         completed = True
                         usage = _event_attr(_event_attr(event, "response"), "usage")
+        except SubscriptionLimitError:
+            _block_quota(self._account_id)
+            raise
         except SubscriptionError:
             raise
         except Exception as exc:
@@ -460,11 +502,15 @@ class SIWCClient:
                     detail = body.get("error", {})
                     code = detail.get("code") if isinstance(detail, dict) else None
             if code:
-                raise _infer_error(str(code)) from exc
+                classified = _infer_error(str(code))
+                if isinstance(classified, SubscriptionLimitError):
+                    _block_quota(self._account_id)
+                raise classified from exc
             if status in {401, 403, 400}:
                 raise SubscriptionError(f"ChatGPT authorization/inference rejected (HTTP {status}).") from exc
             if status == 429:
-                raise SubscriptionLimitError("ChatGPT subscription quota is unavailable; see Settings > Usage.") from exc
+                _block_quota(self._account_id)
+                raise SubscriptionLimitError("ChatGPT subscription usage limit reached; see Settings > Usage.") from exc
             from openai import APIConnectionError, APITimeoutError
             if status >= 500 or isinstance(exc, (TimeoutError, ConnectionError, APIConnectionError, APITimeoutError)):
                 raise SubscriptionTransientError("ChatGPT inference temporarily unavailable.") from exc
@@ -500,6 +546,28 @@ class SIWCClient:
         return SimpleNamespace(output_text=chat.choices[0].message.content, usage=chat.usage)
 
 
+def _discover_revocation_endpoint() -> str | None:
+    """Follow OpenID discovery, never an arbitrary revocation URL."""
+    try:
+        response = requests.get(
+            ISSUER + "/.well-known/openid-configuration",
+            timeout=10, allow_redirects=False,
+        )
+        if response.status_code != 200:
+            return None
+        url = response.json().get("revocation_endpoint")
+    except (requests.RequestException, ValueError, AttributeError):
+        return None
+    if not isinstance(url, str):
+        return None
+    parsed = urlparse(url)
+    if parsed.scheme != "https" or parsed.hostname != "auth.openai.com" or (
+        parsed.port not in (None, 443)
+    ) or not parsed.path.startswith("/api/accounts/") or parsed.query or parsed.fragment:
+        return None
+    return url
+
+
 def disconnect() -> bool:
     """Best-effort remote revocation, always clear the selected local tokens."""
     with locked_store():
@@ -508,15 +576,18 @@ def disconnect() -> bool:
         token = account.get("refresh_token")
         revoked = False
         if token:
+            endpoint = _discover_revocation_endpoint()
             try:
+                if endpoint is None:
+                    raise SubscriptionTransientError("OpenAI revocation endpoint is unavailable.")
                 response = requests.post(
-                    REVOKE_URL,
+                    endpoint,
                     data={"token": token, "token_type_hint": "refresh_token",
                           "client_id": account["client_id"]},
                     timeout=15, allow_redirects=False,
                 )
                 revoked = response.status_code == 200
-            except requests.RequestException:
+            except (requests.RequestException, SubscriptionTransientError):
                 pass
         account.update(access_token="", refresh_token="", id_token="", expires_at=0)
         write_accounts(data)

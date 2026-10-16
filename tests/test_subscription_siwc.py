@@ -61,6 +61,8 @@ class SubscriptionTests(unittest.TestCase):
             os.environ.pop("ADR_SUBSCRIPTION_DIR", None)
         else:
             os.environ["ADR_SUBSCRIPTION_DIR"] = self.saved_env
+        with siwc._QUOTA_LOCK:
+            siwc._QUOTA_BLOCKED.clear()
         self.temp.cleanup()
 
     def _persist(self, account=None):
@@ -242,6 +244,42 @@ class SubscriptionTests(unittest.TestCase):
         from utils.llm_resilience import is_retryable_llm_error
         self.assertFalse(is_retryable_llm_error(state.SubscriptionLimitError("limit")))
         self.assertTrue(is_retryable_llm_error(state.SubscriptionTransientError("temporary")))
+
+    def test_quota_blocks_repeat_attempts_within_worker(self):
+        self._persist()
+        with siwc._QUOTA_LOCK:
+            siwc._QUOTA_BLOCKED.add("oaiapp_test")
+        client = siwc.SIWCClient()
+        with patch("openai.OpenAI") as sdk:
+            with self.assertRaises(state.SubscriptionLimitError):
+                client.generate_chat(
+                    model="gpt-6", messages=[{"role": "user", "content": "hello"}],
+                )
+            sdk.assert_not_called()
+
+    def test_refresh_not_before_parses_iso_and_epoch(self):
+        self.assertEqual(siwc._earliest_refresh_epoch(1700000000), 1700000000.0)
+        self.assertEqual(siwc._earliest_refresh_epoch("2026-01-01T00:00:00Z"), 1767225600.0)
+        self.assertEqual(siwc._earliest_refresh_epoch("invalid"), 0.0)
+
+    def test_revocation_requires_trusted_discovered_host(self):
+        class Response:
+            status_code = 200
+            def __init__(self, url):
+                self.url = url
+            def json(self):
+                return {"revocation_endpoint": self.url}
+        with patch.object(siwc.requests, "get", return_value=Response(
+            "https://evil.example/api/accounts/oauth/revoke"
+        )):
+            self.assertIsNone(siwc._discover_revocation_endpoint())
+        with patch.object(siwc.requests, "get", return_value=Response(
+            "https://auth.openai.com/api/accounts/oauth/revoke"
+        )):
+            self.assertEqual(
+                siwc._discover_revocation_endpoint(),
+                "https://auth.openai.com/api/accounts/oauth/revoke",
+            )
 
     def test_stream_without_completed_is_failure(self):
         self._persist()
