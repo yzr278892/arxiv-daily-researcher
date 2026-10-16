@@ -105,6 +105,80 @@ class SubscriptionTests(unittest.TestCase):
         self.assertEqual(instance.CHEAP_LLM.api_key, "sk-dummy")
         # The caller continues to ignore the placeholder in subscription mode.
 
+    def test_completed_dynamic_registration_persists_verified_identity(self):
+        callback = "http://127.0.0.1:8551/auth/callback"
+        with patch.object(siwc, "host_id", return_value="urn:uuid:host"):
+            attempt, url = siwc.begin_authorization(callback, new_account=True)
+        self.assertEqual(attempt.client_id, "dynamic_agent_client")
+        self.assertIn("dynamic_agent_client", url)
+        self.assertNotIn("refresh-private", url)
+        body = {
+            "access_token": "access-from-auth", "refresh_token": "refresh-from-auth",
+            "id_token": "signed-id-token", "token_type": "Bearer",
+            "expires_in": 3600,
+            "scope": "openid email offline_access resource.invoke chatgpt.tokens.use.direct",
+        }
+        query = {
+            "state": attempt.state, "code": "one-time-code",
+            "client_id": "oaiapp_registered",
+        }
+        with patch.object(siwc, "_post_form", return_value=body) as exchange, patch.object(
+            siwc, "_validate_id_token",
+            return_value={"sub": "verified-account", "email": "valid@example.test"},
+        ) as verify:
+            result = siwc.finish_authorization(query, attempt)
+        record = state.read_accounts()["accounts"]["oaiapp_registered"]
+        self.assertEqual(record["subject"], "verified-account")
+        self.assertEqual(record["refresh_token"], "refresh-from-auth")
+        self.assertTrue(result["active"]["authorized"])
+        self.assertEqual(exchange.call_args.args[1]["code_verifier"], attempt.verifier)
+        self.assertEqual(exchange.call_args.args[1]["redirect_uri"], callback)
+        verify.assert_called_once_with("signed-id-token", client_id="oaiapp_registered", nonce=attempt.nonce)
+
+    def test_returning_login_cannot_replace_verified_subject(self):
+        self._persist()
+        with patch.object(siwc, "host_id", return_value="urn:uuid:host"):
+            attempt, url = siwc.begin_authorization(
+                "http://127.0.0.1:8881/auth/callback"
+            )
+        self.assertEqual(attempt.client_id, "oaiapp_test")
+        self.assertIn("login_hint=", url)
+        with patch.object(siwc, "_post_form", return_value={
+            "access_token": "different-access", "refresh_token": "different-refresh",
+            "id_token": "new-id", "expires_in": 3600,
+            "scope": "openid chatgpt.tokens.use.direct",
+        }), patch.object(
+            siwc, "_validate_id_token", return_value={"sub": "imposter-subject"}
+        ):
+            with self.assertRaisesRegex(state.SubscriptionError, "identity"):
+                siwc.finish_authorization({
+                    "state": attempt.state, "code": "code"
+                }, attempt)
+        self.assertEqual(
+            state.read_accounts()["accounts"]["oaiapp_test"]["refresh_token"],
+            "refresh-private",
+        )
+
+    def test_id_token_login_without_plan_scope_cannot_infer_eligibility(self):
+        with patch.object(siwc, "host_id", return_value="urn:uuid:host"):
+            attempt, _ = siwc.begin_authorization(
+                "http://127.0.0.1:8882/auth/callback", new_account=True
+            )
+        with patch.object(siwc, "_post_form", return_value={
+            "access_token": "access", "refresh_token": "refresh",
+            "id_token": "signed", "expires_in": 3600, "scope": "openid email",
+        }), patch.object(
+            siwc, "_validate_id_token",
+            return_value={"sub": "verified-account"},
+        ):
+            result = siwc.finish_authorization(
+                {"state": attempt.state, "code": "code", "client_id": "oaiapp_no_plan"},
+                attempt,
+            )
+        self.assertFalse(result["active"]["authorized"])
+        with self.assertRaisesRegex(state.SubscriptionError, "consent"):
+            siwc.get_access_token()
+
     def test_host_id_persists_without_exposing_credentials(self):
         self.assertEqual(state.host_id(), state.host_id())
         self.assertTrue(state.host_id().startswith("urn:uuid:"))
