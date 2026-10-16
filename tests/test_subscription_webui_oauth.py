@@ -110,6 +110,52 @@ class LocalWebUIAuthorizationTests(unittest.TestCase):
                     "CHEAP_LLM__AUTH_MODE": "api_key"
                 })
 
+    def test_delegated_admin_cannot_spend_or_manage_owner_subscription(self):
+        self._setup_owner()
+        added = self.client.post("/api/accounts/add", json={
+            "username": "guest_admin",
+            "password": "secret7",
+            "password_confirmation": "secret7",
+        })
+        self.assertEqual(added.status_code, 200)
+        self.assertEqual(self.client.post("/api/auth/logout").status_code, 204)
+        signed_in = self.client.post("/api/auth/login", json={
+            "username": "guest_admin", "password": "secret7"
+        })
+        self.assertEqual(signed_in.status_code, 200)
+        self.env["CHEAP_LLM__AUTH_MODE"] = "subscription"
+        with patch.object(webui.backend, "connection_test") as connection, patch.object(
+            webui.backend, "enqueue_task"
+        ) as task, patch.object(
+            webui.backend, "save_settings"
+        ) as save:
+            self.assertEqual(
+                self.client.post(
+                    "/api/connections/cheap_llm",
+                    json={"auth_mode": "subscription", "model": "gpt-6.1-sol"},
+                ).status_code,
+                403,
+            )
+            self.assertEqual(
+                self.client.post("/api/daily/run", json={}).status_code,
+                403,
+            )
+            self.assertEqual(
+                self.client.put(
+                    "/api/settings", json={
+                        "config": {}, "env": {"CHEAP_LLM__AUTH_MODE": "api_key"}
+                    },
+                ).status_code,
+                403,
+            )
+            self.assertEqual(
+                self.client.get("/api/subscriptions/status").status_code,
+                403,
+            )
+            connection.assert_not_called()
+            task.assert_not_called()
+            save.assert_not_called()
+
     def test_local_mode_rejects_remote_clients_and_proxies(self):
         target = SimpleNamespace(
             url=SimpleNamespace(scheme="http", hostname="127.0.0.1"),
