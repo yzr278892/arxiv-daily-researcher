@@ -11,6 +11,7 @@ import base64
 import hashlib
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from datetime import datetime, timezone
+from dataclasses import dataclass
 from threading import Lock
 import json
 import secrets
@@ -261,52 +262,91 @@ def _receive_callback(server: HTTPServer, *, state: str) -> dict:
     return output
 
 
-def login(*, new_account: bool = False, no_browser: bool = False) -> dict:
-    """Run official dynamic registration on the machine with the user's browser."""
+@dataclass(frozen=True)
+class AuthorizationAttempt:
+    """Ephemeral state: never serialize its PKCE verifier to an API response."""
+
+    client_id: str
+    callback: str
+    state: str
+    nonce: str
+    verifier: str
+    issued_at: float
+
+
+def begin_authorization(
+    callback: str, *, new_account: bool = False, account_client_id: str | None = None
+) -> tuple[AuthorizationAttempt, str]:
+    """Start a native-browser OAuth attempt with a strict loopback callback."""
+    parsed = urlparse(callback)
+    if (
+        parsed.scheme != "http"
+        or parsed.hostname != "127.0.0.1"
+        or not parsed.port
+        or parsed.path != "/auth/callback"
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise SubscriptionError("ChatGPT OAuth requires an exact 127.0.0.1 loopback callback.")
     data = read_accounts()
     previous = None
-    if not new_account and data.get("active") in data["accounts"]:
+    if account_client_id:
+        previous = data["accounts"].get(account_client_id)
+        if not isinstance(previous, dict):
+            raise SubscriptionError("Unknown ChatGPT account for reauthorization.")
+    elif not new_account and data.get("active") in data["accounts"]:
         previous = data["accounts"][data["active"]]
     client_id = previous["client_id"] if previous else "dynamic_agent_client"
     verifier = secrets.token_urlsafe(64)
     state = secrets.token_urlsafe(32)
     nonce = secrets.token_urlsafe(32)
     challenge = _b64url(hashlib.sha256(verifier.encode("ascii")).digest())
-    with HTTPServer(("127.0.0.1", 0), BaseHTTPRequestHandler) as server:
-        callback = f"http://127.0.0.1:{server.server_port}/auth/callback"
-        url = build_authorize_url(
-            client_id=client_id, host=host_id(), callback=callback,
-            state=state, nonce=nonce, challenge=challenge,
-            login_hint=(str(previous.get("email") or "") if previous else None),
-        )
-        # Never print an id_token_hint or any OAuth tokens.
-        print("Open the following official authorization URL in this machine's browser:")
-        print(url)
-        if not no_browser:
-            webbrowser.open(url)
-        query = _receive_callback(server, state=state)
+    attempt = AuthorizationAttempt(
+        client_id=client_id, callback=callback, state=state,
+        nonce=nonce, verifier=verifier, issued_at=time.time(),
+    )
+    url = build_authorize_url(
+        client_id=client_id, host=host_id(), callback=callback,
+        state=state, nonce=nonce, challenge=challenge,
+        login_hint=(str(previous.get("email") or "") if previous else None),
+    )
+    return attempt, url
+
+
+def finish_authorization(query: dict, attempt: AuthorizationAttempt) -> dict:
+    """Complete the OAuth exchange once and validate identity before persisting."""
+    if time.time() - attempt.issued_at > 300:
+        raise SubscriptionError("ChatGPT OAuth attempt expired. Start authorization again.")
     code, issued_id = validate_callback(
-        query, expected_state=state, expected_client_id=client_id
+        query, expected_state=attempt.state,
+        expected_client_id=attempt.client_id,
     )
     body = _post_form(TOKEN_URL, {
         "grant_type": "authorization_code",
         "client_id": issued_id,
         "code": code,
-        "code_verifier": verifier,
-        "redirect_uri": callback,
+        "code_verifier": attempt.verifier,
+        "redirect_uri": attempt.callback,
         "resource": RESOURCE,
     })
     raw_id = body.get("id_token")
-    if not isinstance(raw_id, str):
+    if not isinstance(raw_id, str) or not raw_id:
         raise SubscriptionError("OpenAI did not return an ID token.")
-    claims = _validate_id_token(raw_id, client_id=issued_id, nonce=nonce)
-    if previous is not None and (claims["sub"] != previous["subject"] or issued_id != previous["client_id"]):
-        raise SubscriptionError("Reauthorization changed the selected ChatGPT identity.")
+    claims = _validate_id_token(raw_id, client_id=issued_id, nonce=attempt.nonce)
     with locked_store():
         data = read_accounts()
-        # Do not overwrite a different user's registration or consent state.
+        previous = (
+            data["accounts"].get(attempt.client_id)
+            if attempt.client_id != "dynamic_agent_client" else None
+        )
+        if attempt.client_id != "dynamic_agent_client" and (
+            not isinstance(previous, dict)
+            or previous.get("subject") != claims["sub"]
+            or issued_id != attempt.client_id
+        ):
+            raise SubscriptionError("Reauthorization changed the registered ChatGPT identity.")
         existing = data["accounts"].get(issued_id)
-        if existing and existing.get("subject") != claims["sub"]:
+        if isinstance(existing, dict) and existing.get("subject") != claims["sub"]:
             raise SubscriptionError("OAuth registration identity mismatch.")
         record = _make_record(body, issued_id, claims, previous=previous)
         data["accounts"][issued_id] = record
@@ -314,6 +354,19 @@ def login(*, new_account: bool = False, no_browser: bool = False) -> dict:
         write_accounts(data)
     return public_status()
 
+
+def login(*, new_account: bool = False, no_browser: bool = False) -> dict:
+    """Official local CLI login; browser and callback share one machine."""
+    with HTTPServer(("127.0.0.1", 0), BaseHTTPRequestHandler) as server:
+        callback = f"http://127.0.0.1:{server.server_port}/auth/callback"
+        attempt, url = begin_authorization(callback, new_account=new_account)
+        # No ID token is included in the printable URL.
+        print("Open this OpenAI authorization URL in the browser on this machine:")
+        print(url)
+        if not no_browser:
+            webbrowser.open(url)
+        query = _receive_callback(server, state=attempt.state)
+    return finish_authorization(query, attempt)
 
 def get_access_token(client_id: str | None = None) -> str:
     """Refresh one pinned registration atomically, without crossing accounts."""
