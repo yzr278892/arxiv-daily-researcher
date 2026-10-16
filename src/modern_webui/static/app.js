@@ -3310,7 +3310,7 @@ function llmSection(role, title, icon) {
   const base = envValue(`${prefix}__BASE_URL`, "https://api.openai.com/v1");
   const detected = presets.find(([id, _label, url]) => url && base.includes(url))?.[0] || "custom";
   const subscription = envValue(`${prefix}__AUTH_MODE`, "api_key") === "subscription";
-  return section(title, `<p class="hint-text">${hint}</p><div class="form-grid two">${field({ label: "认证 / 计费模式", key: `${prefix}__AUTH_MODE`, scope: "env", type: "select", fallback: "api_key", choices: [{value: "api_key", label: "API Key（默认）"}, {value: "subscription", label: "订阅授权（需提前本地登录）"}] })}${field({ label: "模型名称", key: `${prefix}__MODEL_NAME`, scope: "env", fallback: role === "cheap" ? "gpt-4o-mini" : "gpt-4o" })}</div><div id="${keyPrefix}-api-fields" ${subscription ? "hidden" : ""}><div class="form-grid two"><label class="form-field"><span>服务商预设</span><select id="${keyPrefix}-provider">${presets.map(([id, label]) => `<option value="${id}" ${id === detected ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}</select></label>${field({ label: "Base URL", key: `${prefix}__BASE_URL`, scope: "env", fallback: base, placeholder: "https://api.example.com/v1" })}${field({ label: "API Key", key: `${prefix}__API_KEY`, scope: "env", type: "secret" })}${field({ label: "Temperature", key: `${prefix}__TEMPERATURE`, scope: "env", type: "range", min: 0, max: 2, step: 0.1, fallback: 0.3 })}</div></div><div id="${keyPrefix}-subscription-fields" ${subscription ? "" : "hidden"}><p class="hint-text">当前仅支持官方 ChatGPT SIWC 授权；其他厂商暂未开放可用的订阅适配器。订阅模式下不会读取 API Key 或自定义 Base URL。</p><div class="form-grid two"><p class="hint-text">服务商：ChatGPT（官方 SIWC）。</p></div></div><div class="action-row"><button class="secondary-button" data-test-llm="${role}">测试连接</button><span id="${keyPrefix}-test-result" class="inline-result"></span></div>`, { icon });
+  return section(title, `<p class="hint-text">${hint}</p><div class="form-grid two">${field({ label: "认证 / 计费模式", key: `${prefix}__AUTH_MODE`, scope: "env", type: "select", fallback: "api_key", choices: [{value: "api_key", label: "API Key（默认）"}, {value: "subscription", label: "订阅授权（需提前本地登录）"}] })}${field({ label: "模型名称", key: `${prefix}__MODEL_NAME`, scope: "env", fallback: role === "cheap" ? "gpt-4o-mini" : "gpt-4o" })}</div><div id="${keyPrefix}-api-fields" ${subscription ? "hidden" : ""}><div class="form-grid two"><label class="form-field"><span>服务商预设</span><select id="${keyPrefix}-provider">${presets.map(([id, label]) => `<option value="${id}" ${id === detected ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}</select></label>${field({ label: "Base URL", key: `${prefix}__BASE_URL`, scope: "env", fallback: base, placeholder: "https://api.example.com/v1" })}${field({ label: "API Key", key: `${prefix}__API_KEY`, scope: "env", type: "secret" })}${field({ label: "Temperature", key: `${prefix}__TEMPERATURE`, scope: "env", type: "range", min: 0, max: 2, step: 0.1, fallback: 0.3 })}</div></div><div id="${keyPrefix}-subscription-fields" ${subscription ? "" : "hidden"}><p class="hint-text">当前仅支持官方 ChatGPT SIWC 授权；其他厂商暂未开放可用的订阅适配器。订阅模式下不会读取 API Key 或自定义 Base URL。</p><div class="form-grid two"><label class="form-field"><span>订阅可用模型</span><select id="${keyPrefix}-subscription-model-picker" disabled><option value="">连接账户后获取可用模型</option></select></label></div></div><div class="action-row"><button class="secondary-button" data-test-llm="${role}">测试连接</button><span id="${keyPrefix}-test-result" class="inline-result"></span></div>`, { icon });
 }
 
 function mineruSection() {
@@ -3337,9 +3337,80 @@ function thirdPartySection() {
   return `${divider()}${section("第三方 API 密钥", content, { icon: "🔑" })}`;
 }
 
+async function refreshChatGPTSubscriptionControls(root) {
+  const target = $("#subscription-connection-state", root);
+  const accountSelect = $("#subscription-account-picker", root);
+  if (!target || !accountSelect) return;
+  let status;
+  try {
+    status = await api("/api/subscriptions/status");
+  } catch (error) {
+    target.textContent = "无法查看账户：请启用 WebUI 身份验证并使用所有者账号登录。";
+    return;
+  }
+  const accounts = Array.isArray(status.accounts) ? status.accounts : [];
+  accountSelect.replaceChildren(...(
+    accounts.length
+      ? accounts.map((item) => new Option(
+          String(item.label || "ChatGPT") + " " + String(item.registration_label || "") +
+          (item.connected ? "" : "（需重新授权）"), String(item.client_id || ""),
+          Boolean(item.active), Boolean(item.active)
+        ))
+      : [new Option("尚未连接账户", "")]
+  ));
+  refreshPrettySelect(accountSelect);
+  const active = status.active;
+  const valid = Boolean(active && active.connected && active.authorized);
+  target.textContent = valid
+    ? "已授权 " + active.label + "，正在获取可用模型。"
+    : active
+      ? "账户 " + active.label + " 需要在本机重新授权订阅权限。"
+      : "尚未连接 ChatGPT 订阅，请先运行本地授权命令。";
+  const disconnect = $("#subscription-disconnect", root);
+  if (disconnect) disconnect.disabled = !(active && active.connected);
+  let models = [];
+  if (valid) {
+    try {
+      const catalog = await api("/api/subscriptions/models");
+      models = Array.isArray(catalog.models) ? catalog.models : [];
+      target.textContent = models.length
+        ? "已连接 " + active.label + "，可用模型 " + models.length + " 个。选择模型后请保存配置并重启 Worker。"
+        : "已连接 " + active.label + "，但没有可用模型，请核对账户资格。";
+    } catch (error) {
+      target.textContent = "已登记账户，但无法读取模型列表：" + localizedError(error);
+    }
+  }
+  ["cheap", "smart"].forEach((role) => {
+    const prefix = role === "cheap" ? "CHEAP_LLM" : "SMART_LLM";
+    const select = $("#" + role + "-subscription-model-picker", root);
+    if (!select) return;
+    const configured = String(envValue(prefix + "__MODEL_NAME", "") || "");
+    select.replaceChildren(
+      new Option("选择 ChatGPT 已授权的模型", ""),
+      ...models.map((item) => new Option(
+        String(item.display_name || item.slug) + " · " + String(item.slug),
+        String(item.slug)
+      ))
+    );
+    select.disabled = !models.length;
+    select.value = models.some((item) => item.slug === configured) ? configured : "";
+    refreshPrettySelect(select);
+    if (!select.dataset.subscriptionBound) {
+      select.dataset.subscriptionBound = "true";
+      select.addEventListener("change", () => {
+        if (!select.value) return;
+        state.draft.env[prefix + "__MODEL_NAME"] = select.value;
+        const modelInput = $('[data-field="' + prefix + '__MODEL_NAME"][data-scope="env"]', root);
+        if (modelInput) modelInput.value = select.value;
+        markConfigurationDirty();
+      });
+    }
+  });
+}
+
 async function renderApi(_token) {
   const root = $("#page-root");
-  root.innerHTML = `${pageHeader()}${llmSection("cheap", "低成本 LLM", "💸")}${divider()}${llmSection("smart", "高性能 LLM", "🧠")}${mineruSection()}<div id="api-third-party">${thirdPartySection()}</div>${divider()}${section("订阅授权", `<p class="hint-text">订阅模式不会使用 API Key 计费，也不会自动回退到付费 API。请先在浏览器所在的本机源码目录执行：</p><p><code>PYTHONPATH=src python -m utils.subscription_siwc login</code></p><p class="hint-text">之后使用 <code>PYTHONPATH=src python -m utils.subscription_siwc models</code> 查看可用的模型 slug。远程 VPS / Docker 需要按文档使用 SSH 安全传输凭证。其他厂商需等待独立适配。</p><p id="subscription-connection-state" class="hint-text">授权状态加载中…</p>`, { icon: "🔐" })}`;
+  root.innerHTML = `${pageHeader()}${llmSection("cheap", "低成本 LLM", "💸")}${divider()}${llmSection("smart", "高性能 LLM", "🧠")}${mineruSection()}<div id="api-third-party">${thirdPartySection()}</div>${divider()}${section("ChatGPT 订阅授权", `<p class="hint-text">当前仅支持官方 Sign in with ChatGPT（SIWC），默认仍采用 API Key。请先在浏览器所在电脑的源码目录运行：<code>PYTHONPATH=src python -m utils.subscription_siwc login</code>。首次授权后可以在此管理账户并选择当前账户可用的模型。远程 Docker 按部署文档通过 SSH 安全传输凭证；面板不会存储或展示令牌。</p><div class="form-grid two"><label class="form-field"><span>ChatGPT 账户</span><select id="subscription-account-picker"><option value="">尚未连接账户</option></select></label></div><div class="action-row"><button class="secondary-button" id="subscription-refresh" type="button">刷新账户及模型列表</button><button class="secondary-button" id="subscription-disconnect" type="button">断开当前账户授权</button></div><p id="subscription-connection-state" class="hint-text">正在读取授权状态…</p><p class="hint-text"><a href="https://chatgpt.com/#settings" target="_blank" rel="noreferrer">ChatGPT 设置与额度 ↗</a></p>`, { icon: "🔐" })}`;
   bindCommon(root);
   ["cheap", "smart"].forEach((role) => {
     const prefix = role === "cheap" ? "CHEAP_LLM" : "SMART_LLM";
@@ -3352,16 +3423,27 @@ async function renderApi(_token) {
       if (subscriptionFields) subscriptionFields.hidden = !subscription;
     });
   });
-  runLocalRefresh(api("/api/subscriptions/status").then((status) => {
-    const target = $("#subscription-connection-state", root);
-    if (!target) return;
-    const account = status.active;
-    target.textContent = account
-      ? (account.connected && account.authorized
-          ? `ChatGPT 订阅账户已授权：${account.label}（本地凭证检查；非在线推理测试）。`
-          : `ChatGPT 账户 ${account.label} 已登记，但订阅授权已失效或被拒绝，请重新登录。`)
-      : "尚未连接 ChatGPT 订阅账户。";
-  }));
+  runLocalRefresh(refreshChatGPTSubscriptionControls(root));
+  $("#subscription-refresh", root)?.addEventListener("click", () => {
+    runLocalRefresh(refreshChatGPTSubscriptionControls(root));
+  });
+  $("#subscription-account-picker", root)?.addEventListener("change", async (event) => {
+    if (!event.target.value) return;
+    try {
+      await api("/api/subscriptions/select", {
+        method: "POST", body: { client_id: event.target.value },
+      });
+      await refreshChatGPTSubscriptionControls(root);
+    } catch (error) { toast(localizedError(error), "error"); }
+  });
+  $("#subscription-disconnect", root)?.addEventListener("click", async () => {
+    if (!window.confirm("断开当前 ChatGPT 订阅授权？此操作会停止使用当前账户的令牌。")) return;
+    try {
+      const result = await api("/api/subscriptions/disconnect", { method: "POST", body: {} });
+      await refreshChatGPTSubscriptionControls(root);
+      if (!result.remote_revoked) toast("本地令牌已清除，但远端撤销未确认，请同时在 ChatGPT 设置中断开授权。", "error");
+    } catch (error) { toast(localizedError(error), "error"); }
+  });
   $("[data-test-llm]", root).forEach((button) => button.addEventListener("click", () => testLlm(button.dataset.testLlm)));
   $("[data-test-mineru]", root)?.addEventListener("click", () => testConnection("mineru", {
     api_key: state.draft.env.MINERU_API_KEY,
