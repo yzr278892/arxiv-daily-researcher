@@ -311,6 +311,29 @@ class SubscriptionTests(unittest.TestCase):
         access.assert_called_once_with("oaiapp_test")
         self.assertEqual(get.call_args.args[0], siwc.RESOURCE + "/models")
 
+    def test_stage_fingerprint_changes_on_subscription_account_switch(self):
+        from config import settings
+        from utils.daily_research_fingerprints import _model_settings
+
+        self._persist()
+        with patch.object(settings.CHEAP_LLM, "auth_mode", "subscription"):
+            first = _model_settings(settings.CHEAP_LLM, 0.3)
+            with state.locked_store():
+                data = state.read_accounts()
+                data["accounts"]["oaiapp_new"] = _record(
+                    client_id="oaiapp_new", subject="separate-subject"
+                )
+                data["active"] = "oaiapp_new"
+                state.write_accounts(data)
+            second = _model_settings(settings.CHEAP_LLM, 0.3)
+        self.assertNotEqual(
+            first["subscription_registration_fingerprint"],
+            second["subscription_registration_fingerprint"],
+        )
+        self.assertNotIn("oaiapp_test", str(first))
+        self.assertNotIn("access-private", str(first))
+        self.assertNotIn("refresh-private", str(first))
+
     def test_webui_model_api_does_not_return_token_fields(self):
         from modern_webui import backend
         with patch.object(siwc, "list_models", return_value=[

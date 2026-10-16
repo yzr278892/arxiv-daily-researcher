@@ -42,12 +42,21 @@ def stage_input_fingerprint(value: Any) -> str:
 
 def _model_settings(model: Any, temperature: Any) -> Dict[str, Any]:
     """Keep only non-secret model settings that affect generated output."""
-    return {
+    result = {
         "model_name": str(getattr(model, "model_name", "")),
         "temperature": temperature,
-        **({"subscription_provider": getattr(model, "subscription_provider", "openai_siwc")}
-           if getattr(model, "auth_mode", "api_key") == "subscription" else {}),
     }
+    if getattr(model, "auth_mode", "api_key") == "subscription":
+        from utils.subscription_state import selected_account
+
+        registration = selected_account()["client_id"]
+        result["subscription_provider"] = "openai_siwc"
+        # Account changes invalidate generated-stage caches without ever
+        # exposing a client ID, identity or any OAuth token in audit metadata.
+        result["subscription_registration_fingerprint"] = stage_input_fingerprint(
+            registration
+        )
+    return result
 
 
 def _primary_keyword_entries() -> list[list[Any]]:

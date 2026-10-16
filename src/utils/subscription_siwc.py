@@ -37,7 +37,6 @@ from utils.subscription_state import (
 ISSUER = "https://auth.openai.com"
 AUTHORIZE_URL = ISSUER + "/api/accounts/authorize"
 TOKEN_URL = ISSUER + "/api/accounts/oauth/token"
-REVOKE_URL = ISSUER + "/api/accounts/oauth/revoke"
 JWKS_URL = ISSUER + "/.well-known/jwks.json"
 RESOURCE = "https://api.openai.com/v1"
 SCOPES = "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct"
@@ -614,9 +613,18 @@ def _discover_revocation_endpoint() -> str | None:
     if not isinstance(url, str):
         return None
     parsed = urlparse(url)
-    if parsed.scheme != "https" or parsed.hostname != "auth.openai.com" or (
-        parsed.port not in (None, 443)
-    ) or not parsed.path.startswith("/api/accounts/") or parsed.query or parsed.fragment:
+    try:
+        port = parsed.port
+    except ValueError:
+        return None
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != "auth.openai.com"
+        or port not in (None, 443)
+        or not parsed.path.startswith("/api/accounts/")
+        or parsed.query
+        or parsed.fragment
+    ):
         return None
     return url
 
