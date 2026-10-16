@@ -59,6 +59,7 @@ class KeywordNormalizer:
         self.client = build_llm_client(
             llm_config.api_key,
             llm_config.base_url,
+            model_config=llm_config,
         )
         self.model = llm_config.model_name
         self._health_recorder = health_recorder
