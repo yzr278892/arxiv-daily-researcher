@@ -12,6 +12,7 @@ import sys
 import tempfile
 import threading
 import time
+from urllib.parse import parse_qs
 from functools import partial
 from pathlib import Path
 from typing import Any
@@ -927,7 +928,15 @@ async def subscription_oauth_callback(request: Request) -> Response:
     # instead. Never grant a new session from this route.
     if not _is_local_siwc_webui(request):
         raise HTTPException(status_code=403, detail="本机 OAuth 回调不可用。")
-    state = request.query_params.get("state", "")
+    # Uvicorn may log the ASGI query string after the response; the outer
+    # middleware removes it from scope before any logging. Parse the original
+    # value kept exclusively in request-local server memory.
+    raw = request.scope.get("state", {}).pop("siwc_query_string", b"")
+    try:
+        pairs = parse_qs(raw.decode("ascii"), keep_blank_values=True, max_num_fields=12)
+    except (UnicodeDecodeError, ValueError):
+        raise HTTPException(status_code=400, detail="OAuth 回调编码无效。") from None
+    state = pairs.get("state", [""])[0] if len(pairs.get("state", [])) == 1 else ""
     if not isinstance(state, str) or len(state) > 256:
         raise HTTPException(status_code=400, detail="OAuth 回调无效。")
     with _SIWC_AUTH_ATTEMPTS_LOCK:
@@ -936,10 +945,12 @@ async def subscription_oauth_callback(request: Request) -> Response:
         raise HTTPException(status_code=400, detail="OAuth 登录已过期或回调重复。")
     from utils.subscription_siwc import finish_authorization
 
+    if any(len(values) != 1 for values in pairs.values()):
+        raise HTTPException(status_code=400, detail="OAuth 回调重复参数无效。")
     query = {
-        key: request.query_params.get(key)
+        key: pairs[key][0]
         for key in ("state", "code", "client_id", "scope", "error")
-        if key in request.query_params
+        if key in pairs
     }
     if any(not isinstance(value, str) or len(value) > 8192 for value in query.values()):
         raise HTTPException(status_code=400, detail="OAuth 回调长度无效。")
@@ -1193,6 +1204,27 @@ async def http_exception_handler(_request: Request, exc: HTTPException) -> JSONR
     return JSONResponse({"detail": str(exc.detail)}, status_code=exc.status_code)
 
 
+class _RedactSIWCCallbackQuery:
+    """Keep OAuth codes out of ASGI/Uvicorn request URL access logs.
+
+    The original query exists only in ephemeral ASGI state for the single
+    callback handler. Uvicorn logs scope["query_string"] after response start,
+    which is deliberately empty by then.
+    """
+
+    def __init__(self, app: Any):
+        self.app = app
+
+    async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
+        if scope.get("type") == "http" and scope.get("path") == "/auth/callback":
+            original = scope.get("query_string", b"")
+            if len(original) > 16384:
+                original = b""
+            scope.setdefault("state", {})["siwc_query_string"] = original
+            scope["query_string"] = b""
+        await self.app(scope, receive, send)
+
+
 app = Starlette(
     routes=[
         Route("/api/health", health, methods=["GET"]),
@@ -1282,3 +1314,5 @@ app.add_middleware(
     https_only=os.environ.get("WEBUI_COOKIE_SECURE", "false").strip().lower()
     in {"1", "true", "yes", "on"},
 )
+# Must be the outermost ASGI middleware to sanitize callback queries early.
+app.add_middleware(_RedactSIWCCallbackQuery)
