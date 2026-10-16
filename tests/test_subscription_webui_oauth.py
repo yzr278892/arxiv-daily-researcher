@@ -62,6 +62,25 @@ class LocalWebUIAuthorizationTests(unittest.TestCase):
             response = self.client.post("/api/subscriptions/authorize/start", json={})
         self.assertEqual(response.status_code, 403)
 
+    def test_owner_guard_is_opt_in_for_subscription_billing_only(self):
+        fake_request = object()
+        with patch.object(webui, "_cached_env", return_value={}), patch.object(
+            webui, "_require_subscription_owner"
+        ) as require:
+            webui._require_subscriber_owner_if_needed(fake_request)
+            require.assert_not_called()
+            webui._require_subscriber_owner_if_needed(
+                fake_request, {"CHEAP_LLM__AUTH_MODE": "subscription"}
+            )
+            require.assert_called_once_with(fake_request)
+        with patch.object(webui, "_cached_env", return_value={
+            "SMART_LLM__AUTH_MODE": "subscription",
+        }), patch.object(webui, "_require_subscription_owner") as require:
+            webui._require_subscriber_owner_if_needed(fake_request, {
+                "SMART_LLM__AUTH_MODE": "api_key",
+            })
+            require.assert_called_once_with(fake_request)
+
     def test_local_mode_rejects_remote_clients_and_proxies(self):
         target = SimpleNamespace(
             url=SimpleNamespace(scheme="http", hostname="127.0.0.1"),
