@@ -463,9 +463,31 @@ async def version_get(request: Request) -> JSONResponse:
     return JSONResponse(await _blocking_call(backend.version_status))
 
 
+def _require_subscriber_owner_if_needed(
+    request: Request, proposed_env: Any = None
+) -> None:
+    """Do not let another panel administrator spend the owner's plan.
+
+    Existing API-key-only installations keep their current role permissions.
+    Protect an existing subscription setting even when an update is trying to
+    switch it back; otherwise non-owners could temporarily downgrade access.
+    """
+    current = _cached_env()
+    proposed = proposed_env if isinstance(proposed_env, dict) else {}
+    keys = ("CHEAP_LLM__AUTH_MODE", "SMART_LLM__AUTH_MODE")
+    subscription = any(
+        str(current.get(key, "api_key")).strip().lower() == "subscription"
+        or str(proposed.get(key, "api_key")).strip().lower() == "subscription"
+        for key in keys
+    )
+    if subscription:
+        _require_subscription_owner(request)
+
+
 async def settings_put(request: Request) -> JSONResponse:
     _require_session(request)
     payload = await _payload(request)
+    _require_subscriber_owner_if_needed(request, payload.get("env"))
     try:
         result = await _blocking_call(
             backend.save_settings,
@@ -480,6 +502,7 @@ async def settings_put(request: Request) -> JSONResponse:
 
 async def restart_worker(request: Request) -> JSONResponse:
     _require_session(request)
+    _require_subscriber_owner_if_needed(request)
     try:
         await _blocking_call(backend.request_worker_restart)
     except Exception as exc:
@@ -516,6 +539,7 @@ async def clear_stale_triggers(request: Request) -> JSONResponse:
 
 async def start_task(request: Request) -> JSONResponse:
     _require_session(request)
+    _require_subscriber_owner_if_needed(request)
     mode = request.path_params.get("mode", "")
     payload = await _payload(request)
     try:
@@ -526,6 +550,7 @@ async def start_task(request: Request) -> JSONResponse:
 
 async def daily_start(request: Request) -> JSONResponse:
     _require_session(request)
+    _require_subscriber_owner_if_needed(request)
     try:
         return JSONResponse(await _blocking_call(backend.enqueue_task, "daily_research"))
     except Exception as exc:
@@ -558,6 +583,7 @@ async def history_get(request: Request) -> JSONResponse:
 
 async def history_retry(request: Request) -> JSONResponse:
     _require_session(request)
+    _require_subscriber_owner_if_needed(request)
     try:
         return JSONResponse(
             await _blocking_call(backend.retry_history_task, request.path_params.get("request_id", ""))
