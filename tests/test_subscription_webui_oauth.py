@@ -3,6 +3,7 @@
 No external calls or real OAuth credentials are used.
 """
 import sys
+import asyncio
 import time
 import unittest
 from pathlib import Path
@@ -147,6 +148,21 @@ class LocalWebUIAuthorizationTests(unittest.TestCase):
             )
             self.assertEqual(again.status_code, 400)
             self.assertEqual(finish.call_count, 1)
+
+    def test_callback_redacts_code_from_server_visible_query_string(self):
+        inspected = {}
+
+        async def app(scope, receive, send):
+            inspected["server_visible_query"] = scope["query_string"]
+            inspected["server_private_query"] = scope["state"]["siwc_query_string"]
+
+        scope = {
+            "type": "http", "path": "/auth/callback", "query_string": b"code=sensitive-once&state=random",
+        }
+        middleware = webui._RedactSIWCCallbackQuery(app)
+        asyncio.run(middleware(scope, None, None))
+        self.assertEqual(inspected["server_visible_query"], b"")
+        self.assertEqual(inspected["server_private_query"], b"code=sensitive-once&state=random")
 
     def test_callback_without_begin_does_not_accept_tokens(self):
         with patch.object(webui, "_is_local_siwc_webui", return_value=True):
